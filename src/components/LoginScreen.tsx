@@ -41,10 +41,10 @@ export const LoginScreen: React.FC = () => {
           <Lock className="w-8 h-8 text-white" />
         </div>
         <h2 className="text-center text-3xl font-extrabold text-slate-900 tracking-tight">
-          Вхід у систему
+          Портал ВІАТЕК
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Навчальний портал компанії
+          Корпоративна система навчання та атестації персоналу
         </p>
       </div>
 

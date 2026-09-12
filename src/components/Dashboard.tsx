@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { UserProgress, InstructionSection } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { Award, Target, BookOpen, Clock } from 'lucide-react';
+import { Award, Target, BookOpen, Clock, AlertTriangle, FileCheck } from 'lucide-react';
+import { CertificateView } from './CertificateView';
 
 interface DashboardProps {
   progress: UserProgress;
@@ -14,6 +15,8 @@ interface DashboardProps {
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899'];
 
 export const Dashboard: React.FC<DashboardProps> = ({ progress, sections }) => {
+  const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
+
   // Aggregate data for average score by department
   const scoreByDept = useMemo(() => {
     const deps: Record<string, { totalScore: number; count: number }> = {};
@@ -26,12 +29,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, sections }) => {
           dep = matchingSection.department;
         }
       }
-
       if (!deps[dep]) deps[dep] = { totalScore: 0, count: 0 };
       deps[dep].totalScore += history.percentage;
       deps[dep].count += 1;
     });
-
     return Object.entries(deps).map(([name, data]) => ({
       name,
       avgScore: Math.round(data.totalScore / data.count),
@@ -49,6 +50,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, sections }) => {
     };
   }, [progress.readSectionIds, sections]);
 
+  const certificates = progress.certificates || [];
+  
+  // Calculate expiration states
+  const now = new Date();
+  const warningDays = 30; // Warn if expiring in 30 days
+  
   const pieData = [
     { name: 'Опрацьовано', value: readProgress.read },
     { name: 'Залишилось', value: readProgress.unread }
@@ -56,10 +63,77 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, sections }) => {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {selectedCertificate && (
+        <CertificateView 
+          certificate={selectedCertificate} 
+          employeeInfo={progress.employeeInfo}
+          onClose={() => setSelectedCertificate(null)}
+        />
+      )}
+      
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Аналітика та Прогрес</h2>
         <p className="text-slate-500 mt-1">Відслідковуйте власну успішність та активність</p>
       </div>
+
+      {/* Certificates Section */}
+      {certificates.length > 0 && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <Award className="w-6 h-6 text-purple-600" /> 
+            Ваші сертифікати
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {certificates.map((cert: any, idx: number) => {
+              const expDate = new Date(cert.expiresAt);
+              const daysLeft = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 3600 * 24));
+              const isWarning = daysLeft <= warningDays && daysLeft > 0;
+              const isExpired = daysLeft <= 0;
+
+              return (
+                <div key={idx} className="relative bg-slate-50 border border-slate-200 rounded-xl p-5 hover:shadow-md transition group">
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-bold text-slate-800 pr-4">{cert.courseTitle}</h4>
+                    {isExpired ? (
+                      <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg shrink-0" title="Прострочено">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                    ) : isWarning ? (
+                      <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg shrink-0" title={`Спливає через ${daysLeft} дн.`}>
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                    ) : (
+                      <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg shrink-0">
+                        <FileCheck className="w-5 h-5" />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-sm text-slate-500 space-y-1 mb-4">
+                    <p>Отримано: {new Date(cert.issuedAt).toLocaleDateString('uk-UA')}</p>
+                    <p className={isExpired ? 'text-rose-600 font-bold' : isWarning ? 'text-amber-600 font-bold' : ''}>
+                      Дійсний до: {expDate.toLocaleDateString('uk-UA')}
+                    </p>
+                  </div>
+
+                  {isExpired || isWarning ? (
+                    <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded p-2 mb-4">
+                      {isExpired ? 'Сертифікат недійсний. Будь ласка, пройдіть курс повторно.' : 'Термін дії сертифіката скоро спливає. Рекомендуємо повторити курс.'}
+                    </div>
+                  ) : null}
+
+                  <button 
+                    onClick={() => setSelectedCertificate(cert)}
+                    className="w-full py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition"
+                  >
+                    Переглянути
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

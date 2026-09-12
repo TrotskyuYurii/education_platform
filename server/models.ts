@@ -19,6 +19,8 @@ const courseSchema = new mongoose.Schema({
   title: { type: String, required: true },
   department: { type: String, required: true },
   instructionIds: { type: [String], default: [] },
+  hasCertificate: { type: Boolean, default: false },
+  certificateValidityYears: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -35,6 +37,7 @@ const sectionSchema = new mongoose.Schema({
   pageReference: String,
   stopRules: [String],
   systemAutomaticActions: [String],
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -55,12 +58,19 @@ const progressSchema = new mongoose.Schema({
   readSectionIds: [String],
   testScores: [{
     sectionId: String,
+    courseId: String,
     department: String,
     mode: String,
     score: Number,
     total: Number,
     percentage: Number,
     date: { type: Date, default: Date.now }
+  }],
+  certificates: [{
+    courseId: String,
+    courseTitle: String,
+    issuedAt: { type: Date, default: Date.now },
+    expiresAt: Date
   }],
   updatedAt: { type: Date, default: Date.now }
 });

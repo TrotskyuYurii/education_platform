@@ -83,10 +83,10 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
       <div className="bg-blue-600 rounded-2xl p-8 mb-8 text-white shadow-md relative overflow-hidden">
         <div className="relative z-10">
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">
-            Навчальний портал компанії
+            Корпоративний портал ВІАТЕК
           </h1>
           <p className="text-blue-100 max-w-2xl text-lg">
-            Оберіть свій підрозділ та проходьте інструкції для підвищення кваліфікації. Усі регламенти та інструкції зібрані тут.
+            Єдина база знань, регламентів та навчальних курсів для співробітників компанії. Оберіть свій підрозділ або курс для вивчення.
           </p>
         </div>
         <BookOpen className="absolute -right-8 -bottom-8 w-64 h-64 text-blue-500 opacity-20 pointer-events-none" />

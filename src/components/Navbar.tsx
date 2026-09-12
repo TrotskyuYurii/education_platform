@@ -44,9 +44,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="font-bold text-slate-900 text-base tracking-tight group-hover:text-blue-600 transition">
                   {INSTRUCTION_DOCUMENT_META.company}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold border border-blue-100">
-                  {INSTRUCTION_DOCUMENT_META.system}
-                </span>
               </div>
               <p className="text-xs text-slate-500 line-clamp-1">
                 Навчальний портал
@@ -84,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Award className="w-4 h-4" />
-              <span>2. Тестування (Квіз)</span>
+              <span>Тестування (Квіз)</span>
               {bestScore !== null && (
                 <span className={`text-xs px-1.5 py-0.2 rounded-full ${
                   currentTab === 'quiz' ? 'bg-blue-500 text-white' : 'bg-emerald-100 text-emerald-800'
@@ -104,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Briefcase className="w-4 h-4" />
-              <span>3. Симулятор кейсів</span>
+              <span>Симулятор кейсів</span>
             </button>
 
             <button
@@ -117,7 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <CheckCircle2 className={`w-4 h-4 ${isSigned ? 'text-emerald-500' : ''}`} />
-              <span>4. Лист ознайомлення</span>
+              <span>Мій профіль</span>
               {isSigned && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               )}
@@ -205,7 +202,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               currentTab === 'quiz' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            2. Тестування {bestScore !== null ? `(${bestScore}%)` : ''}
+            Тестування {bestScore !== null ? `(${bestScore}%)` : ''}
           </button>
           <button
             onClick={() => onSelectTab('cases')}
@@ -213,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               currentTab === 'cases' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            3. Кейси
+            Кейси
           </button>
           <button
             onClick={() => onSelectTab('signoff')}
@@ -221,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               currentTab === 'signoff' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            4. Лист ознайомлення
+            Мій профіль
           </button>
           <button
             onClick={() => onSelectTab('dashboard')}

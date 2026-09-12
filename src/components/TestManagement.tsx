@@ -17,7 +17,8 @@ import {
   Copy,
   Check,
   Sparkles,
-  BookOpen
+  BookOpen,
+  Edit2
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -26,6 +27,7 @@ interface TestManagementProps {
   courses: any[];
   onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
   onReset: () => void;
+  isSetupMode?: boolean;
 }
 
 type MgmtTab = 'list' | 'courses' | 'import' | 'export' | 'help' | 'users' | 'departments';
@@ -35,14 +37,15 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   questions,
   courses,
   onImport,
-  onReset
+  onReset,
+  isSetupMode
 }) => {
-  const [activeTab, setActiveTab] = useState<MgmtTab>('list');
+  const [activeTab, setActiveTab] = useState<MgmtTab>(isSetupMode ? 'users' : 'list');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: isSetupMode ? 'admin' : 'user' });
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
@@ -54,7 +57,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editingCourseDep, setEditingCourseDep] = useState<string>('');
-  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[] });
+  const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
+  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], hasCertificate: false, certificateValidityYears: 1 });
+  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], hasCertificate: boolean, certificateValidityYears: number } | null>(null);
 
   React.useEffect(() => {
     if (activeTab === 'users') fetchUsers();
@@ -89,8 +94,16 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setUserMsg({ type: 'success', text: `Користувача ${newUser.username} створено!` });
+      
+      const createdRole = newUser.role;
       setNewUser({ username: '', password: '', role: 'user' });
       fetchUsers();
+      
+      if (isSetupMode && createdRole === 'admin') {
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
     } catch (err: any) {
       setUserMsg({ type: 'error', text: err.message });
     }
@@ -141,6 +154,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
         id: sec.id,
         title: sec.title,
         department: sec.department || 'Загальний',
+        isActive: sec.isActive !== undefined ? sec.isActive : true,
         questionCount: qCount
       };
     });
@@ -278,11 +292,12 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row overflow-hidden min-h-[500px]">
         
         {/* Left Nav */}
-        <div className="md:w-64 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50 p-4 shrink-0">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 px-2">
-            Меню керування
-          </h3>
-          <div className="flex flex-col gap-1.5">
+        {!isSetupMode && (
+          <div className="md:w-64 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50 p-4 shrink-0">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 px-2">
+              Меню керування
+            </h3>
+            <div className="flex flex-col gap-1.5">
             <button
               onClick={() => setActiveTab('list')}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
@@ -362,6 +377,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
             </button>
           </div>
         </div>
+        )}
 
         {/* Right Content */}
         <div className="p-6 sm:p-8 grow h-full overflow-y-auto">
@@ -398,6 +414,18 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 <option key={d._id} value={d.name}>{d.name}</option>
                               ))}
                             </select>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id={`edit-inst-active-${inst.id}`}
+                                checked={editingInstIsActive}
+                                onChange={e => setEditingInstIsActive(e.target.checked)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <label htmlFor={`edit-inst-active-${inst.id}`} className="text-sm font-bold text-slate-700">
+                                Активний (доступний для проходження)
+                              </label>
+                            </div>
                             <div className="flex gap-2">
                               <button 
                                 onClick={async () => {
@@ -405,10 +433,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                     await fetch(`/api/admin/instructions/${inst.id}`, {
                                       method: 'PUT',
                                       headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ department: editingCourseDep })
+                                      body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
                                     });
                                     setEditingCourseId(null);
-                                    // Trigger reload via window reload for simplicity or call a prop function
                                     window.location.reload();
                                   } catch (e) {}
                                 }}
@@ -423,12 +450,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         ) : (
                           <>
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md">
+                              <div className="flex gap-2 mb-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md inline-block">
                                   {inst.department}
                                 </span>
+                                {inst.isActive === false && (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md inline-block">
+                                    Вимкнено
+                                  </span>
+                                )}
                               </div>
-                              <h4 className="text-sm font-bold text-slate-900">{inst.title}</h4>
+                              <h4 className={`text-sm font-bold ${inst.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{inst.title}</h4>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 ID: {inst.id} · Питань: {inst.questionCount}
                               </p>
@@ -438,6 +470,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 onClick={() => {
                                   setEditingCourseId(inst.id);
                                   setEditingCourseDep(inst.department);
+                                  setEditingInstIsActive(inst.isActive !== false);
                                 }}
                                 className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition"
                                 title="Редагувати підрозділ"
@@ -502,7 +535,34 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     ))}
                   </select>
                   
-                  <div className="text-sm font-medium text-slate-700">Оберіть інструкції для курсу:</div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="new-course-cert"
+                      checked={newCourse.hasCertificate}
+                      onChange={e => setNewCourse({ ...newCourse, hasCertificate: e.target.checked })}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <label htmlFor="new-course-cert" className="text-sm text-slate-700">
+                      Видавати сертифікат по завершенню
+                    </label>
+                  </div>
+                  
+                  {newCourse.hasCertificate && (
+                    <div className="flex items-center gap-2 ml-6">
+                      <label className="text-sm text-slate-600">Термін дії (років):</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={newCourse.certificateValidityYears}
+                        onChange={e => setNewCourse({ ...newCourse, certificateValidityYears: parseInt(e.target.value) || 1 })}
+                        className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
+                      />
+                    </div>
+                  )}
+                  
+                  <div className="text-sm font-medium text-slate-700 mt-2">Оберіть інструкції для курсу:</div>
                   <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
                     {sections.map(sec => (
                       <label key={sec.id} className="flex items-center gap-2">
@@ -529,11 +589,11 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify(newCourse)
                         });
-                        setNewCourse({ title: '', department: '', instructionIds: [] });
+                        setNewCourse({ title: '', department: '', instructionIds: [], hasCertificate: false, certificateValidityYears: 1 });
                         window.location.reload();
                       } catch (err) {}
                     }}
-                    className="self-start px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold"
+                    className="self-start px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold mt-2"
                   >
                     Створити курс
                   </button>
@@ -548,27 +608,162 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                 ) : (
                   courses.map((course) => (
                     <div key={course.id} className="flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md inline-block mb-1">
-                            {course.department}
+                      {editingCourse?.id === course.id ? (
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            placeholder="Назва курсу"
+                            value={editingCourse.title}
+                            onChange={e => setEditingCourse({ ...editingCourse, title: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                          />
+                          <select
+                            value={editingCourse.department}
+                            onChange={e => setEditingCourse({ ...editingCourse, department: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                          >
+                            <option value="">Оберіть підрозділ...</option>
+                            {departments.map(d => (
+                              <option key={d._id} value={d.name}>{d.name}</option>
+                            ))}
+                          </select>
+                          
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`edit-cert-${course.id}`}
+                              checked={editingCourse.hasCertificate}
+                              onChange={e => setEditingCourse({ ...editingCourse, hasCertificate: e.target.checked })}
+                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <label htmlFor={`edit-cert-${course.id}`} className="text-sm text-slate-700">
+                              Видавати сертифікат
+                            </label>
                           </div>
-                          <h4 className="text-sm font-bold text-slate-900">{course.title}</h4>
-                          <div className="text-xs text-slate-500 mt-1">Включає {course.instructionIds?.length || 0} інструкцій</div>
+                          
+                          {editingCourse.hasCertificate && (
+                            <div className="flex items-center gap-2 ml-6">
+                              <label className="text-sm text-slate-600">Термін дії (років):</label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                value={editingCourse.certificateValidityYears}
+                                onChange={e => setEditingCourse({ ...editingCourse, certificateValidityYears: parseInt(e.target.value) || 1 })}
+                                className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`edit-course-active-${course.id}`}
+                              checked={editingCourse.isActive}
+                              onChange={e => setEditingCourse({ ...editingCourse, isActive: e.target.checked })}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor={`edit-course-active-${course.id}`} className="text-sm font-bold text-slate-700">
+                              Курс активний (доступний для проходження)
+                            </label>
+                          </div>
+
+                          <div className="text-sm font-medium text-slate-700">Інструкції для курсу:</div>
+                          <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
+                            {sections.map(sec => (
+                              <label key={sec.id} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={editingCourse.instructionIds.includes(sec.id)}
+                                  onChange={e => {
+                                    const ids = editingCourse.instructionIds;
+                                    if (e.target.checked) setEditingCourse({ ...editingCourse, instructionIds: [...ids, sec.id] });
+                                    else setEditingCourse({ ...editingCourse, instructionIds: ids.filter(i => i !== sec.id) });
+                                  }}
+                                />
+                                <span className="text-sm">{sec.title} <span className="text-slate-400 text-xs">({sec.department})</span></span>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                if (!editingCourse.title || !editingCourse.department) return alert('Заповніть назву та підрозділ');
+                                try {
+                                  await fetch(`/api/admin/courses/${editingCourse.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(editingCourse)
+                                  });
+                                  setEditingCourse(null);
+                                  window.location.reload();
+                                } catch (err) {}
+                              }}
+                              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium transition hover:bg-purple-700"
+                            >
+                              Зберегти
+                            </button>
+                            <button
+                              onClick={() => setEditingCourse(null)}
+                              className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition hover:bg-slate-300"
+                            >
+                              Скасувати
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={async () => {
-                            if (window.confirm(`Видалити курс "${course.title}"?`)) {
-                              await fetch(`/api/admin/courses/${course.id}`, { method: 'DELETE' });
-                              window.location.reload();
-                            }
-                          }}
-                          className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                          title="Видалити курс"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex gap-2 mb-1">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md inline-block">
+                                {course.department}
+                              </div>
+                              {!course.isActive && (
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md inline-block">
+                                  Вимкнено
+                                </div>
+                              )}
+                            </div>
+                            <h4 className={`text-sm font-bold ${course.isActive ? 'text-slate-900' : 'text-slate-500 line-through'}`}>{course.title}</h4>
+                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                              <span>Включає {course.instructionIds?.length || 0} інструкцій</span>
+                              {course.hasCertificate && (
+                                <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">
+                                  Сертифікат ({course.certificateValidityYears} р.)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingCourse({
+                                id: course.id,
+                                title: course.title,
+                                department: course.department,
+                                instructionIds: course.instructionIds || [],
+                                hasCertificate: course.hasCertificate || false,
+                                certificateValidityYears: course.certificateValidityYears || 1
+                              })}
+                              className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
+                              title="Редагувати курс"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Видалити курс "${course.title}"?`)) {
+                                  await fetch(`/api/admin/courses/${course.id}`, { method: 'DELETE' });
+                                  window.location.reload();
+                                }
+                              }}
+                              className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                              title="Видалити курс"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -1031,11 +1226,13 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         <select
                           value={newUser.role}
                           onChange={e => setNewUser({...newUser, role: e.target.value})}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          disabled={isSetupMode}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
                         >
                           <option value="user">Користувач</option>
                           <option value="admin">Адміністратор</option>
                         </select>
+                        {isSetupMode && <p className="text-xs text-rose-500 mt-1">В режимі налаштування необхідно створити адміністратора.</p>}
                       </div>
                       <button type="submit" className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium transition">
                         Створити

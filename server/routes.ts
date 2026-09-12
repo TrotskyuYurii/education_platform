@@ -38,11 +38,19 @@ apiRouter.post('/auth/login', async (req, res) => {
     const user = await User.findOne({ username } as any);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // SECURITY REQ: Block default 'admin' if another admin exists
+    if (username === 'admin') {
+      const otherAdmins = await User.countDocuments({ role: 'admin', username: { $ne: 'admin' } });
+      if (otherAdmins > 0) {
+        return res.status(403).json({ error: 'Системний обліковий запис вимкнено з міркувань безпеки. Використовуйте створеного адміністратора.' });
+      }
+    }
+
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+    res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
     
     res.json({ user: { id: user._id, username: user.username, role: user.role, departments: user.departments, allowedCourseIds: user.allowedCourseIds } });
   } catch (err) {
@@ -51,7 +59,7 @@ apiRouter.post('/auth/login', async (req, res) => {
 });
 
 apiRouter.post('/auth/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
   res.json({ success: true });
 });
 
@@ -119,6 +127,13 @@ apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const newUser = await User.create({ username, passwordHash, role: role || 'user' } as any);
+    
+    // SECURITY: Delete default admin immediately if a new admin is created
+    if (newUser.role === 'admin' && newUser.username !== 'admin') {
+      await User.deleteOne({ username: 'admin' } as any);
+      console.log('🔒 Security: Removed default admin user because a custom admin was created.');
+    }
+
     res.json({ success: true, user: { id: newUser._id, username: newUser.username, role: newUser.role } });
   } catch (err) {
     res.status(500).json({ error: 'Failed to create user' });
@@ -144,12 +159,14 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
 
 apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds } = req.body;
+    const { title, department, instructionIds, hasCertificate, certificateValidityYears } = req.body;
     const course = await Course.create({ 
       id: `course-${Date.now()}`, 
       title, 
       department, 
-      instructionIds 
+      instructionIds,
+      hasCertificate,
+      certificateValidityYears
     } as any);
     res.json({ success: true, course });
   } catch (err) {
@@ -168,10 +185,10 @@ apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, re
 
 apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds } = req.body;
+    const { title, department, instructionIds, hasCertificate, certificateValidityYears } = req.body;
     const course = await Course.findOneAndUpdate(
       { id: req.params.id } as any,
-      { title, department, instructionIds } as any,
+      { title, department, instructionIds, hasCertificate, certificateValidityYears } as any,
       { new: true } as any
     );
     res.json({ success: true, course });
@@ -200,10 +217,15 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
 
 apiRouter.put('/admin/instructions/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { department, title } = req.body;
+    const { department, title, isActive } = req.body;
+    const updateData: any = { department, title };
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
+    }
+    
     const section = await Section.findOneAndUpdate(
       { id: req.params.id } as any,
-      { department, title } as any,
+      updateData,
       { new: true } as any
     );
     res.json({ success: true, section });
@@ -219,6 +241,10 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
     const instructionQuery: any = {};
     
     if (req.user.role !== 'admin') {
+      // Non-admins only see active courses and instructions
+      courseQuery.isActive = true;
+      instructionQuery.isActive = true;
+
       const deps = req.user.departments || [];
       const hasAllDepartments = deps.includes('Всі підрозділи');
       
@@ -280,12 +306,38 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
   try {
     const { readSectionIds, testScore } = req.body;
     let progress = await Progress.findOne({ userId: req.user._id } as any);
-    if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [] } as any);
+    if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [], certificates: [] } as any);
 
     if (readSectionIds) progress.readSectionIds = readSectionIds;
-    if (testScore) progress.testScores.push(testScore);
-    progress.updatedAt = new Date();
     
+    if (testScore) {
+      progress.testScores.push(testScore);
+      
+      if (testScore.courseId && testScore.percentage >= 80) {
+        const course = await Course.findOne({ id: testScore.courseId } as any);
+        if (course && course.hasCertificate) {
+          const hasExisting = progress.certificates.find((c: any) => c.courseId === course.id);
+          const validityYears = course.certificateValidityYears || 1;
+          const issuedAt = new Date();
+          const expiresAt = new Date();
+          expiresAt.setFullYear(issuedAt.getFullYear() + validityYears);
+          
+          if (hasExisting) {
+            hasExisting.issuedAt = issuedAt;
+            hasExisting.expiresAt = expiresAt;
+          } else {
+            progress.certificates.push({
+              courseId: course.id,
+              courseTitle: course.title,
+              issuedAt,
+              expiresAt
+            });
+          }
+        }
+      }
+    }
+    
+    progress.updatedAt = new Date();
     await progress.save();
     res.json({ success: true, progress });
   } catch (err) {

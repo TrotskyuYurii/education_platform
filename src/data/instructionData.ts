@@ -1,12 +1,12 @@
 import { InstructionSection } from '../types';
 
 export const INSTRUCTION_DOCUMENT_META = {
-  company: 'ТОВ ВІАТЕК',
-  title: 'Повернення товару від клієнта',
-  system: 'BAS УТ 3.2 / ПРРО (Checkbox)',
-  date: 'вересень 2026',
-  docVersion: '3.2',
-  totalPages: 9
+  company: 'ТОВ «ВІАТЕК»',
+  title: 'Корпоративна база знань',
+  system: 'Навчальний портал',
+  date: 'Оновлено: 2026',
+  docVersion: 'v2.0',
+  totalPages: 0
 };
 
 export const INSTRUCTION_SECTIONS: InstructionSection[] = [

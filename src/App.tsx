@@ -171,6 +171,35 @@ function MainApp() {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">Завантаження даних...</div>;
   }
 
+  // SECURITY REQ: Force setup mode for default admin
+  if (user?.username === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+        <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <div className="font-bold text-lg text-slate-900 tracking-tight">ВІАТЕК</div>
+             <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Налаштування</span>
+          </div>
+          <button onClick={logout} className="text-rose-600 hover:underline text-sm font-medium">Вийти</button>
+        </header>
+        <main className="grow p-6">
+          <div className="max-w-4xl mx-auto mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-800 text-sm">
+            <strong className="block mb-1">Увага! Потрібне початкове налаштування</strong>
+            Ви увійшли під системним обліковим записом. З міркувань безпеки, будь ласка, створіть нового користувача з правами <b>Адміністратор</b>. Після створення нового адміністратора, цей системний обліковий запис буде автоматично видалено і ви не зможете входити під ним.
+          </div>
+          <TestManagement
+            sections={sections}
+            questions={questions}
+            courses={courses}
+            isSetupMode={true}
+            onImport={async () => {}}
+            onReset={() => {}}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       <Navbar
@@ -271,7 +300,7 @@ function MainApp() {
       <footer className="bg-white border-t border-slate-200 py-6 print:hidden mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <div>
-            <span className="font-semibold text-slate-700">ТОВ «ВІАТЕК»</span> · Відділ роздрібного продажу
+            <span className="font-semibold text-slate-700">ТОВ «ВІАТЕК»</span>
           </div>
           <div className="flex items-center gap-4">
             <span>Ви увійшли як <strong className="text-slate-700">{user?.username}</strong> ({user?.role})</span>

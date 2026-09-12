@@ -21,16 +21,27 @@ export async function connectDB() {
 }
 
 async function seedDefaults() {
-  const adminExists = await User.findOne({ role: 'admin' } as any);
-  if (!adminExists) {
-    const passwordHash = await bcrypt.hash('admin123', 10);
-    await User.create({
-      username: 'admin',
-      passwordHash,
-      role: 'admin',
-      departments: ['Всі підрозділи']
-    } as any);
-    console.log('🌱 Seeded default admin user (username: admin, password: admin123)');
+  const otherAdmins = await User.countDocuments({ role: 'admin', username: { $ne: 'admin' } } as any);
+
+  if (otherAdmins === 0) {
+    const adminExists = await User.findOne({ username: 'admin' } as any);
+    if (!adminExists) {
+      const passwordHash = await bcrypt.hash('admin123', 10);
+      await User.create({
+        username: 'admin',
+        passwordHash,
+        role: 'admin',
+        departments: ['Всі підрозділи']
+      } as any);
+      console.log('🌱 Seeded default admin user (username: admin, password: admin123)');
+    }
+  } else {
+    // SECURITY: Remove default admin if a custom admin has been created
+    const defaultAdmin = await User.findOne({ username: 'admin' } as any);
+    if (defaultAdmin) {
+      await User.deleteOne({ username: 'admin' } as any);
+      console.log('🔒 Security: Removed default admin user because a custom admin exists.');
+    }
   }
 
   const defaultDep = await Department.findOne({ name: 'Всі підрозділи' } as any);

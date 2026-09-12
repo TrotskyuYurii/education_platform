@@ -5,6 +5,9 @@ export interface Course {
   title: string;
   department: string;
   instructionIds: string[];
+  hasCertificate?: boolean;
+  certificateValidityYears?: number;
+  isActive?: boolean;
 }
 
 export interface InstructionSection {
@@ -86,5 +89,11 @@ export interface UserProgress {
     courseId?: string;
     department?: string;
     mode?: string;
+  }>;
+  certificates?: Array<{
+    courseId: string;
+    courseTitle: string;
+    issuedAt: string;
+    expiresAt: string;
   }>;
 }

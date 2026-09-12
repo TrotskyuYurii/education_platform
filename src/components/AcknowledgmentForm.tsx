@@ -66,11 +66,11 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
               <FileCheck className="w-6 h-6" />
             </div>
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-full">
-                Стор. 9/9 Регламенту
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-100/60 px-2.5 py-0.5 rounded-full">
+                Профіль користувача
               </span>
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
-                Лист ознайомлення та протокол тестування
+                Мої дані та згода
               </h2>
             </div>
           </div>
@@ -215,7 +215,7 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
             <p className="font-semibold text-slate-900 mb-1">
               Підтвердження співробітника:
             </p>
-            Я підтверджую, що в повному обсязі ознайомлений(а) з інструкцією «Повернення товару від клієнта» (BAS УТ 3.2), засвоїв(ла) відмінності між Сценарієм А та Сценарієм Б, правила складання Акту про видачу коштів (понад 100 грн), вимоги щодо обов’язкової наявності чека і заяви, заборону зміни форми виплати та вимоги СТОП-СПИСКУ. Зобов’язуюся неухильно дотримуватися регламенту у своїй щоденній роботі.
+            Я підтверджую, що в повному обсязі ознайомлений(а) з усіма необхідними корпоративними інструкціями та регламентами компанії ТОВ «ВІАТЕК», які закріплені за моєю посадою. Зобов’язуюся неухильно дотримуватися цих регламентів у своїй щоденній роботі та нести відповідальність за їх порушення.
           </div>
 
           {/* Signature Badge Block */}
