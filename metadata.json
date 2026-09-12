@@ -1,0 +1,6 @@
+{
+  "name": "Навчальний Квіз: Повернення товару",
+  "description": "Інтерактивний посібник та система тестування знань за регламентом повернення товару від клієнта (BAS УТ 3.2 та ПРРО).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
