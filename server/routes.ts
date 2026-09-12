@@ -75,8 +75,14 @@ apiRouter.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
 apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { departments, allowedInstructionIds, role, username, password } = req.body;
-    const updateData: any = {};
+    const { departments, allowedInstructionIds, role, username, email, password } = req.body;
+    if (!email || !email.endsWith('@viatec.ua')) {
+      return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
+    }
+    const existingEmail = await User.findOne({ email, _id: { $ne: req.params.id } } as any);
+    if (existingEmail) return res.status(400).json({ error: 'Користувач з таким email вже існує' });
+    
+    const updateData: any = { email };
     if (departments) updateData.departments = departments;
     if (allowedInstructionIds) updateData.allowedInstructionIds = allowedInstructionIds;
     if (role) updateData.role = role;
@@ -121,12 +127,17 @@ apiRouter.delete('/admin/departments/:id', requireAuth, requireAdmin, async (req
 
 apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { username, password, role } = req.body;
+    const { username, email, password, role } = req.body;
+    if (!email || !email.endsWith('@viatec.ua')) {
+      return res.status(400).json({ error: 'Email має бути в домені @viatec.ua' });
+    }
     const existing = await User.findOne({ username } as any);
     if (existing) return res.status(400).json({ error: 'Username already exists' });
+    const existingEmail = await User.findOne({ email } as any);
+    if (existingEmail) return res.status(400).json({ error: 'Користувач з таким email вже існує' });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ username, passwordHash, role: role || 'user' } as any);
+    const newUser = await User.create({ username, email, passwordHash, role: role || 'user' } as any);
     
     // SECURITY: Delete default admin immediately if a new admin is created
     if (newUser.role === 'admin' && newUser.username !== 'admin') {

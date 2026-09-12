@@ -58,11 +58,14 @@ export interface CaseSimulation {
   id: string;
   title: string;
   scenario: string;
+  role?: string;
+  clientDialogue?: string;
   options: {
     id: string;
     text: string;
     isCorrect: boolean;
     feedback: string;
+    legalOrSystemBasis?: string;
   }[];
   isActive?: boolean;
 }

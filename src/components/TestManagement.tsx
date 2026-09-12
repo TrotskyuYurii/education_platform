@@ -18,7 +18,8 @@ import {
   Check,
   Sparkles,
   BookOpen,
-  Edit2
+  Edit2,
+  Briefcase
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -47,7 +48,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: isSetupMode ? 'admin' : 'user' });
+  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: isSetupMode ? 'admin' : 'user' });
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
@@ -101,7 +102,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       setUserMsg({ type: 'success', text: `Користувача ${newUser.username} створено!` });
       
       const createdRole = newUser.role;
-      setNewUser({ username: '', password: '', role: 'user' });
+      setNewUser({ username: '', email: '', password: '', role: 'user' });
       fetchUsers();
       
       if (isSetupMode && createdRole === 'admin') {
@@ -118,17 +119,25 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     e.preventDefault();
     if (!selectedUser) return;
     try {
-      await fetch(`/api/admin/users/${selectedUser._id}`, {
+      const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           departments: selectedUser.departments,
-          allowedInstructionIds: selectedUser.allowedInstructionIds
+          allowedInstructionIds: selectedUser.allowedInstructionIds,
+          email: selectedUser.email
         })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error);
+        return;
+      }
       setSelectedUser(null);
       fetchUsers();
-    } catch (err) {}
+    } catch (err) {
+      alert('Помилка оновлення');
+    }
   };
 
   const handleCreateDepartment = async (e: React.FormEvent) => {
@@ -200,6 +209,100 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     link.download = 'ai_prompt_instruction_format.txt';
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportInstMD = (instId: string, title: string) => {
+    const sec = sections.find(s => s.id === instId);
+    if (!sec) return;
+    const secQs = questions.filter(q => q.sectionId === instId);
+    const md = exportToMarkdown(title, [sec], secQs);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title.replace(/[\/\\]/g, '_')}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportInstPDF = (instId: string) => {
+    const sec = sections.find(s => s.id === instId);
+    if (!sec) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Будь ласка, дозвольте спливаючі вікна для цього сайту, щоб згенерувати PDF.');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${sec.title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.6; color: #1e293b; max-width: 800px; margin: 0 auto; }
+          h1 { font-size: 28px; font-weight: bold; margin-bottom: 8px; color: #0f172a; }
+          .meta { color: #64748b; margin-bottom: 32px; font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; }
+          h3 { font-size: 18px; font-weight: bold; margin-top: 24px; margin-bottom: 12px; color: #0f172a; }
+          p { margin-bottom: 16px; }
+          ul { padding-left: 24px; margin-bottom: 24px; }
+          li { margin-bottom: 8px; }
+          .step { margin-bottom: 20px; }
+          .step h4 { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #334155; }
+          .tip { font-size: 13px; color: #0369a1; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #0284c7; }
+          .warning { font-size: 13px; color: #be123c; background: #ffe4e6; padding: 8px 12px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #e11d48; }
+          @media print {
+            body { padding: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${sec.title}</h1>
+        <div class="meta">Підрозділ: ${sec.department} | Роль: ${sec.targetRole || 'Усі'}</div>
+        
+        <div>
+          <h3>Суть:</h3>
+          <p>${sec.summary}</p>
+        </div>
+
+        ${sec.keyPoints && sec.keyPoints.length > 0 ? `
+          <div>
+            <h3>Основні положення:</h3>
+            <ul>
+              ${sec.keyPoints.map((kp: string) => `<li>${kp}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${sec.steps && sec.steps.length > 0 ? `
+          <div>
+            <h3>Покроковий порядок:</h3>
+            ${sec.steps.map((step: any) => `
+              <div class="step">
+                <h4>Крок ${step.number}: ${step.title}</h4>
+                <p>${step.description}</p>
+                ${step.tip ? `<div class="tip">💡 ${step.tip}</div>` : ''}
+                ${step.warning ? `<div class="warning">⚠️ ${step.warning}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        
+        <script>
+          window.onload = () => {
+            window.print();
+            setTimeout(() => window.close(), 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   const handleExportData = () => {
@@ -344,7 +447,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   : 'text-slate-600 hover:bg-slate-200/50'
               }`}
             >
-              <Upload className="w-4 h-4" />
+              <Download className="w-4 h-4" />
               <span>Імпорт (.md)</span>
             </button>
             <button
@@ -355,7 +458,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   : 'text-slate-600 hover:bg-slate-200/50'
               }`}
             >
-              <Download className="w-4 h-4" />
+              <Upload className="w-4 h-4" />
               <span>Експорт (.md)</span>
             </button>
             <button
@@ -482,6 +585,20 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               </p>
                             </div>
                             <div className="flex gap-2 shrink-0 self-start sm:self-center">
+                              <button
+                                onClick={() => handleExportInstMD(inst.id, inst.title)}
+                                className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition text-xs font-bold"
+                                title="Експортувати у Markdown (.md)"
+                              >
+                                MD
+                              </button>
+                              <button
+                                onClick={() => handleExportInstPDF(inst.id)}
+                                className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition text-xs font-bold"
+                                title="Експортувати у PDF"
+                              >
+                                PDF
+                              </button>
                               <button
                                 onClick={() => {
                                   setEditingCourseId(inst.id);
@@ -1077,7 +1194,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
               )}
 
               <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center">
-                <Upload className="w-10 h-10 text-slate-400 mb-3" />
+                <Download className="w-10 h-10 text-slate-400 mb-3" />
                 <p className="text-sm font-semibold text-slate-700 mb-1">
                   Оберіть .md файл для завантаження
                 </p>
@@ -1146,7 +1263,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   onClick={handleExportData}
                   className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-2"
                 >
-                  <Download className="w-4 h-4" />
+                  <Upload className="w-4 h-4" />
                   <span>Експортувати (.md)</span>
                 </button>
               </div>
@@ -1364,6 +1481,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         className={`p-3 rounded-lg border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50' : 'border-slate-200 hover:border-purple-300'}`}
                       >
                         <div className="font-medium text-slate-900">{u.username} <span className="text-xs text-slate-500 font-normal">({u.role})</span></div>
+                        <div className="text-xs text-slate-500 font-medium">{u.email || '—'}</div>
                         <div className="text-xs text-slate-500 mt-1">
                           Підрозділів: {u.departments?.length || 0} | Дозволених інструкцій: {u.allowedInstructionIds?.length || 0}
                         </div>
@@ -1376,6 +1494,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   {selectedUser ? (
                     <form onSubmit={handleUpdateUser} className="space-y-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
                       <h4 className="font-semibold text-slate-800">Редагування: {selectedUser.username}</h4>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Email (@viatec.ua)</label>
+                        <input
+                          type="email"
+                          required
+                          value={selectedUser.email || ''}
+                          onChange={e => setSelectedUser({...selectedUser, email: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">Доступ до підрозділів</label>
@@ -1452,6 +1581,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           value={newUser.username}
                           onChange={e => setNewUser({...newUser, username: e.target.value})}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Email (@viatec.ua)</label>
+                        <input
+                          type="email"
+                          required
+                          value={newUser.email}
+                          onChange={e => setNewUser({...newUser, email: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          placeholder="user@viatec.ua"
                         />
                       </div>
                       <div>

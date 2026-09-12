@@ -29,6 +29,7 @@ async function seedDefaults() {
       const passwordHash = await bcrypt.hash('admin123', 10);
       await User.create({
         username: 'admin',
+        email: 'admin@viatec.ua',
         passwordHash,
         role: 'admin',
         departments: ['Всі підрозділи']
