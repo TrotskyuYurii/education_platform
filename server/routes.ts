@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User, Section, Question, Progress, Department, Course } from './models.js';
+import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 
 export const apiRouter = Router();
 
@@ -234,6 +234,51 @@ apiRouter.put('/admin/instructions/:id', requireAuth, requireAdmin, async (req, 
   }
 });
 
+// --- CASE ROUTES ---
+apiRouter.post('/admin/cases', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { title, scenario, options, isActive } = req.body;
+    const newCase = await Case.create({
+      id: `case-${Date.now()}`,
+      title,
+      scenario,
+      options,
+      isActive: isActive !== undefined ? isActive : true
+    } as any);
+    res.json({ success: true, case: newCase });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create case' });
+  }
+});
+
+apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    await Case.findOneAndDelete({ id: caseId } as any);
+    await Course.updateMany(
+      { caseIds: caseId } as any,
+      { $pull: { caseIds: caseId } } as any
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete case' });
+  }
+});
+
+apiRouter.put('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { title, scenario, options, isActive } = req.body;
+    const updatedCase = await Case.findOneAndUpdate(
+      { id: req.params.id } as any,
+      { title, scenario, options, isActive } as any,
+      { new: true } as any
+    );
+    res.json({ success: true, case: updatedCase });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update case' });
+  }
+});
+
 // --- DATA ROUTES ---
 apiRouter.get('/content', requireAuth, async (req: any, res) => {
   try {
@@ -284,7 +329,16 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
     const sectionIds = sections.map(s => s.id);
     const questions = await Question.find({ sectionId: { $in: sectionIds } } as any);
     
-    res.json({ courses, sections, questions });
+    // Also fetch cases that belong to these courses (or all for admin)
+    const caseQuery: any = {};
+    if (req.user.role !== 'admin') {
+      caseQuery.isActive = true;
+      const courseCaseIds = courses.flatMap(c => c.caseIds || []);
+      caseQuery.id = { $in: courseCaseIds };
+    }
+    const cases = await Case.find(caseQuery);
+    
+    res.json({ courses, sections, questions, cases });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch content' });
   }

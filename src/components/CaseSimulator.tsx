@@ -97,21 +97,6 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
           {currentCase.scenario}
         </div>
 
-        {/* Customer Dialogue Box */}
-        <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950 flex items-start gap-3">
-          <div className="w-8 h-8 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
-            <User className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-xs font-bold text-amber-800 uppercase block mb-0.5">
-              Слова покупця:
-            </span>
-            <p className="text-sm sm:text-base font-medium italic">
-              {currentCase.clientDialogue}
-            </p>
-          </div>
-        </div>
-
         {/* Decision Options */}
         <div>
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-3">
@@ -180,11 +165,6 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
             <p className="text-xs sm:text-sm leading-relaxed mb-3">
               {chosenOption.feedback}
             </p>
-
-            <div className="text-xs p-3 rounded-lg bg-white/80 border border-slate-100 font-medium">
-              <span className="font-bold">Нормативна та системна база: </span>
-              {chosenOption.legalOrSystemBasis}
-            </div>
 
             <div className="mt-5 flex justify-end">
               <button

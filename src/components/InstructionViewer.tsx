@@ -13,26 +13,31 @@ import {
   ChevronRight,
   Sparkles,
   Info,
-  ArrowLeft
+  ArrowLeft,
+  Briefcase
 } from 'lucide-react';
 
 interface InstructionViewerProps {
   sections: InstructionSection[];
   courses?: any[];
+  cases?: any[];
   courseId?: string;
   readSectionIds: string[];
   onToggleReadSection: (sectionId: string) => void;
   onStartQuiz: (type: 'all'|'section'|'course', id?: string) => void;
+  onStartCases?: (casesToRun: any[]) => void;
   onBackToCatalog: () => void;
 }
 
 export const InstructionViewer: React.FC<InstructionViewerProps> = ({
   sections,
   courses = [],
+  cases = [],
   courseId,
   readSectionIds,
   onToggleReadSection,
   onStartQuiz,
+  onStartCases,
   onBackToCatalog
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,15 +47,18 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
 
   // 1. Filter sections down to ONLY the selected course or instruction
   const courseSections = useMemo(() => {
-    if (!courseId) return sections;
+    // Only show active instructions
+    const activeSections = sections.filter(s => s.isActive !== false);
     
-    // If it's a course, get all its instructions
+    if (!courseId) return activeSections;
+    
+    // If it's a course, get all its active instructions
     if (activeCourse) {
-      return sections.filter(s => activeCourse.instructionIds.includes(s.id));
+      return activeSections.filter(s => activeCourse.instructionIds.includes(s.id));
     }
     
     // Fallback: assume courseId is just a single section ID
-    return sections.filter(s => s.id === courseId);
+    return activeSections.filter(s => s.id === courseId);
   }, [sections, courseId, activeCourse]);
 
   // Set default active section when course changes
@@ -112,6 +120,22 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           </div>
 
           <div className="flex flex-wrap md:flex-col gap-2 shrink-0">
+            {activeCourse && activeCourse.caseIds && cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false).length > 0 && onStartCases && (
+              <button
+                onClick={() => {
+                  const courseCases = cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false);
+                  if (courseCases.length > 0) {
+                    onStartCases(courseCases);
+                  } else {
+                    alert('Немає активних кейсів для цього курсу.');
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold shadow-xs transition"
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>Практичні кейси ({cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false).length})</span>
+              </button>
+            )}
             {activeCourse ? (
               <button
                 onClick={() => onStartQuiz('course', activeCourse.id)}

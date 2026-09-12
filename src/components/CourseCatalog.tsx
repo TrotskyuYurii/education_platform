@@ -30,6 +30,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
   const filteredItems = useMemo(() => {
     // 1. Process Courses
     const cItems = courses.filter(c => {
+      if (c.isActive === false) return false;
       const matchesDept = selectedDepartment === 'all' || c.department === selectedDepartment;
       const searchLower = searchQuery.toLowerCase().trim();
       const matchesSearch = searchLower === '' || 
@@ -37,7 +38,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
         (c.department || '').toLowerCase().includes(searchLower);
       return matchesDept && matchesSearch;
     }).map(c => {
-      const cSections = sections.filter(s => c.instructionIds?.includes(s.id));
+      const cSections = sections.filter(s => c.instructionIds?.includes(s.id) && s.isActive !== false);
       return {
         id: c.id,
         isCourse: true,
@@ -56,6 +57,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
 
     // 2. Process Standalone Sections
     const sItems = sections.filter(sec => {
+      if (sec.isActive === false) return false;
       if (sectionsInCourses.has(sec.id)) return false; // hide if in a course
 
       const matchesDept = selectedDepartment === 'all' || sec.department === selectedDepartment;

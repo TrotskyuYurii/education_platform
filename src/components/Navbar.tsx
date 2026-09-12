@@ -92,19 +92,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              id="tab-btn-cases"
-              onClick={() => onSelectTab('cases')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'cases'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              <span>Симулятор кейсів</span>
-            </button>
-
-            <button
               id="tab-btn-signoff"
               onClick={() => onSelectTab('signoff')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${

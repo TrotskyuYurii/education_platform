@@ -10,7 +10,6 @@ import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress } from './types';
-import { CASE_SIMULATIONS } from './data/quizData';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -33,6 +32,7 @@ function MainApp() {
   const [sections, setSections] = useState<InstructionSection[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
   const [progress, setProgress] = useState<UserProgress>({
     readSectionIds: [],
     quizCompleted: false,
@@ -52,6 +52,7 @@ function MainApp() {
   const [activeQuizSectionId, setActiveQuizSectionId] = useState<string | undefined>(undefined);
   const [activeQuizCourseId, setActiveQuizCourseId] = useState<string | undefined>(undefined);
   const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
+  const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
 
   const fetchContent = async () => {
     try {
@@ -61,6 +62,7 @@ function MainApp() {
         setSections(data.sections || []);
         setQuestions(data.questions || []);
         setCourses(data.courses || []);
+        setCases(data.cases || []);
       }
     } catch (err) {
       console.error('Failed to fetch content', err);
@@ -229,11 +231,23 @@ function MainApp() {
           <InstructionViewer
             sections={sections}
             courses={courses}
+            cases={cases}
             courseId={activeCourseId}
             readSectionIds={progress.readSectionIds}
             onToggleReadSection={handleToggleReadSection}
             onStartQuiz={handleStartQuiz}
+            onStartCases={(courseCases) => {
+              setActiveCasesToRun(courseCases);
+              setCurrentTab('cases');
+            }}
             onBackToCatalog={() => setCurrentTab('catalog')}
+          />
+        )}
+
+        {currentTab === 'cases' && (
+          <CaseSimulator
+            cases={activeCasesToRun}
+            onFinishCases={() => setCurrentTab('manual')}
           />
         )}
 
@@ -247,13 +261,6 @@ function MainApp() {
             onRecordScore={handleRecordScore}
             onNavigateToSignoff={() => setCurrentTab('signoff')}
             onBackToManual={() => setCurrentTab('manual')}
-          />
-        )}
-
-        {currentTab === 'cases' && (
-          <CaseSimulator
-            cases={CASE_SIMULATIONS}
-            onFinishCases={() => setCurrentTab('quiz')}
           />
         )}
 
@@ -277,6 +284,7 @@ function MainApp() {
             sections={sections}
             questions={questions}
             courses={courses}
+            cases={cases}
             onImport={async (newSections, newQuestions, replace) => {
               try {
                 await fetch('/api/admin/import', {

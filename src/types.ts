@@ -5,6 +5,7 @@ export interface Course {
   title: string;
   department: string;
   instructionIds: string[];
+  caseIds?: string[];
   hasCertificate?: boolean;
   certificateValidityYears?: number;
   isActive?: boolean;
@@ -56,16 +57,14 @@ export interface QuizQuestion {
 export interface CaseSimulation {
   id: string;
   title: string;
-  role: 'cashier' | 'manager' | 'accountant';
   scenario: string;
-  clientDialogue: string;
   options: {
     id: string;
     text: string;
     isCorrect: boolean;
     feedback: string;
-    legalOrSystemBasis: string;
   }[];
+  isActive?: boolean;
 }
 
 export interface UserProgress {

@@ -19,8 +19,24 @@ const courseSchema = new mongoose.Schema({
   title: { type: String, required: true },
   department: { type: String, required: true },
   instructionIds: { type: [String], default: [] },
+  caseIds: { type: [String], default: [] },
   hasCertificate: { type: Boolean, default: false },
   certificateValidityYears: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const caseSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  title: { type: String, required: true },
+  scenario: { type: String, required: true },
+  options: [{
+    id: String,
+    text: String,
+    isCorrect: Boolean,
+    feedback: String
+  }],
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -81,3 +97,4 @@ export const Question = mongoose.models.Question || mongoose.model('Question', q
 export const Progress = mongoose.models.Progress || mongoose.model('Progress', progressSchema);
 export const Department = mongoose.models.Department || mongoose.model('Department', departmentSchema);
 export const Course = mongoose.models.Course || mongoose.model('Course', courseSchema);
+export const Case = mongoose.models.Case || mongoose.model('Case', caseSchema);

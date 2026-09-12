@@ -25,17 +25,19 @@ interface TestManagementProps {
   sections: InstructionSection[];
   questions: QuizQuestion[];
   courses: any[];
+  cases: any[];
   onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
   onReset: () => void;
   isSetupMode?: boolean;
 }
 
-type MgmtTab = 'list' | 'courses' | 'import' | 'export' | 'help' | 'users' | 'departments';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'departments';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
   questions,
   courses,
+  cases,
   onImport,
   onReset,
   isSetupMode
@@ -58,8 +60,11 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editingCourseDep, setEditingCourseDep] = useState<string>('');
   const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
-  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], hasCertificate: false, certificateValidityYears: 1 });
-  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], hasCertificate: boolean, certificateValidityYears: number } | null>(null);
+  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], hasCertificate: false, certificateValidityYears: 1 });
+  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds: string[], hasCertificate: boolean, certificateValidityYears: number, isActive: boolean } | null>(null);
+
+  const [newCase, setNewCase] = useState({ title: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+  const [editingCase, setEditingCase] = useState<any | null>(null);
 
   React.useEffect(() => {
     if (activeTab === 'users') fetchUsers();
@@ -321,6 +326,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
               <span>Курси</span>
             </button>
             <button
+              onClick={() => setActiveTab('cases')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
+                activeTab === 'cases' 
+                  ? 'bg-orange-100 text-orange-800' 
+                  : 'text-slate-600 hover:bg-slate-200/50'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span>Кейси</span>
+            </button>
+            <button
               onClick={() => setActiveTab('import')}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                 activeTab === 'import' 
@@ -580,6 +596,24 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     ))}
                   </div>
 
+                  <div className="text-sm font-medium text-slate-700 mt-2">Оберіть практичні кейси для курсу:</div>
+                  <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
+                    {cases.map(c => (
+                      <label key={c.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={newCourse.caseIds.includes(c.id)}
+                          onChange={e => {
+                            const ids = newCourse.caseIds;
+                            if (e.target.checked) setNewCourse({ ...newCourse, caseIds: [...ids, c.id] });
+                            else setNewCourse({ ...newCourse, caseIds: ids.filter(i => i !== c.id) });
+                          }}
+                        />
+                        <span className="text-sm">{c.title}</span>
+                      </label>
+                    ))}
+                    {cases.length === 0 && <span className="text-xs text-slate-500">Немає доступних кейсів</span>}
+                  </div>
                   <button
                     onClick={async () => {
                       if (!newCourse.title || !newCourse.department) return alert('Заповніть назву та підрозділ');
@@ -685,6 +719,24 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               </label>
                             ))}
                           </div>
+                          <div className="text-sm font-medium text-slate-700 mt-2">Оберіть практичні кейси для курсу:</div>
+                          <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md mb-4">
+                            {cases.map(c => (
+                              <label key={c.id} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={editingCourse.caseIds?.includes(c.id) || false}
+                                  onChange={e => {
+                                    const ids = editingCourse.caseIds || [];
+                                    if (e.target.checked) setEditingCourse({ ...editingCourse, caseIds: [...ids, c.id] });
+                                    else setEditingCourse({ ...editingCourse, caseIds: ids.filter(i => i !== c.id) });
+                                  }}
+                                />
+                                <span className="text-sm">{c.title}</span>
+                              </label>
+                            ))}
+                            {cases.length === 0 && <span className="text-xs text-slate-500">Немає доступних кейсів</span>}
+                          </div>
                           <div className="flex gap-2">
                             <button
                               onClick={async () => {
@@ -771,6 +823,197 @@ export const TestManagement: React.FC<TestManagementProps> = ({
             </div>
           )}
 
+          {/* TAB: CASES */}
+          {activeTab === 'cases' && (
+            <div className="space-y-6">
+              <div className="border-b border-slate-100 pb-4">
+                <h3 className="text-lg font-bold text-slate-900">Управління практичними кейсами</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Створюйте сценарії для практичного тренування. Ви зможете прив'язати їх до конкретних курсів на вкладці "Курси".
+                </p>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-slate-200">
+                <h4 className="text-md font-bold text-slate-900 mb-4">{editingCase ? 'Редагувати кейс' : 'Створити новий кейс'}</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Назва кейсу</label>
+                    <input
+                      type="text"
+                      value={editingCase ? editingCase.title : newCase.title}
+                      onChange={e => editingCase ? setEditingCase({ ...editingCase, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
+                      placeholder="Напр. Розгніваний клієнт на касі"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Сценарій (опис ситуації)</label>
+                    <textarea
+                      value={editingCase ? editingCase.scenario : newCase.scenario}
+                      onChange={e => editingCase ? setEditingCase({ ...editingCase, scenario: e.target.value }) : setNewCase({ ...newCase, scenario: e.target.value })}
+                      placeholder="Опишіть ситуацію детально..."
+                      rows={4}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg resize-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Варіанти відповідей (виберіть правильний)</label>
+                    {(editingCase ? editingCase.options : newCase.options).map((opt: any, idx: number) => (
+                      <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
+                        <div className="flex gap-2 items-center">
+                          <input 
+                            type="radio" 
+                            name={`correct-option-${editingCase ? 'edit' : 'new'}`}
+                            checked={opt.isCorrect}
+                            onChange={() => {
+                              const updatedOptions = (editingCase ? editingCase.options : newCase.options).map((o: any, i: number) => ({
+                                ...o,
+                                isCorrect: i === idx
+                              }));
+                              if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                              else setNewCase({ ...newCase, options: updatedOptions });
+                            }}
+                            className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                          />
+                          <input
+                            type="text"
+                            value={opt.text}
+                            onChange={e => {
+                              const updatedOptions = [...(editingCase ? editingCase.options : newCase.options)];
+                              updatedOptions[idx] = { ...updatedOptions[idx], text: e.target.value };
+                              if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                              else setNewCase({ ...newCase, options: updatedOptions });
+                            }}
+                            placeholder={`Варіант ${idx + 1}`}
+                            className="flex-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                          />
+                          {(editingCase ? editingCase.options : newCase.options).length > 1 && (
+                            <button
+                              onClick={() => {
+                                const updatedOptions = (editingCase ? editingCase.options : newCase.options).filter((_: any, i: number) => i !== idx);
+                                if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                                else setNewCase({ ...newCase, options: updatedOptions });
+                              }}
+                              className="p-1.5 text-rose-500 hover:bg-rose-100 rounded"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={opt.feedback || ''}
+                          onChange={e => {
+                            const updatedOptions = [...(editingCase ? editingCase.options : newCase.options)];
+                            updatedOptions[idx] = { ...updatedOptions[idx], feedback: e.target.value };
+                            if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                            else setNewCase({ ...newCase, options: updatedOptions });
+                          }}
+                          placeholder="Зворотній зв'язок для цього варіанту (напр. 'Неправильно, тому що...')"
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white ml-6"
+                          style={{ width: 'calc(100% - 1.5rem)' }}
+                        />
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => {
+                        const newOpt = { id: `opt-${Date.now()}`, text: '', isCorrect: false, feedback: '' };
+                        if (editingCase) setEditingCase({ ...editingCase, options: [...editingCase.options, newOpt] });
+                        else setNewCase({ ...newCase, options: [...newCase.options, newOpt] });
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      + Додати варіант
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="case-active"
+                      checked={editingCase ? editingCase.isActive !== false : newCase.isActive}
+                      onChange={e => editingCase ? setEditingCase({...editingCase, isActive: e.target.checked}) : setNewCase({...newCase, isActive: e.target.checked})}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <label htmlFor="case-active" className="text-sm font-medium text-slate-700">Активний кейс</label>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-100">
+                    <button
+                      onClick={async () => {
+                        const payload = editingCase || newCase;
+                        if (!payload.title.trim() || !payload.scenario.trim()) {
+                          alert('Заповніть назву та сценарій');
+                          return;
+                        }
+                        if (!payload.options.some((o: any) => o.text.trim())) {
+                          alert('Додайте хоча б один заповнений варіант');
+                          return;
+                        }
+                        try {
+                          const method = editingCase ? 'PUT' : 'POST';
+                          const url = editingCase ? `/api/admin/cases/${editingCase.id}` : '/api/admin/cases';
+                          await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                          });
+                          window.location.reload();
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
+                    >
+                      {editingCase ? 'Зберегти зміни' : 'Створити кейс'}
+                    </button>
+                    {editingCase && (
+                      <button
+                        onClick={() => setEditingCase(null)}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
+                      >
+                        Скасувати
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-md font-bold text-slate-900">Існуючі кейси ({cases.length})</h4>
+                {cases.map(c => (
+                  <div key={c.id} className="p-4 bg-white border border-slate-200 rounded-xl flex justify-between items-start gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className={`font-bold ${c.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{c.title}</h5>
+                        {c.isActive === false && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">Вимкнено</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-600 line-clamp-2">{c.scenario}</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setEditingCase(c)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm('Видалити цей кейс?')) {
+                            await fetch(`/api/admin/cases/${c.id}`, { method: 'DELETE' });
+                            window.location.reload();
+                          }
+                        }} 
+                        className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* TAB: IMPORT */}
           {activeTab === 'import' && (
             <div className="space-y-6">
