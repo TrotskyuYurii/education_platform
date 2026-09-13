@@ -185,7 +185,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Side: Table of Contents / Progress List */}
-        <div className="lg:col-span-4 space-y-3 sticky top-24">
+        <div className="lg:col-span-4 space-y-3 lg:sticky lg:top-24">
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
             <div className="flex items-center justify-between mb-3 px-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -253,7 +253,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           </div>
 
           {/* Quick Quiz Card on Sidebar */}
-          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-xs">
+          <div className="hidden lg:block bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-xs">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-5 h-5 text-amber-300" />
               <span className="text-xs font-bold uppercase tracking-wider text-blue-100">
@@ -375,6 +375,16 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                                 💡 {step.tip}
                               </p>
                             )}
+                            {step.imageUrl && (
+                              <div className="mt-4">
+                                <img 
+                                  src={step.imageUrl} 
+                                  alt={step.title} 
+                                  className="max-w-full h-auto rounded-lg border border-slate-200 shadow-sm"
+                                  loading="lazy"
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -452,6 +462,29 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                   </ul>
                 </div>
               )}
+
+              {/* Quick Quiz Card for Mobile (at the bottom of content) */}
+              <div className="block lg:hidden mb-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-xs mt-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-100">
+                    Закріплення матеріалу
+                  </span>
+                </div>
+                <h3 className="text-base font-bold leading-snug">
+                  Готові перевірити свої знання?
+                </h3>
+                <p className="text-xs text-blue-100 mt-1.5 leading-relaxed">
+                  Пройдіть тематичний тест за цією інструкцією і отримайте оцінку з розбором помилок.
+                </p>
+                <button
+                  onClick={() => onStartQuiz('section', activeSection?.id)}
+                  className="mt-4 w-full py-3 px-3 bg-white text-blue-600 hover:bg-blue-50 font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+                >
+                  <Award className="w-5 h-5" />
+                  <span>Тест за обраною інструкцією</span>
+                </button>
+              </div>
 
               {/* Bottom Action Footer */}
               <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">

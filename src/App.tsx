@@ -8,6 +8,7 @@ import { TestManagement } from './components/TestManagement';
 import { CourseCatalog } from './components/CourseCatalog';
 import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
+import { AboutApp } from './components/AboutApp';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress } from './types';
 
@@ -302,6 +303,10 @@ function MainApp() {
               // No-op for DB, use delete instead.
             }}
           />
+        )}
+        
+        {currentTab === 'about' && (
+          <AboutApp />
         )}
       </main>
 

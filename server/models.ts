@@ -55,8 +55,20 @@ const sectionSchema = new mongoose.Schema({
   summary: String,
   keyPoints: [String],
   readTimeMin: Number,
-  content: String,
+  contentHtml: String,
   pageReference: String,
+  steps: [{
+    number: Number,
+    title: String,
+    description: String,
+    tip: String,
+    warning: String,
+    imageUrl: String
+  }],
+  tableData: {
+    headers: [String],
+    rows: [[String]]
+  },
   stopRules: [String],
   systemAutomaticActions: [String],
   isActive: { type: Boolean, default: true },
@@ -66,12 +78,16 @@ const sectionSchema = new mongoose.Schema({
 const questionSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   sectionId: String,
+  courseId: String,
   department: String,
   role: String,
-  text: String,
+  difficulty: { type: String, default: 'medium' },
+  question: String,
+  contextScenario: String,
   options: [String],
   correctIndex: Number,
   explanation: String,
+  sourceDocPage: String,
   createdAt: { type: Date, default: Date.now }
 });
 

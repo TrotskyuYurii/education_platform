@@ -30,6 +30,7 @@ export interface InstructionSection {
     description: string;
     tip?: string;
     warning?: string;
+    imageUrl?: string;
   }[];
   tableData?: {
     headers: string[];

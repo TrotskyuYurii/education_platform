@@ -1,9 +1,9 @@
 import React from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2 } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
-export type AppTab = 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'management' | 'dashboard';
+export type AppTab = 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'management' | 'dashboard' | 'about';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -120,6 +120,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Аналітика</span>
             </button>
 
+            <button
+              id="tab-btn-about"
+              onClick={() => onSelectTab('about')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                currentTab === 'about'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Info className="w-4 h-4" />
+              <span>Про додаток</span>
+            </button>
+
             {user?.role === 'admin' && (
               <button
                 id="tab-btn-management"
@@ -214,6 +227,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Аналітика
+          </button>
+
+          <button
+            onClick={() => onSelectTab('about')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap ${
+              currentTab === 'about' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            Про додаток
           </button>
           
           {user?.role === 'admin' && (

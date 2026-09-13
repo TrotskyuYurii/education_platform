@@ -226,6 +226,32 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
   }
 });
 
+apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { section, questions } = req.body;
+    const instructionId = req.params.id;
+
+    // Update section fields fully
+    await Section.findOneAndUpdate(
+      { id: instructionId } as any,
+      section,
+      { new: true } as any
+    );
+
+    // Replace all questions for this section
+    await Question.deleteMany({ sectionId: instructionId } as any);
+    if (questions && questions.length > 0) {
+      // Ensure sectionId is set correctly on all questions
+      const qsToInsert = questions.map((q: any) => ({ ...q, sectionId: instructionId }));
+      await Question.insertMany(qsToInsert);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fully update instruction' });
+  }
+});
+
 apiRouter.put('/admin/instructions/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { department, title, isActive } = req.body;

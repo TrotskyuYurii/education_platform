@@ -220,7 +220,7 @@ function parseSingleInstructionBlock(
   }
 
   // Step-by-step Execution (ПОКРОКОВИЙ ПОРЯДОК ДІЙ / КРОКИ ДІЙ)
-  const steps: { number: number; title: string; description: string; tip?: string; warning?: string }[] = [];
+  const steps: { number: number; title: string; description: string; tip?: string; warning?: string; imageUrl?: string }[] = [];
   const stepsMatch = block.match(/### (?:ПОКРОКОВИЙ ПОРЯДОК ДІЙ|КРОКИ ДІЙ|ПОРЯДОК ДІЙ|ІНСТРУКЦІЯ ПО КРОКАХ)\n([\s\S]*?)(?=(?:###|$))/i);
   if (stepsMatch) {
     const stepsContent = stepsMatch[1];
@@ -237,6 +237,7 @@ function parseSingleInstructionBlock(
       const descLines: string[] = [];
       let tip: string | undefined;
       let warning: string | undefined;
+      let imageUrl: string | undefined;
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -246,6 +247,10 @@ function parseSingleInstructionBlock(
           tip = line.replace(/^💡\s*(?:Підказка:\s*)?/, '').replace(/^\*\*Підказка:\*\*\s*/i, '').trim();
         } else if (line.startsWith('⚠️') || /^\*\*Увага:\*\*/i.test(line)) {
           warning = line.replace(/^⚠️\s*(?:Увага:\s*)?/, '').replace(/^\*\*Увага:\*\*\s*/i, '').trim();
+        } else if (line.match(/^\*\*Зображення:\*\*\s*(.+)/i)) {
+          imageUrl = line.match(/^\*\*Зображення:\*\*\s*(.+)/i)![1].trim();
+        } else if (line.match(/^!\[.*?\]\((.*?)\)/)) {
+          imageUrl = line.match(/^!\[.*?\]\((.*?)\)/)![1].trim();
         } else {
           descLines.push(line);
         }
@@ -256,7 +261,8 @@ function parseSingleInstructionBlock(
         title: stepTitle,
         description: descLines.join(' '),
         tip,
-        warning
+        warning,
+        imageUrl
       });
     });
   }

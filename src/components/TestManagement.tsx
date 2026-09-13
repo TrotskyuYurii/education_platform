@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { InstructionSection, QuizQuestion } from '../types';
 import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+import { MarkdownEditor } from './MarkdownEditor';
 import { 
   Download, 
   Upload, 
@@ -47,6 +48,35 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
+
+  const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
+  const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
+
+  const handleSaveMarkdown = async (md: string) => {
+    try {
+      const { sections: newSections, questions: newQuestions } = parseMarkdown(md);
+      if (newSections.length === 0) {
+        alert('Помилка: не знайдено жодної інструкції в Markdown.');
+        return;
+      }
+      const newSection = newSections[0];
+      // Keep the original ID
+      newSection.id = editingMarkdownInstId!;
+      
+      await fetch(`/api/admin/instructions/${editingMarkdownInstId}/full`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: newSection, questions: newQuestions })
+      });
+      
+      setEditingMarkdownInstId(null);
+      setEditingMarkdownContent('');
+      window.location.reload();
+    } catch (err) {
+      alert('Помилка при збереженні Markdown. Перевірте синтаксис.');
+      console.error(err);
+    }
+  };
 
   const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: isSetupMode ? 'admin' : 'user' });
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
@@ -382,17 +412,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
               </h2>
             </div>
           </div>
-
-          <button
-            onClick={() => {
-                setImportStatus(null);
-                onReset();
-            }}
-            className="self-start sm:self-auto px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition flex items-center gap-1.5"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Скинути до базових (ВІАТЕК)</span>
-          </button>
         </div>
       </div>
 
@@ -609,6 +628,20 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 title="Редагувати підрозділ"
                               >
                                 <Settings2 className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const sec = sections.find(s => s.id === inst.id);
+                                  if (!sec) return;
+                                  const secQs = questions.filter(q => q.sectionId === inst.id);
+                                  const md = exportToMarkdown(inst.title, [sec], secQs);
+                                  setEditingMarkdownInstId(inst.id);
+                                  setEditingMarkdownContent(md);
+                                }}
+                                className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                                title="Редагувати вміст (Markdown)"
+                              >
+                                <Edit2 className="w-5 h-5" />
                               </button>
                               <button
                                 onClick={async () => {
@@ -1394,7 +1427,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         <li><code>**Час читання:** [хв, наприклад: 4 хв]</code></li>
                       </ul>
                     </div>
-
+                    
                     <div className="p-4 rounded-xl border border-slate-200 bg-white">
                       <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
@@ -1408,8 +1441,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
                     <div className="p-4 rounded-xl border border-slate-200 bg-white">
                       <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-pink-600"></span>
+                        3. Додавання зображень
+                      </h4>
+                      <ul className="text-xs space-y-1.5 text-slate-600">
+                        <li>Зображення можна вставляти у тіло кроку (під <code>#### Крок X</code>) двома способами:</li>
+                        <li>1. Стандартний Markdown-синтаксис:<br/> <code>![Опис](https://посилання-на-скріншот.jpg)</code></li>
+                        <li>2. Або за допомогою спеціального тегу:<br/> <code>**Зображення:** https://посилання-на-скріншот.jpg</code></li>
+                        <li>Підтримуються прямі посилання на зображення або <code>Base64</code> рядки.</li>
+                      </ul>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                        3. Таблиці та автоматичні дії
+                        4. Таблиці та автоматичні дії
                       </h4>
                       <ul className="text-xs space-y-1.5 text-slate-600">
                         <li><code>### ТАБЛИЦЯ ВІДПОВІДНОСТЕЙ ТА ВІДПОВІДАЛЬНОСТІ</code> — звичайна Markdown таблиця (<code>| Колонка 1 | Колонка 2 |</code>).</li>
@@ -1418,20 +1464,24 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       </ul>
                     </div>
 
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                    <div className="p-4 rounded-xl border border-slate-200 bg-white md:col-span-2">
                       <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-                        4. Тестові питання
+                        5. Тестові питання
                       </h4>
-                      <ul className="text-xs space-y-1.5 text-slate-600">
-                        <li><code>### ПИТАННЯ: [Текст питання?]</code></li>
-                        <li><code>**Складність:** easy | medium | hard</code></li>
-                        <li><code>**Контекст:** [Робоча ситуація/кейс]</code></li>
-                        <li><code>**Першоджерело:** [Посилання на регламент]</code></li>
-                        <li><code>- [x] Правильна відповідь</code> (рівно одна позначка <code>[x]</code>)</li>
-                        <li><code>- [ ] Неправильна відповідь</code></li>
-                        <li><code>**Пояснення:** [Чому саме так]</code></li>
-                      </ul>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <ul className="text-xs space-y-1.5 text-slate-600">
+                          <li><code>### ПИТАННЯ: [Текст питання?]</code></li>
+                          <li><code>**Складність:** easy | medium | hard</code></li>
+                          <li><code>**Контекст:** [Робоча ситуація/кейс]</code></li>
+                          <li><code>**Першоджерело:** [Посилання на регламент]</code></li>
+                        </ul>
+                        <ul className="text-xs space-y-1.5 text-slate-600">
+                          <li><code>- [x] Правильна відповідь</code> (рівно одна позначка <code>[x]</code>)</li>
+                          <li><code>- [ ] Неправильна відповідь</code></li>
+                          <li><code>**Пояснення:** [Чому саме так]</code></li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1674,6 +1724,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
         </div>
       </div>
+      
+      {editingMarkdownInstId && (
+        <MarkdownEditor 
+          initialValue={editingMarkdownContent}
+          onSave={handleSaveMarkdown}
+          onCancel={() => {
+            setEditingMarkdownInstId(null);
+            setEditingMarkdownContent('');
+          }}
+        />
+      )}
     </div>
   );
 };
