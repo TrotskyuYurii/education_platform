@@ -20,7 +20,8 @@ import {
   Sparkles,
   BookOpen,
   Edit2,
-  Briefcase
+  Briefcase,
+  ChevronDown
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -51,6 +52,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
+  const [exportMenuInstId, setExportMenuInstId] = useState<string | null>(null);
 
   const handleSaveMarkdown = async (md: string) => {
     try {
@@ -603,21 +605,70 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 ID: {inst.id} · Питань: {inst.questionCount}
                               </p>
                             </div>
-                            <div className="flex gap-2 shrink-0 self-start sm:self-center">
-                              <button
-                                onClick={() => handleExportInstMD(inst.id, inst.title)}
-                                className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition text-xs font-bold"
-                                title="Експортувати у Markdown (.md)"
-                              >
-                                MD
-                              </button>
-                              <button
-                                onClick={() => handleExportInstPDF(inst.id)}
-                                className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition text-xs font-bold"
-                                title="Експортувати у PDF"
-                              >
-                                PDF
-                              </button>
+                            <div className="flex gap-2 shrink-0 self-start sm:self-center items-center">
+                              {/* Unified Export Submenu */}
+                              <div className="relative">
+                                <button
+                                  id={`btn-export-dropdown-${inst.id}`}
+                                  onClick={() => setExportMenuInstId(exportMenuInstId === inst.id ? null : inst.id)}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border ${
+                                    exportMenuInstId === inst.id
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
+                                      : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
+                                  }`}
+                                  title="Підменю експорту"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                                  <span>Експорт</span>
+                                  <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${exportMenuInstId === inst.id ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {exportMenuInstId === inst.id && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-20" 
+                                      onClick={() => setExportMenuInstId(null)} 
+                                    />
+                                    <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
+                                      <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        Формат експорту
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          handleExportInstMD(inst.id, inst.title);
+                                          setExportMenuInstId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
+                                        title="Експортувати у Markdown (.md)"
+                                      >
+                                        <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                          MD
+                                        </div>
+                                        <div>
+                                          <div className="font-semibold text-slate-800 leading-tight">Markdown (.md)</div>
+                                          <div className="text-[10px] text-slate-400">Текст інструкції з тестами</div>
+                                        </div>
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleExportInstPDF(inst.id);
+                                          setExportMenuInstId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
+                                        title="Експортувати у PDF"
+                                      >
+                                        <div className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                          PDF
+                                        </div>
+                                        <div>
+                                          <div className="font-semibold text-slate-800 leading-tight">PDF (.pdf)</div>
+                                          <div className="text-[10px] text-slate-400">Формат для друку</div>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
                               <button
                                 onClick={() => {
                                   setEditingCourseId(inst.id);

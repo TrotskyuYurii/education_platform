@@ -204,11 +204,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             <Award className="w-8 h-8" />
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
-            Перевірка знань: Повернення товару
+          <h2 id="quiz-main-title" className="text-2xl sm:text-3xl font-bold text-slate-900">
+            Перевірка знань
           </h2>
-          <p className="text-slate-600 mt-2 max-w-xl mx-auto text-sm sm:text-base">
-            Тест складений суворо на основі регламенту BAS УТ 3.2 компанії ТОВ ВІАТЕК. Закріпіть навички дій при відкритій та закритій зміні.
+          <p id="quiz-main-description" className="text-slate-600 mt-2 max-w-xl mx-auto text-sm sm:text-base">
+            Тести складені на основі внутрішніх реагламентів і інструкцій компанії ТОВ Віатек. Закріпіть навички і порядки дій.
           </p>
 
           {/* Mode & Filter Selection */}
