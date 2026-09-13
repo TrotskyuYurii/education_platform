@@ -781,7 +781,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       }`}
                       title="Імпортувати інструкції з Markdown файлу"
                     >
-                      <Upload className="w-4 h-4" />
+                      <Download className="w-4 h-4" />
                       <span>{showImportPanel ? 'Приховати імпорт' : 'Імпорт (.md)'}</span>
                     </button>
 
@@ -798,7 +798,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       }`}
                       title="Експортувати базу знань у файл Markdown"
                     >
-                      <Download className="w-4 h-4" />
+                      <Upload className="w-4 h-4" />
                       <span>{showExportPanel ? 'Приховати експорт' : 'Експорт (.md)'}</span>
                     </button>
 
@@ -819,7 +819,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
-                        <Upload className="w-4 h-4" />
+                        <Download className="w-4 h-4" />
                       </div>
                       <div>
                         <h4 className="text-base font-bold text-slate-900">Імпорт інструкцій та тестів (.md)</h4>
@@ -959,7 +959,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-xs">
-                        <Download className="w-4 h-4" />
+                        <Upload className="w-4 h-4" />
                       </div>
                       <div>
                         <h4 className="text-base font-bold text-slate-900">Експорт повної бази інструкцій</h4>
@@ -1000,7 +1000,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           : 'bg-purple-600 hover:bg-purple-700 text-white'
                       }`}
                     >
-                      {exportSuccess ? <Check className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                      {exportSuccess ? <Check className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
                       <span>{exportSuccess ? 'Файл завантажено!' : 'Завантажити всю базу (.md)'}</span>
                     </button>
                   </div>
@@ -1100,7 +1100,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                   }`}
                                   title="Підменю експорту"
                                 >
-                                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                                  <Upload className="w-3.5 h-3.5 text-slate-600" />
                                   <span>Експорт</span>
                                   <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${exportMenuInstId === inst.id ? 'rotate-180' : ''}`} />
                                 </button>
