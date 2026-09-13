@@ -94,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <BookOpen className="w-4 h-4" />
-              <span>Навчальні курси</span>
+              <span>Навчальні матеріали</span>
               <span className={`text-xs px-1.5 py-0.2 rounded-full ${
                 currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-700'
               }`}>
@@ -121,7 +121,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               )}
             </button>
-
+            
+            <button
+              id="tab-btn-cases"
+              onClick={() => onSelectTab('cases')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                currentTab === 'cases'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span>Кейси</span>
+            </button>
 
             <button
               id="tab-btn-about"
@@ -145,10 +157,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                     : 'text-purple-700 bg-purple-50/70 border-purple-200 hover:bg-purple-100'
                 }`}
-                title="Налаштування: імпорт та керування навчальними матеріалами"
+                title="Адміністрування: імпорт та керування навчальними матеріалами"
               >
                 <Settings2 className="w-4 h-4" />
-                <span>Налаштування</span>
+                <span>Адміністрування</span>
               </button>
             )}
           </nav>
@@ -320,7 +332,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            Навчальні курси ({readCount}/{totalSections})
+            Навчальні матеріали ({readCount}/{totalSections})
           </button>
           <button
             onClick={() => onSelectTab('quiz')}
@@ -354,7 +366,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Settings2 className="w-3.5 h-3.5 mr-1" />
-              Налаштування
+              Адміністрування
             </button>
           )}
         </div>

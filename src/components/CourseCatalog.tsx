@@ -7,7 +7,7 @@ interface CourseCatalogProps {
   courses: any[];
   readSectionIds: string[];
   onOpenCourse: (courseId: string) => void;
-  onStartCourseQuiz: (courseId: string) => void;
+  onStartCourseQuiz: (courseId: string, isCourse: boolean) => void;
 }
 
 export const CourseCatalog: React.FC<CourseCatalogProps> = ({
@@ -78,6 +78,69 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
     return [...cItems, ...sItems];
   }, [sections, courses, selectedDepartment, searchQuery]);
 
+  const coursesItems = useMemo(() => filteredItems.filter(item => item.isCourse), [filteredItems]);
+  const standaloneItems = useMemo(() => filteredItems.filter(item => !item.isCourse), [filteredItems]);
+
+  const renderItemCard = (item: any) => {
+    // calculate progress
+    const courseReadSections = item.sections.filter((s: any) => readSectionIds.includes(s.id));
+    const progressPercent = item.sections.length > 0 
+      ? Math.round((courseReadSections.length / item.sections.length) * 100) 
+      : 0;
+
+    return (
+      <div key={`item-${item.id}`} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <span className="inline-flex px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+            {item.department}
+          </span>
+          <span className="text-xs text-slate-500 font-medium">
+            {item.totalReadTime} хв
+          </span>
+        </div>
+        
+        <div className="mb-2 h-6">
+          {item.isCourse && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md inline-block">
+              Курс ({item.sections.length} інструкцій)
+            </span>
+          )}
+        </div>
+        
+        <h3 className="text-xl font-bold text-slate-900 leading-tight mb-6 flex-1">
+          {item.title}
+        </h3>
+
+        <div className="mb-6">
+          <div className="flex justify-between text-xs font-semibold mb-2">
+            <span className="text-slate-600">Статус</span>
+            <span className={progressPercent === 100 ? 'text-emerald-600' : 'text-blue-600'}>
+              {progressPercent === 100 ? 'Вивчено' : 'Не вивчено'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-auto pt-4 border-t border-slate-100">
+          <button
+            onClick={() => onOpenCourse(item.id)}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-sm font-bold transition"
+          >
+            <BookText className="w-4 h-4" />
+            <span>Читати</span>
+          </button>
+          <button
+            onClick={() => onStartCourseQuiz(item.id, item.isCourse)}
+            className="inline-flex items-center justify-center py-2.5 px-4 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-sm font-bold transition"
+            title="Пройти тест"
+          >
+            <Play className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -121,66 +184,35 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
         )}
       </div>
 
-      {/* Course Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredItems.map(item => {
-          // calculate progress
-          const courseReadSections = item.sections.filter(s => readSectionIds.includes(s.id));
-          const progressPercent = item.sections.length > 0 
-            ? Math.round((courseReadSections.length / item.sections.length) * 100) 
-            : 0;
-
-          return (
-            <div key={`item-${item.id}`} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <span className="inline-flex px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
-                  {item.department}
-                </span>
-                <span className="text-xs text-slate-500 font-medium">
-                  {item.totalReadTime} хв
-                </span>
-              </div>
-              
-              <div className="mb-2">
-                {item.isCourse && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md inline-block">
-                    Курс ({item.sections.length} інструкцій)
-                  </span>
-                )}
-              </div>
-              
-              <h3 className="text-xl font-bold text-slate-900 leading-tight mb-6 flex-1">
-                {item.title}
-              </h3>
-
-              <div className="mb-6">
-                <div className="flex justify-between text-xs font-semibold mb-2">
-                  <span className="text-slate-600">Статус</span>
-                  <span className={progressPercent === 100 ? 'text-emerald-600' : 'text-blue-600'}>
-                    {progressPercent === 100 ? 'Вивчено' : 'Не вивчено'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 mt-auto pt-4 border-t border-slate-100">
-                <button
-                  onClick={() => onOpenCourse(item.id)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-sm font-bold transition"
-                >
-                  <BookText className="w-4 h-4" />
-                  <span>Читати</span>
-                </button>
-                <button
-                  onClick={() => onStartCourseQuiz(item.id)}
-                  className="inline-flex items-center justify-center py-2.5 px-4 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-sm font-bold transition"
-                  title="Пройти тест"
-                >
-                  <Play className="w-4 h-4" />
-                </button>
-              </div>
+      {/* Content Sections */}
+      <div className="space-y-12">
+        {coursesItems.length > 0 && (
+          <section>
+            <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                <BookOpen className="w-5 h-5" />
+              </span>
+              Навчальні курси
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {coursesItems.map(renderItemCard)}
             </div>
-          );
-        })}
+          </section>
+        )}
+
+        {standaloneItems.length > 0 && (
+          <section>
+            <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                <BookText className="w-5 h-5" />
+              </span>
+              Окремі інструкції
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {standaloneItems.map(renderItemCard)}
+            </div>
+          </section>
+        )}
 
         {filteredItems.length === 0 && (
           <div className="col-span-full py-16 text-center bg-white border border-slate-200 rounded-2xl border-dashed">

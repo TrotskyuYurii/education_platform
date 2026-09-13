@@ -120,10 +120,11 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           </div>
 
           <div className="flex flex-wrap md:flex-col gap-2 shrink-0">
-            {activeCourse && activeCourse.caseIds && cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false).length > 0 && onStartCases && (
+            {activeCourse && activeCourse.useCases && onStartCases && (
               <button
                 onClick={() => {
-                  const courseCases = cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false);
+                  const instructionIds = activeCourse.instructionIds || [];
+                  const courseCases = cases.filter(c => c.isActive !== false && c.sectionId && instructionIds.includes(c.sectionId));
                   if (courseCases.length > 0) {
                     onStartCases(courseCases);
                   } else {
@@ -133,7 +134,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                 className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold shadow-xs transition"
               >
                 <Briefcase className="w-4 h-4" />
-                <span>Практичні кейси ({cases.filter(c => activeCourse.caseIds.includes(c.id) && c.isActive !== false).length})</span>
+                <span>Практичні кейси ({cases.filter(c => c.isActive !== false && c.sectionId && (activeCourse.instructionIds || []).includes(c.sectionId)).length})</span>
               </button>
             )}
             {activeCourse ? (

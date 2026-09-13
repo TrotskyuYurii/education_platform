@@ -12,7 +12,8 @@ import {
   BookOpen, 
   Check, 
   FileText, 
-  Sparkles 
+  Sparkles,
+  Briefcase
 } from 'lucide-react';
 import { SUCCESS_QUOTES, RESILIENCE_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
 
@@ -25,6 +26,7 @@ interface QuizRunnerProps {
   onRecordScore: (score: number, total: number, modeName: string, department?: string, courseId?: string, sectionId?: string) => void;
   onNavigateToSignoff: () => void;
   onBackToManual: () => void;
+  onStartCases?: (courseId: string) => void;
 }
 
 export const QuizRunner: React.FC<QuizRunnerProps> = ({
@@ -36,6 +38,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   onRecordScore,
   onNavigateToSignoff,
   onBackToManual,
+  onStartCases,
 }) => {
   const [selectedRole, setSelectedRole] = useState<RoleFilter>('all');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
@@ -292,8 +295,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               onClick={handleStartQuiz}
+              disabled={questionsToRun.length === 0}
               id="btn-start-quiz-now"
-              className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>Розпочати тестування ({questionsToRun.length} питань)</span>
               <ArrowRight className="w-4 h-4" />
@@ -305,6 +309,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               Повернутися до читання інструкції
             </button>
           </div>
+          {questionsToRun.length === 0 && (
+            <p className="mt-4 text-sm text-rose-500 font-medium">Для даного розділу або курсу поки що не створено жодного питання.</p>
+          )}
         </div>
       )}
 
@@ -555,13 +562,24 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 <span>Спробувати ще раз</span>
               </button>
 
-              <button
-                onClick={onBackToManual}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Повернутися до порталу</span>
-              </button>
+              {targetCourseId && courses.find(c => c.id === targetCourseId)?.useCases && onStartCases ? (
+                <button
+                  onClick={() => onStartCases(targetCourseId)}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
+                >
+                  <Briefcase className="w-4 h-4" />
+                  <span>Перейти до розбору кейсів</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={onBackToManual}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Повернутися до порталу</span>
+                </button>
+              )}
             </div>
           </div>
 

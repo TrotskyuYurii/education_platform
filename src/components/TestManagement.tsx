@@ -98,10 +98,10 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editingCourseDep, setEditingCourseDep] = useState<string>('');
   const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
-  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], hasCertificate: false, certificateValidityYears: 1 });
-  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds: string[], hasCertificate: boolean, certificateValidityYears: number, isActive: boolean } | null>(null);
+  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
+  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds: string[], useCases?: boolean, hasCertificate: boolean, certificateValidityYears: number, isActive: boolean } | null>(null);
 
-  const [newCase, setNewCase] = useState({ title: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+  const [newCase, setNewCase] = useState({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
   const [editingCase, setEditingCase] = useState<any | null>(null);
 
   React.useEffect(() => {
@@ -822,23 +822,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     ))}
                   </div>
 
-                  <div className="text-sm font-medium text-slate-700 mt-2">Оберіть практичні кейси для курсу:</div>
-                  <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
-                    {cases.map(c => (
-                      <label key={c.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={newCourse.caseIds.includes(c.id)}
-                          onChange={e => {
-                            const ids = newCourse.caseIds;
-                            if (e.target.checked) setNewCourse({ ...newCourse, caseIds: [...ids, c.id] });
-                            else setNewCourse({ ...newCourse, caseIds: ids.filter(i => i !== c.id) });
-                          }}
-                        />
-                        <span className="text-sm">{c.title}</span>
-                      </label>
-                    ))}
-                    {cases.length === 0 && <span className="text-xs text-slate-500">Немає доступних кейсів</span>}
+                  <div className="flex items-center gap-2 mt-4">
+                    <input
+                      type="checkbox"
+                      id="new-course-use-cases"
+                      checked={newCourse.useCases}
+                      onChange={e => setNewCourse({ ...newCourse, useCases: e.target.checked })}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <label htmlFor="new-course-use-cases" className="text-sm text-slate-700">
+                      Використовувати практичні кейси
+                    </label>
                   </div>
                   <button
                     onClick={async () => {
@@ -945,23 +939,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               </label>
                             ))}
                           </div>
-                          <div className="text-sm font-medium text-slate-700 mt-2">Оберіть практичні кейси для курсу:</div>
-                          <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md mb-4">
-                            {cases.map(c => (
-                              <label key={c.id} className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={editingCourse.caseIds?.includes(c.id) || false}
-                                  onChange={e => {
-                                    const ids = editingCourse.caseIds || [];
-                                    if (e.target.checked) setEditingCourse({ ...editingCourse, caseIds: [...ids, c.id] });
-                                    else setEditingCourse({ ...editingCourse, caseIds: ids.filter(i => i !== c.id) });
-                                  }}
-                                />
-                                <span className="text-sm">{c.title}</span>
-                              </label>
-                            ))}
-                            {cases.length === 0 && <span className="text-xs text-slate-500">Немає доступних кейсів</span>}
+                          <div className="flex items-center gap-2 mt-4 mb-4">
+                            <input
+                              type="checkbox"
+                              id={`edit-course-use-cases-${course.id}`}
+                              checked={editingCourse.useCases || false}
+                              onChange={e => setEditingCourse({ ...editingCourse, useCases: e.target.checked })}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor={`edit-course-use-cases-${course.id}`} className="text-sm text-slate-700">
+                              Використовувати практичні кейси
+                            </label>
                           </div>
                           <div className="flex gap-2">
                             <button
@@ -1019,6 +1007,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 title: course.title,
                                 department: course.department,
                                 instructionIds: course.instructionIds || [],
+                                useCases: course.useCases || false,
                                 hasCertificate: course.hasCertificate || false,
                                 certificateValidityYears: course.certificateValidityYears || 1
                               })}
@@ -1071,6 +1060,19 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       placeholder="Напр. Розгніваний клієнт на касі"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Прив'язка до інструкції</label>
+                    <select
+                      value={editingCase ? editingCase.sectionId || '' : newCase.sectionId || ''}
+                      onChange={e => editingCase ? setEditingCase({ ...editingCase, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">-- Оберіть інструкцію --</option>
+                      {sections.map(sec => (
+                        <option key={sec.id} value={sec.id}>{sec.title}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Сценарій (опис ситуації)</label>
@@ -1169,6 +1171,10 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     <button
                       onClick={async () => {
                         const payload = editingCase || newCase;
+                        if (!payload.sectionId) {
+                          alert('Обов\'язково оберіть інструкцію, до якої прив\'язаний цей кейс');
+                          return;
+                        }
                         if (!payload.title.trim() || !payload.scenario.trim()) {
                           alert('Заповніть назву та сценарій');
                           return;

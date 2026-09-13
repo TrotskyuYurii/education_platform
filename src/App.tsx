@@ -54,6 +54,7 @@ function MainApp() {
   const [activeQuizCourseId, setActiveQuizCourseId] = useState<string | undefined>(undefined);
   const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
   const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
+  const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
 
   const fetchContent = async () => {
     try {
@@ -208,7 +209,14 @@ function MainApp() {
       <Navbar
         currentTab={currentTab}
         onSelectTab={(tab) => {
-          if (tab === 'quiz') setActiveQuizSectionId(undefined);
+          if (tab === 'quiz') {
+            setActiveQuizSectionId(undefined);
+            setActiveQuizCourseId(undefined);
+          }
+          if (tab === 'cases') {
+            setActiveCasesToRun(cases.filter(c => c.isActive !== false));
+            setCaseSimulatorMode('list');
+          }
           setCurrentTab(tab);
         }}
         readCount={progress.readSectionIds.length}
@@ -224,7 +232,7 @@ function MainApp() {
             courses={courses}
             readSectionIds={progress.readSectionIds}
             onOpenCourse={handleOpenCourse}
-            onStartCourseQuiz={(courseId) => handleStartQuiz('section', courseId)}
+            onStartCourseQuiz={(courseId, isCourse) => handleStartQuiz(isCourse ? 'course' : 'section', courseId)}
           />
         )}
 
@@ -248,6 +256,7 @@ function MainApp() {
         {currentTab === 'cases' && (
           <CaseSimulator
             cases={activeCasesToRun}
+            startAsList={caseSimulatorMode === 'list'}
             onFinishCases={() => setCurrentTab('manual')}
           />
         )}
@@ -262,6 +271,22 @@ function MainApp() {
             onRecordScore={handleRecordScore}
             onNavigateToSignoff={() => setCurrentTab('signoff')}
             onBackToManual={() => setCurrentTab('manual')}
+            onStartCases={(courseId) => {
+              const activeCourse = courses.find(c => c.id === courseId);
+              if (activeCourse) {
+                // Get cases linked to the instructions of this course
+                const instructionIds = activeCourse.instructionIds || [];
+                const courseCases = cases.filter(c => c.isActive !== false && c.sectionId && instructionIds.includes(c.sectionId));
+                if (courseCases.length > 0) {
+                  setActiveCasesToRun(courseCases);
+                  setCaseSimulatorMode('run');
+                  setCurrentTab('cases');
+                } else {
+                  alert('Немає активних кейсів для цього курсу.');
+                  setCurrentTab('manual');
+                }
+              }
+            }}
           />
         )}
 

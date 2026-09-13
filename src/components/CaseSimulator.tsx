@@ -15,13 +15,14 @@ import {
 interface CaseSimulatorProps {
   cases: CaseSimulation[];
   onFinishCases?: () => void;
+  startAsList?: boolean;
 }
 
-export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCases }) => {
-  const [activeCaseIndex, setActiveCaseIndex] = useState<number>(0);
+export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCases, startAsList = false }) => {
+  const [activeCaseIndex, setActiveCaseIndex] = useState<number>(startAsList ? -1 : 0);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
 
-  const currentCase = cases[activeCaseIndex];
+  const currentCase = activeCaseIndex >= 0 ? cases[activeCaseIndex] : null;
   const chosenOption = currentCase?.options.find((o) => o.id === selectedOptionId);
 
   const handleNextCase = () => {
@@ -34,9 +35,66 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
   };
 
   const handleReset = () => {
-    setActiveCaseIndex(0);
+    setActiveCaseIndex(startAsList ? -1 : 0);
     setSelectedOptionId(null);
   };
+
+  if (!cases || cases.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-500 mx-auto mb-4 flex items-center justify-center">
+          <Briefcase className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Кейси відсутні</h2>
+        <p className="text-slate-500 text-sm">
+          Наразі в системі немає активних кейсів для тестування.
+        </p>
+      </div>
+    );
+  }
+
+  if (activeCaseIndex === -1) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs mb-8">
+          <div className="flex items-center gap-3.5 mb-6">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shrink-0">
+              <Briefcase className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Каталог практичних кейсів</h2>
+              <p className="text-slate-500 text-sm mt-1">Оберіть кейс для тренування практичних навичок.</p>
+            </div>
+          </div>
+          <div className="grid gap-4">
+            {cases.map((c, idx) => (
+              <button
+                key={c.id}
+                onClick={() => setActiveCaseIndex(idx)}
+                className="text-left flex flex-col sm:flex-row gap-4 p-5 rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm transition"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 uppercase tracking-wider">
+                      Кейс {idx + 1}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-slate-900 text-lg mb-1">{c.title}</h3>
+                  <p className="text-sm text-slate-600 line-clamp-2">{c.scenario}</p>
+                </div>
+                <div className="flex items-center shrink-0">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-amber-600">
+                    Почати симуляцію
+                    <ArrowRight className="w-4 h-4" />
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentCase) return null;
 

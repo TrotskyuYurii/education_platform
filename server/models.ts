@@ -31,6 +31,7 @@ const courseSchema = new mongoose.Schema({
   department: { type: String, required: true },
   instructionIds: { type: [String], default: [] },
   caseIds: { type: [String], default: [] },
+  useCases: { type: Boolean, default: false },
   hasCertificate: { type: Boolean, default: false },
   certificateValidityYears: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true },
@@ -39,6 +40,7 @@ const courseSchema = new mongoose.Schema({
 
 const caseSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
+  sectionId: { type: String, required: false },
   title: { type: String, required: true },
   scenario: { type: String, required: true },
   options: [{

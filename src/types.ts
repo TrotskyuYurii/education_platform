@@ -6,6 +6,7 @@ export interface Course {
   department: string;
   instructionIds: string[];
   caseIds?: string[];
+  useCases?: boolean;
   hasCertificate?: boolean;
   certificateValidityYears?: number;
   isActive?: boolean;
@@ -57,6 +58,7 @@ export interface QuizQuestion {
 
 export interface CaseSimulation {
   id: string;
+  sectionId?: string;
   title: string;
   scenario: string;
   role?: string;

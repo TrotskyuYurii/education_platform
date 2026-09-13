@@ -358,12 +358,13 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
 
 apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds, hasCertificate, certificateValidityYears } = req.body;
+    const { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } = req.body;
     const course = await Course.create({ 
       id: `course-${Date.now()}`, 
       title, 
       department, 
       instructionIds,
+      useCases,
       hasCertificate,
       certificateValidityYears
     } as any);
@@ -384,10 +385,10 @@ apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, re
 
 apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds, hasCertificate, certificateValidityYears } = req.body;
+    const { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } = req.body;
     const course = await Course.findOneAndUpdate(
       { id: req.params.id } as any,
-      { title, department, instructionIds, hasCertificate, certificateValidityYears } as any,
+      { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } as any,
       { new: true } as any
     );
     res.json({ success: true, course });
@@ -462,9 +463,10 @@ apiRouter.put('/admin/instructions/:id', requireAuth, requireAdmin, async (req, 
 // --- CASE ROUTES ---
 apiRouter.post('/admin/cases', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, scenario, options, isActive } = req.body;
+    const { title, sectionId, scenario, options, isActive } = req.body;
     const newCase = await Case.create({
       id: `case-${Date.now()}`,
+      sectionId,
       title,
       scenario,
       options,
@@ -492,10 +494,10 @@ apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req, res)
 
 apiRouter.put('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, scenario, options, isActive } = req.body;
+    const { title, sectionId, scenario, options, isActive } = req.body;
     const updatedCase = await Case.findOneAndUpdate(
       { id: req.params.id } as any,
-      { title, scenario, options, isActive } as any,
+      { title, sectionId, scenario, options, isActive } as any,
       { new: true } as any
     );
     res.json({ success: true, case: updatedCase });
