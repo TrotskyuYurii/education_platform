@@ -21,7 +21,9 @@ import {
   BookOpen,
   Edit2,
   Briefcase,
-  ChevronDown
+  ChevronDown,
+  Building2,
+  X
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -32,6 +34,7 @@ interface TestManagementProps {
   onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
   onReset: () => void;
   isSetupMode?: boolean;
+  onRefresh?: () => Promise<void>;
 }
 
 type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'departments';
@@ -43,9 +46,45 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   cases,
   onImport,
   onReset,
-  isSetupMode
+  isSetupMode,
+  onRefresh
 }) => {
-  const [activeTab, setActiveTab] = useState<MgmtTab>(isSetupMode ? 'users' : 'list');
+  const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
+  const [showExportPanel, setShowExportPanel] = useState<boolean>(false);
+  const [exportSuccess, setExportSuccess] = useState<boolean>(false);
+
+  const [activeTab, setActiveTab] = useState<MgmtTab>(() => {
+    if (isSetupMode) return 'users';
+    try {
+      const saved = localStorage.getItem('viatec_mgmt_tab') as MgmtTab;
+      if (saved === 'import' || saved === 'export') {
+        return 'list';
+      }
+      if (saved && ['list', 'courses', 'cases', 'help', 'users', 'departments'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'list';
+  });
+
+  React.useEffect(() => {
+    if (!isSetupMode) {
+      try {
+        localStorage.setItem('viatec_mgmt_tab', activeTab);
+      } catch {}
+    }
+  }, [activeTab, isSetupMode]);
+
+  React.useEffect(() => {
+    if (activeTab === 'import') {
+      setActiveTab('list');
+      setShowImportPanel(true);
+    } else if (activeTab === 'export') {
+      setActiveTab('list');
+      setShowExportPanel(true);
+    }
+  }, [activeTab]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
@@ -65,15 +104,19 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       // Keep the original ID
       newSection.id = editingMarkdownInstId!;
       
-      await fetch(`/api/admin/instructions/${editingMarkdownInstId}/full`, {
+      const res = await fetch(`/api/admin/instructions/${editingMarkdownInstId}/full`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: newSection, questions: newQuestions })
       });
       
-      setEditingMarkdownInstId(null);
-      setEditingMarkdownContent('');
-      window.location.reload();
+      if (res.ok) {
+        setEditingMarkdownInstId(null);
+        setEditingMarkdownContent('');
+        if (onRefresh) await onRefresh();
+      } else {
+        alert('Помилка сервера при збереженні інструкції.');
+      }
     } catch (err) {
       alert('Помилка при збереженні Markdown. Перевірте синтаксис.');
       console.error(err);
@@ -103,6 +146,77 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   const [newCase, setNewCase] = useState({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
   const [editingCase, setEditingCase] = useState<any | null>(null);
+  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
+  const [isDeletingCase, setIsDeletingCase] = useState<boolean>(false);
+  const [deletingInstId, setDeletingInstId] = useState<string | null>(null);
+  const [isDeletingInst, setIsDeletingInst] = useState<boolean>(false);
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [isDeletingCourse, setIsDeletingCourse] = useState<boolean>(false);
+  const [deletingDepId, setDeletingDepId] = useState<string | null>(null);
+  const [isDeletingDep, setIsDeletingDep] = useState<boolean>(false);
+
+  const handleDeleteCase = async (c: any) => {
+    const caseId = c.id || c._id;
+    if (!caseId) return;
+    setIsDeletingCase(true);
+    try {
+      const res = await fetch(`/api/admin/cases/${caseId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingCaseId(null);
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити кейс');
+      }
+    } catch (err) {
+      console.error('Failed to delete case:', err);
+      alert('Помилка при видаленні кейсу');
+    } finally {
+      setIsDeletingCase(false);
+    }
+  };
+
+  const handleDeleteInstruction = async (inst: any) => {
+    const instId = inst.id || inst._id;
+    if (!instId) return;
+    setIsDeletingInst(true);
+    try {
+      const res = await fetch(`/api/admin/instructions/${instId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingInstId(null);
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити інструкцію');
+      }
+    } catch (err) {
+      console.error('Failed to delete instruction:', err);
+      alert('Помилка при видаленні інструкції');
+    } finally {
+      setIsDeletingInst(false);
+    }
+  };
+
+  const handleDeleteCourse = async (course: any) => {
+    const courseId = course.id || course._id;
+    if (!courseId) return;
+    setIsDeletingCourse(true);
+    try {
+      const res = await fetch(`/api/admin/courses/${courseId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingCourseId(null);
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити курс');
+      }
+    } catch (err) {
+      console.error('Failed to delete course:', err);
+      alert('Помилка при видаленні курсу');
+    } finally {
+      setIsDeletingCourse(false);
+    }
+  };
 
   React.useEffect(() => {
     if (activeTab === 'users') fetchUsers();
@@ -211,10 +325,22 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   };
 
   const handleDeleteDepartment = async (id: string) => {
+    setIsDeletingDep(true);
     try {
-      await fetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
-      fetchDepartments();
-    } catch (err) {}
+      const res = await fetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingDepId(null);
+        fetchDepartments();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити підрозділ');
+      }
+    } catch (err) {
+      console.error('Failed to delete department:', err);
+      alert('Помилка при видаленні підрозділу');
+    } finally {
+      setIsDeletingDep(false);
+    }
   };
 
   const groupedCourses = React.useMemo(() => {
@@ -447,101 +573,126 @@ export const TestManagement: React.FC<TestManagementProps> = ({
         
         {/* Left Nav */}
         {!isSetupMode && (
-          <div className="md:w-64 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50 p-4 shrink-0">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 px-2">
-              Меню керування
-            </h3>
-            <div className="flex flex-col gap-1.5">
-            <button
-              onClick={() => setActiveTab('list')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'list' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <List className="w-4 h-4" />
-              <span>Усі інструкції</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('courses')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'courses' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Курси</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('cases')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'cases' 
-                  ? 'bg-orange-100 text-orange-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              <span>Кейси</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('import')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'import' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <Download className="w-4 h-4" />
-              <span>Імпорт (.md)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('export')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'export' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <Upload className="w-4 h-4" />
-              <span>Експорт (.md)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('help')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'help' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Допомога / Шаблон</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'users' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Користувачі</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('departments')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                activeTab === 'departments' 
-                  ? 'bg-purple-100 text-purple-800' 
-                  : 'text-slate-600 hover:bg-slate-200/50'
-              }`}
-            >
-              <Settings2 className="w-4 h-4" />
-              <span>Підрозділи</span>
-            </button>
+          <div className="md:w-64 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50/70 p-4 shrink-0">
+            <div className="space-y-6">
+              {/* Group 1: Матеріали */}
+              <div>
+                <div className="flex items-center gap-1.5 px-2 mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Матеріали</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('list')}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'list' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <List className="w-4 h-4" />
+                      <span>Інструкції</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'list' 
+                        ? 'bg-purple-200/80 text-purple-900' 
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {sections.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('courses')}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'courses' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FileText className="w-4 h-4" />
+                      <span>Курси</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'courses' 
+                        ? 'bg-purple-200/80 text-purple-900' 
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {courses.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('cases')}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'cases' 
+                        ? 'bg-orange-100 text-orange-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Briefcase className="w-4 h-4" />
+                      <span>Кейси</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'cases' 
+                        ? 'bg-orange-200/80 text-orange-900' 
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {cases.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('help')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'help' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    <span>Допомога / Шаблон</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Group 2: Організація */}
+              <div className="pt-4 border-t border-slate-200">
+                <div className="flex items-center gap-1.5 px-2 mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Організація</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('users')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'users' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Користувачі</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('departments')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'departments' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <Settings2 className="w-4 h-4" />
+                    <span>Підрозділи</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
         )}
 
         {/* Right Content */}
@@ -550,12 +701,233 @@ export const TestManagement: React.FC<TestManagementProps> = ({
           {/* TAB: LIST */}
           {activeTab === 'list' && (
             <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-bold text-slate-900">Список інструкцій</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Перегляд та редагування завантажених матеріалів. Увага: видалення інструкції також призведе до видалення всіх пов'язаних з нею запитань.
-                </p>
+              <div className="border-b border-slate-100 pb-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h3 className="text-xl font-bold text-slate-900">Інструкції</h3>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                        {sections.length} інструкцій
+                      </span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {questions.length} питань
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Перегляд, редагування матеріалів, імпорт нових регламентів та експорт бази знань.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    <button
+                      id="btn-toggle-import-panel"
+                      onClick={() => {
+                        setShowImportPanel(!showImportPanel);
+                        if (!showImportPanel) setShowExportPanel(false);
+                      }}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                        showImportPanel
+                          ? 'bg-blue-600 text-white shadow-blue-200'
+                          : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                      }`}
+                      title="Імпортувати інструкції з Markdown файлу"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>{showImportPanel ? 'Приховати імпорт' : 'Імпорт (.md)'}</span>
+                    </button>
+
+                    <button
+                      id="btn-toggle-export-panel"
+                      onClick={() => {
+                        setShowExportPanel(!showExportPanel);
+                        if (!showExportPanel) setShowImportPanel(false);
+                      }}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                        showExportPanel
+                          ? 'bg-purple-600 text-white shadow-purple-200'
+                          : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200'
+                      }`}
+                      title="Експортувати базу знань у файл Markdown"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>{showExportPanel ? 'Приховати експорт' : 'Експорт (.md)'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab('help')}
+                      className="p-2 text-slate-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl transition border border-slate-200"
+                      title="Шаблон оформлення та ШІ-промпт"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {/* INTEGRATED IMPORT PANEL */}
+              {showImportPanel && (
+                <div className="p-5 sm:p-6 bg-gradient-to-b from-blue-50/70 to-white rounded-2xl border-2 border-blue-200 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
+                        <Upload className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900">Імпорт інструкцій та тестів (.md)</h4>
+                        <p className="text-xs text-slate-500">Завантажте файл формату Markdown із текстом регламенту та запитаннями</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setShowImportPanel(false)}
+                      className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition"
+                      title="Закрити панель"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* AI Assistant Banner */}
+                  <div className="p-4 rounded-xl bg-blue-100/50 border border-blue-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="text-xs font-semibold text-blue-900">
+                        Створюєте тести за допомогою ChatGPT, Claude або Gemini? Скопіюйте системний промпт:
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={handleCopyPrompt}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                          copiedPrompt
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white text-blue-700 hover:bg-blue-50 border border-blue-200'
+                        }`}
+                      >
+                        {copiedPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedPrompt ? 'Скопійовано!' : 'Копіювати промпт'}</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('help')}
+                        className="px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:underline"
+                      >
+                        Шаблон
+                      </button>
+                    </div>
+                  </div>
+
+                  {importStatus && (
+                    <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+                      importStatus.type === 'success' 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                        : 'bg-rose-50 border-rose-200 text-rose-900'
+                    }`}>
+                      {importStatus.type === 'success' ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      )}
+                      <p className="text-sm font-medium">{importStatus.message}</p>
+                    </div>
+                  )}
+
+                  {/* Upload Box */}
+                  <div className="p-6 border-2 border-dashed border-blue-200 hover:border-blue-300 rounded-xl bg-white flex flex-col items-center justify-center text-center transition">
+                    <Upload className="w-8 h-8 text-blue-500 mb-2" />
+                    <p className="text-sm font-semibold text-slate-700 mb-1">
+                      Оберіть .md файл для завантаження
+                    </p>
+                    <p className="text-xs text-slate-400 mb-4 max-w-sm">
+                      Файл має відповідати специфікації шаблону для правильного розпізнавання інструкцій та тестів.
+                    </p>
+
+                    <input 
+                      type="file" 
+                      accept=".md,text/markdown"
+                      className="hidden" 
+                      ref={fileInputRef}
+                    />
+
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          if (fileInputRef.current) {
+                            fileInputRef.current.onchange = (e: any) => handleFileUpload(e, false);
+                            fileInputRef.current.click();
+                          }
+                        }}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+                      >
+                        Додати до існуючих
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (fileInputRef.current) {
+                            fileInputRef.current.onchange = (e: any) => handleFileUpload(e, true);
+                            fileInputRef.current.click();
+                          }
+                        }}
+                        className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
+                      >
+                        Замінити всю базу
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* INTEGRATED EXPORT PANEL */}
+              {showExportPanel && (
+                <div className="p-5 sm:p-6 bg-gradient-to-b from-purple-50/70 to-white rounded-2xl border-2 border-purple-200 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-xs">
+                        <Download className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900">Експорт повної бази інструкцій</h4>
+                        <p className="text-xs text-slate-500">Збережіть базу знань у файл Markdown (.md) для резервної копії чи передачі</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setShowExportPanel(false)}
+                      className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition"
+                      title="Закрити панель"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 bg-white rounded-xl border border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-purple-600 mb-1">Поточний стан бази</div>
+                      <div className="flex items-center gap-4 text-sm text-slate-700">
+                        <div>Розділів інструкцій: <span className="font-bold text-slate-900">{sections.length}</span></div>
+                        <div>•</div>
+                        <div>Тестових питань: <span className="font-bold text-slate-900">{questions.length}</span></div>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Також кожну окрему інструкцію можна експортувати у форматах .md або PDF окремо у списку нижче.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        handleExportData();
+                        setExportSuccess(true);
+                        setTimeout(() => setExportSuccess(false), 3000);
+                      }}
+                      className={`px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 shadow-xs ${
+                        exportSuccess
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white'
+                      }`}
+                    >
+                      {exportSuccess ? <Check className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                      <span>{exportSuccess ? 'Файл завантажено!' : 'Завантажити всю базу (.md)'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-3">
                 {groupedCourses.length === 0 ? (
@@ -595,14 +967,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               <button 
                                 onClick={async () => {
                                   try {
-                                    await fetch(`/api/admin/instructions/${inst.id}`, {
+                                    const res = await fetch(`/api/admin/instructions/${inst.id}`, {
                                       method: 'PUT',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
                                     });
-                                    setEditingCourseId(null);
-                                    window.location.reload();
-                                  } catch (e) {}
+                                    if (res.ok) {
+                                      setEditingCourseId(null);
+                                      if (onRefresh) await onRefresh();
+                                    } else {
+                                      alert('Не вдалося оновити інструкцію');
+                                    }
+                                  } catch (e) {
+                                    console.error(e);
+                                    alert('Помилка мережі при оновленні інструкції');
+                                  }
                                 }}
                                 className="px-3 py-1 bg-purple-600 text-white rounded text-xs font-medium"
                               >Зберегти</button>
@@ -719,22 +1098,35 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               >
                                 <Edit2 className="w-5 h-5" />
                               </button>
-                              <button
-                                onClick={async () => {
-                                  if (window.confirm(`Ви впевнені, що хочете видалити інструкцію "${inst.title}"? Усі питання всередині також будуть видалені.`)) {
-                                    try {
-                                      await fetch(`/api/admin/instructions/${inst.id}`, { method: 'DELETE' });
-                                      window.location.reload();
-                                    } catch (err) {
-                                      console.error(err);
-                                    }
-                                  }
-                                }}
-                                className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                                title="Видалити інструкцію"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
+                              {deletingInstId === (inst.id || inst._id) ? (
+                                <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                                  <span className="text-xs font-semibold text-rose-700">Видалити?</span>
+                                  <button
+                                    type="button"
+                                    disabled={isDeletingInst}
+                                    onClick={() => handleDeleteInstruction(inst)}
+                                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                                  >
+                                    {isDeletingInst ? '...' : 'Так'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isDeletingInst}
+                                    onClick={() => setDeletingInstId(null)}
+                                    className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                                  >
+                                    Ні
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeletingInstId(inst.id || inst._id)}
+                                  className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                                  title="Видалити інструкцію"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              )}
                             </div>
                           </>
                         )}
@@ -838,14 +1230,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     onClick={async () => {
                       if (!newCourse.title || !newCourse.department) return alert('Заповніть назву та підрозділ');
                       try {
-                        await fetch('/api/admin/courses', {
+                        const res = await fetch('/api/admin/courses', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify(newCourse)
                         });
-                        setNewCourse({ title: '', department: '', instructionIds: [], hasCertificate: false, certificateValidityYears: 1 });
-                        window.location.reload();
-                      } catch (err) {}
+                        if (res.ok) {
+                          setNewCourse({ title: '', department: '', instructionIds: [], caseIds: [], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
+                          if (onRefresh) await onRefresh();
+                        } else {
+                          alert('Не вдалося створити курс');
+                        }
+                      } catch (err) {
+                        console.error('Failed to create course:', err);
+                        alert('Помилка при створенні курсу');
+                      }
                     }}
                     className="self-start px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold mt-2"
                   >
@@ -956,14 +1355,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               onClick={async () => {
                                 if (!editingCourse.title || !editingCourse.department) return alert('Заповніть назву та підрозділ');
                                 try {
-                                  await fetch(`/api/admin/courses/${editingCourse.id}`, {
+                                  const res = await fetch(`/api/admin/courses/${editingCourse.id}`, {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(editingCourse)
                                   });
-                                  setEditingCourse(null);
-                                  window.location.reload();
-                                } catch (err) {}
+                                  if (res.ok) {
+                                    setEditingCourse(null);
+                                    if (onRefresh) await onRefresh();
+                                  } else {
+                                    alert('Не вдалося зберегти зміни курсу');
+                                  }
+                                } catch (err) {
+                                  console.error('Failed to edit course:', err);
+                                  alert('Помилка при збереженні курсу');
+                                }
                               }}
                               className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium transition hover:bg-purple-700"
                             >
@@ -1016,18 +1422,35 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={async () => {
-                                if (window.confirm(`Видалити курс "${course.title}"?`)) {
-                                  await fetch(`/api/admin/courses/${course.id}`, { method: 'DELETE' });
-                                  window.location.reload();
-                                }
-                              }}
-                              className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                              title="Видалити курс"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                            {deletingCourseId === (course.id || course._id) ? (
+                              <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                                <span className="text-xs font-semibold text-rose-700">Видалити?</span>
+                                <button
+                                  type="button"
+                                  disabled={isDeletingCourse}
+                                  onClick={() => handleDeleteCourse(course)}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                                >
+                                  {isDeletingCourse ? '...' : 'Так'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isDeletingCourse}
+                                  onClick={() => setDeletingCourseId(null)}
+                                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                                >
+                                  Ні
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingCourseId(course.id || course._id)}
+                                className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                                title="Видалити курс"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1186,14 +1609,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         try {
                           const method = editingCase ? 'PUT' : 'POST';
                           const url = editingCase ? `/api/admin/cases/${editingCase.id}` : '/api/admin/cases';
-                          await fetch(url, {
+                          const res = await fetch(url, {
                             method,
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                           });
-                          window.location.reload();
+                          if (res.ok) {
+                            setEditingCase(null);
+                            setNewCase({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+                            if (onRefresh) await onRefresh();
+                          } else {
+                            alert('Не вдалося зберегти кейс');
+                          }
                         } catch (e) {
-                          console.error(e);
+                          console.error('Failed to save case:', e);
+                          alert('Помилка при збереженні кейсу');
                         }
                       }}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
@@ -1214,173 +1644,63 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
               <div className="space-y-3">
                 <h4 className="text-md font-bold text-slate-900">Існуючі кейси ({cases.length})</h4>
-                {cases.map(c => (
-                  <div key={c.id} className="p-4 bg-white border border-slate-200 rounded-xl flex justify-between items-start gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h5 className={`font-bold ${c.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{c.title}</h5>
-                        {c.isActive === false && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">Вимкнено</span>
+                {cases.map(c => {
+                  const currentCaseId = c.id || c._id;
+                  const isConfirming = deletingCaseId === currentCaseId;
+
+                  return (
+                    <div key={currentCaseId} className="p-4 bg-white border border-slate-200 rounded-xl flex justify-between items-start gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h5 className={`font-bold ${c.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{c.title}</h5>
+                          {c.isActive === false && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">Вимкнено</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-600 line-clamp-2">{c.scenario}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button 
+                          onClick={() => setEditingCase(c)} 
+                          className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                          title="Редагувати кейс"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+
+                        {isConfirming ? (
+                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
+                            <button 
+                              type="button"
+                              disabled={isDeletingCase}
+                              onClick={() => handleDeleteCase(c)} 
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                            >
+                              {isDeletingCase ? '...' : 'Так'}
+                            </button>
+                            <button 
+                              type="button"
+                              disabled={isDeletingCase}
+                              onClick={() => setDeletingCaseId(null)} 
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                            >
+                              Ні
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setDeletingCaseId(currentCaseId)} 
+                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                            title="Видалити кейс"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         )}
                       </div>
-                      <p className="text-sm text-slate-600 line-clamp-2">{c.scenario}</p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button onClick={() => setEditingCase(c)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={async () => {
-                          if (window.confirm('Видалити цей кейс?')) {
-                            await fetch(`/api/admin/cases/${c.id}`, { method: 'DELETE' });
-                            window.location.reload();
-                          }
-                        }} 
-                        className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {/* TAB: IMPORT */}
-          {activeTab === 'import' && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-bold text-slate-900">Імпорт тестів та інструкцій з файлу</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Завантажте файл у форматі Markdown (.md), що містить структуровані інструкції та питання.
-                </p>
-              </div>
-
-              {/* AI Assistant Help Banner */}
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-blue-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      Створюєте тести за допомогою ChatGPT, Claude або Gemini?
-                    </h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed max-w-xl">
-                      Скопіюйте готовий системний промпт, надішліть його будь-якій моделі ШІ разом із текстом вашого регламенту — і отримайте ідеальний .md файл для імпорту.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-                  <button
-                    onClick={handleCopyPrompt}
-                    className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs ${
-                      copiedPrompt
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white text-blue-700 hover:bg-blue-50 border border-blue-200'
-                    }`}
-                  >
-                    {copiedPrompt ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedPrompt ? 'Скопійовано!' : 'Скопіювати промпт для ШІ'}</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('help')}
-                    className="px-3 py-2.5 bg-blue-100/70 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold transition"
-                    title="Переглянути шаблон та специфікацію"
-                  >
-                    Інструкція
-                  </button>
-                </div>
-              </div>
-
-              {importStatus && (
-                <div className={`p-4 rounded-xl border flex items-start gap-3 ${
-                  importStatus.type === 'success' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
-                    : 'bg-rose-50 border-rose-200 text-rose-900'
-                }`}>
-                  {importStatus.type === 'success' ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                  )}
-                  <p className="text-sm font-medium">{importStatus.message}</p>
-                </div>
-              )}
-
-              <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center">
-                <Download className="w-10 h-10 text-slate-400 mb-3" />
-                <p className="text-sm font-semibold text-slate-700 mb-1">
-                  Оберіть .md файл для завантаження
-                </p>
-                <p className="text-xs text-slate-500 mb-6 max-w-sm">
-                  Файл має відповідати специфікації шаблону для правильного розпізнавання інтерактивних інструкцій, таблиць, стоп-правил та питань.
-                </p>
-
-                <input 
-                  type="file" 
-                  accept=".md,text/markdown"
-                  className="hidden" 
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    handleFileUpload(e, false);
-                  }}
-                />
-
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  <button
-                    onClick={() => {
-                      if (fileInputRef.current) {
-                        fileInputRef.current.onchange = (e: any) => handleFileUpload(e, false);
-                        fileInputRef.current.click();
-                      }
-                    }}
-                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
-                  >
-                    Додати до існуючих
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (fileInputRef.current) {
-                        fileInputRef.current.onchange = (e: any) => handleFileUpload(e, true);
-                        fileInputRef.current.click();
-                      }
-                    }}
-                    className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition"
-                  >
-                    Замінити всі тести
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: EXPORT */}
-          {activeTab === 'export' && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-bold text-slate-900">Експорт тестів у файл</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Збережіть поточну базу інструкцій та питань у файл формату Markdown (.md).
-                </p>
-              </div>
-
-              <div className="p-6 border border-slate-200 rounded-2xl bg-white flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-800">Поточна база даних</h4>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Розділів інструкцій: <span className="font-bold text-slate-700">{sections.length}</span><br />
-                    Тестових питань: <span className="font-bold text-slate-700">{questions.length}</span>
-                  </p>
-                </div>
-
-                <button
-                  onClick={handleExportData}
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Експортувати (.md)</span>
-                </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1860,13 +2180,35 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     <div key={d._id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
                       <span className="font-medium text-slate-800">{d.name}</span>
                       {d.name !== 'Всі підрозділи' && (
-                        <button 
-                          onClick={() => handleDeleteDepartment(d._id)}
-                          className="text-slate-400 hover:text-rose-500 transition p-1"
-                          title="Видалити"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        deletingDepId === d._id ? (
+                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
+                            <button
+                              type="button"
+                              disabled={isDeletingDep}
+                              onClick={() => handleDeleteDepartment(d._id)}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                            >
+                              {isDeletingDep ? '...' : 'Так'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isDeletingDep}
+                              onClick={() => setDeletingDepId(null)}
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                            >
+                              Ні
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setDeletingDepId(d._id)}
+                            className="text-slate-400 hover:text-rose-500 transition p-1"
+                            title="Видалити"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )
                       )}
                     </div>
                   ))}

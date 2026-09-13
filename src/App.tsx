@@ -28,7 +28,21 @@ export default function App() {
 
 function MainApp() {
   const { user, logout } = useAuth();
-  const [currentTab, setCurrentTab] = useState<AppTab>('catalog');
+  const [currentTab, setCurrentTab] = useState<AppTab>(() => {
+    try {
+      const saved = localStorage.getItem('viatec_current_tab') as AppTab;
+      if (saved && ['catalog', 'manual', 'quiz', 'cases', 'signoff', 'profile', 'management', 'about'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'catalog';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('viatec_current_tab', currentTab);
+    } catch {}
+  }, [currentTab]);
   
   const [sections, setSections] = useState<InstructionSection[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -195,9 +209,11 @@ function MainApp() {
             sections={sections}
             questions={questions}
             courses={courses}
+            cases={cases}
             isSetupMode={true}
             onImport={async () => {}}
             onReset={() => {}}
+            onRefresh={fetchContent}
           />
         </main>
       </div>
@@ -311,6 +327,7 @@ function MainApp() {
             questions={questions}
             courses={courses}
             cases={cases}
+            onRefresh={fetchContent}
             onImport={async (newSections, newQuestions, replace) => {
               try {
                 await fetch('/api/admin/import', {

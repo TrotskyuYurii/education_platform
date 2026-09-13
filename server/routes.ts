@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
@@ -376,9 +377,18 @@ apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => 
 
 apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await Course.findOneAndDelete({ id: req.params.id } as any);
+    const courseId = req.params.id;
+    const isObjectId = mongoose.isValidObjectId(courseId);
+    const query: any = {
+      $or: [
+        { id: courseId },
+        ...(isObjectId ? [{ _id: courseId }] : [])
+      ]
+    };
+    await Course.findOneAndDelete(query);
     res.json({ success: true });
   } catch (err) {
+    console.error('Error deleting course:', err);
     res.status(500).json({ error: 'Failed to delete course' });
   }
 });
@@ -400,17 +410,32 @@ apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) 
 apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const instructionId = req.params.id;
-    await Section.findOneAndDelete({ id: instructionId } as any);
-    await Question.deleteMany({ sectionId: instructionId } as any);
+    const isObjectId = mongoose.isValidObjectId(instructionId);
+    const query: any = {
+      $or: [
+        { id: instructionId },
+        ...(isObjectId ? [{ _id: instructionId }] : [])
+      ]
+    };
+    const deletedSection = await Section.findOneAndDelete(query);
+    const secId = deletedSection?.id || instructionId;
+
+    await Question.deleteMany({
+      $or: [
+        { sectionId: secId },
+        { sectionId: instructionId }
+      ]
+    } as any);
     
     // Also remove this instruction from any courses
     await Course.updateMany(
-      { instructionIds: instructionId } as any,
-      { $pull: { instructionIds: instructionId } } as any
+      { instructionIds: { $in: [secId, instructionId] } } as any,
+      { $pull: { instructionIds: { $in: [secId, instructionId] } } } as any
     );
     
     res.json({ success: true });
   } catch (err) {
+    console.error('Error deleting instruction:', err);
     res.status(500).json({ error: 'Failed to delete instruction' });
   }
 });
@@ -481,13 +506,22 @@ apiRouter.post('/admin/cases', requireAuth, requireAdmin, async (req, res) => {
 apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const caseId = req.params.id;
-    await Case.findOneAndDelete({ id: caseId } as any);
+    const isObjectId = mongoose.isValidObjectId(caseId);
+    const query: any = {
+      $or: [
+        { id: caseId },
+        ...(isObjectId ? [{ _id: caseId }] : [])
+      ]
+    };
+    const deletedCase = await Case.findOneAndDelete(query);
+    const deletedId = deletedCase?.id || caseId;
     await Course.updateMany(
-      { caseIds: caseId } as any,
-      { $pull: { caseIds: caseId } } as any
+      { caseIds: { $in: [deletedId, caseId] } } as any,
+      { $pull: { caseIds: { $in: [deletedId, caseId] } } } as any
     );
     res.json({ success: true });
   } catch (err) {
+    console.error('Error deleting case:', err);
     res.status(500).json({ error: 'Failed to delete case' });
   }
 });
