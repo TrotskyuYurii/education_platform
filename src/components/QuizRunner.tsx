@@ -14,28 +14,7 @@ import {
   FileText, 
   Sparkles 
 } from 'lucide-react';
-
-const HAPPY_REACTIONS = [
-  { emoji: '🇺🇦', text: 'Борітеся — поборете!', author: 'Тарас Шевченко' },
-  { emoji: '⚔️', text: 'Сміливі завжди мають щастя.', author: 'Іван Багряний' },
-  { emoji: '🏔️', text: 'Тільки той досягає мети, хто іде.', author: 'Олександр Олесь' },
-  { emoji: '📖', text: 'Учітесь, читайте, і чужому научайтесь, й свого не цурайтесь.', author: 'Тарас Шевченко' },
-  { emoji: '🌟', text: 'Немає нічого неможливого!', author: 'Іван Франко' },
-  { emoji: '🚀', text: 'Хто не йде вперед, той іде назад.', author: 'Олександр Довженко' },
-  { emoji: '☀️', text: 'Щоб у дні перемоги бути творцем, треба бути борцем.', author: 'Олесь Гончар' },
-  { emoji: '🌿', text: 'Світ ловив мене, та не спіймав.', author: 'Григорій Сковорода' }
-];
-
-const SAD_REACTIONS = [
-  { emoji: '⛏️', text: 'Лупайте сю скалу!', author: 'Іван Франко' },
-  { emoji: '🌱', text: 'Без надії таки сподіваюсь.', author: 'Леся Українка' },
-  { emoji: '📚', text: 'Не розум від книг, а книги від розуму.', author: 'Григорій Сковорода' },
-  { emoji: '🔥', text: 'Не той молодець, що починає, а той, що кінчає.', author: 'Народна мудрість' },
-  { emoji: '💪', text: 'Козацькому роду нема переводу. Спробуй ще!', author: 'Народна мудрість' },
-  { emoji: '🛤️', text: 'Не кажи «не вмію», а кажи «навчуся»!', author: 'Народна мудрість' },
-  { emoji: '⛰️', text: 'Великі діла не робляться раптом.', author: 'Народна мудрість' },
-  { emoji: '🛡️', text: 'Хто нічого не робить, той ніколи не помиляється.', author: 'Народна мудрість' }
-];
+import { SUCCESS_QUOTES, RESILIENCE_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
 
 interface QuizRunnerProps {
   allQuestions: QuizQuestion[];
@@ -71,6 +50,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   
   // Animation overlay state
   const [reaction, setReaction] = useState<{ type: 'success' | 'error', emoji: string, text: string, author?: string } | null>(null);
+  const [finalQuote, setFinalQuote] = useState<UkrainianQuote | null>(null);
 
   // Clear any existing reaction timer when unmounting or starting a new quiz
   useEffect(() => {
@@ -131,17 +111,17 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     // Trigger random animation on instant feedback mode
     if (!examMode) {
       const isCorrect = optionIndex === currentQ.correctIndex;
-      // ~45% chance to show a random reaction animation to keep it interesting but not spammy
-      if (Math.random() < 0.45) {
-        const list = isCorrect ? HAPPY_REACTIONS : SAD_REACTIONS;
+      // ~50% chance to show an authentic Ukrainian motivational quote reaction
+      if (Math.random() < 0.5) {
+        const list = isCorrect ? SUCCESS_QUOTES : RESILIENCE_QUOTES;
         const randomItem = list[Math.floor(Math.random() * list.length)];
         
         setReaction({ type: isCorrect ? 'success' : 'error', ...randomItem });
         
-        // Auto-hide after 2.5 seconds
+        // Auto-hide after 2.8 seconds
         setTimeout(() => {
           setReaction(null);
-        }, 2500);
+        }, 2800);
       }
     }
   };
@@ -153,6 +133,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     setQuizStarted(true);
     setQuizAttempt((prev) => prev + 1);
     setReaction(null);
+    setFinalQuote(null);
   };
 
   const handleFinishQuiz = () => {
@@ -164,6 +145,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
         correctCount += 1;
       }
     });
+
+    const isPassedResult = questionsToRun.length > 0 && ((correctCount / questionsToRun.length) >= 0.8);
+    const quoteList = isPassedResult ? SUCCESS_QUOTES : RESILIENCE_QUOTES;
+    setFinalQuote(quoteList[Math.floor(Math.random() * quoteList.length)]);
 
     const modeLabel = targetSectionId 
       ? 'Тест за розділом' 
@@ -331,20 +316,22 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             {reaction && (
               <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-4">
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.2, rotate: -10 }}
+                  initial={{ opacity: 0, scale: 0.3, rotate: -6 }}
                   animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                  exit={{ opacity: 0, scale: 0.8, y: -50 }}
-                  transition={{ type: "spring", bounce: 0.5 }}
-                  className={`flex flex-col items-center justify-center px-10 py-8 rounded-[2rem] shadow-2xl backdrop-blur-md border-4 ${
+                  exit={{ opacity: 0, scale: 0.85, y: -40 }}
+                  transition={{ type: "spring", bounce: 0.45 }}
+                  className={`flex flex-col items-center justify-center px-6 sm:px-10 py-6 sm:py-8 rounded-3xl shadow-2xl backdrop-blur-md border-4 max-w-md sm:max-w-xl text-center ${
                     reaction.type === 'success' 
-                      ? 'bg-emerald-500/90 border-emerald-400 text-white' 
-                      : 'bg-rose-500/90 border-rose-400 text-white'
+                      ? 'bg-emerald-600/95 border-emerald-300 text-white' 
+                      : 'bg-rose-600/95 border-rose-300 text-white'
                   }`}
                 >
-                  <span className="text-7xl mb-4 drop-shadow-md">{reaction.emoji}</span>
-                  <span className="text-3xl font-black tracking-wide text-center drop-shadow-md mb-2">{reaction.text}</span>
+                  <span className="text-5xl sm:text-6xl mb-3 drop-shadow-md">{reaction.emoji}</span>
+                  <span className="text-lg sm:text-2xl font-black tracking-normal leading-snug text-center drop-shadow-md mb-2">
+                    «{reaction.text.replace(/^[«"]|[»"]$/g, '')}»
+                  </span>
                   {reaction.author && (
-                    <span className="text-lg font-medium opacity-90 drop-shadow-sm mt-1 italic">
+                    <span className="text-xs sm:text-sm font-semibold opacity-95 drop-shadow-sm mt-1.5 italic bg-black/20 px-3.5 py-1 rounded-full">
                       — {reaction.author}
                     </span>
                   )}
@@ -546,6 +533,18 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 ? 'Вітаємо! Ви продемонстрували відмінні знання регламенту повернення товарів за стандартом компанії.' 
                 : 'Для успішної сертифікації прохідний бал становить 80%. Рекомендуємо переглянути помилки та повторити розділи.'}
             </p>
+
+            {finalQuote && (
+              <div className="mt-5 max-w-lg mx-auto p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100 text-center">
+                <span className="text-2xl sm:text-3xl block mb-1">{finalQuote.emoji}</span>
+                <p className="text-sm sm:text-base font-bold text-slate-800 italic leading-snug">
+                  «{finalQuote.text.replace(/^[«"]|[»"]$/g, '')}»
+                </p>
+                <p className="text-xs text-blue-700 mt-1.5 font-semibold">
+                  — {finalQuote.author}
+                </p>
+              </div>
+            )}
 
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <button
