@@ -619,11 +619,12 @@ apiRouter.get('/progress', requireAuth, async (req: any, res) => {
 
 apiRouter.post('/progress', requireAuth, async (req: any, res) => {
   try {
-    const { readSectionIds, testScore } = req.body;
+    const { readSectionIds, testScore, employeeInfo } = req.body;
     let progress = await Progress.findOne({ userId: req.user._id } as any);
     if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [], certificates: [] } as any);
 
     if (readSectionIds) progress.readSectionIds = readSectionIds;
+    if (employeeInfo) progress.employeeInfo = employeeInfo;
     
     if (testScore) {
       progress.testScores.push(testScore);
@@ -657,5 +658,88 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     res.json({ success: true, progress });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update progress' });
+  }
+});
+
+// Admin: Get summary of all users and their progress stats
+apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find().select('-passwordHash -authCode').sort({ createdAt: -1 });
+    const userIds = users.map(u => u._id);
+    const progressList = await Progress.find({ userId: { $in: userIds } } as any);
+    const progressMap = new Map();
+    progressList.forEach((p: any) => {
+      progressMap.set(p.userId.toString(), p);
+    });
+
+    const userStats = users.map(u => {
+      const p = progressMap.get(u._id.toString());
+      const testScores = p?.testScores || [];
+      const bestScore = testScores.length > 0 ? Math.max(...testScores.map((s: any) => s.percentage || 0)) : 0;
+      const totalAnswers = testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+      return {
+        _id: u._id,
+        id: u._id.toString(),
+        email: u.email || u.username,
+        username: u.username,
+        role: u.role,
+        departments: u.departments || [],
+        allowedInstructionIds: u.allowedInstructionIds || [],
+        createdAt: u.createdAt,
+        employeeInfo: p?.employeeInfo || null,
+        stats: {
+          readCount: p?.readSectionIds?.length || 0,
+          testsCount: testScores.length,
+          bestScore,
+          certificatesCount: p?.certificates?.length || 0,
+          totalQuestionsAnswered: totalAnswers,
+          lastActivity: p?.updatedAt || p?.testScores?.[p.testScores.length - 1]?.date || null
+        }
+      };
+    });
+
+    res.json({ users: userStats });
+  } catch (err) {
+    console.error('Failed to fetch users progress', err);
+    res.status(500).json({ error: 'Failed to fetch users progress' });
+  }
+});
+
+// Admin: Get full progress for a specific user
+apiRouter.get('/admin/progress/:userId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const targetUser = await User.findOne({ _id: userId } as any).select('-passwordHash -authCode');
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Користувача не знайдено' });
+    }
+
+    let progress = await Progress.findOne({ userId: targetUser._id } as any);
+    if (!progress) {
+      progress = {
+        userId: targetUser._id,
+        readSectionIds: [],
+        testScores: [],
+        certificates: [],
+        employeeInfo: null
+      } as any;
+    }
+
+    res.json({ 
+      user: {
+        _id: targetUser._id,
+        id: targetUser._id.toString(),
+        email: targetUser.email || targetUser.username,
+        username: targetUser.username,
+        role: targetUser.role,
+        departments: targetUser.departments || [],
+        allowedInstructionIds: targetUser.allowedInstructionIds || [],
+        createdAt: targetUser.createdAt
+      },
+      progress 
+    });
+  } catch (err) {
+    console.error('Failed to fetch target user progress', err);
+    res.status(500).json({ error: 'Failed to fetch user progress' });
   }
 });

@@ -60,17 +60,21 @@ const sectionSchema = new mongoose.Schema({
   title: String,
   subtitle: String,
   summary: String,
+  contentMarkdown: String,
   keyPoints: [String],
+  keyFields: [String],
   readTimeMin: Number,
   contentHtml: String,
   pageReference: String,
+  images: [String],
   steps: [{
     number: Number,
     title: String,
     description: String,
     tip: String,
     warning: String,
-    imageUrl: String
+    imageUrl: String,
+    images: [String]
   }],
   tableData: {
     headers: [String],
@@ -117,6 +121,13 @@ const progressSchema = new mongoose.Schema({
     issuedAt: { type: Date, default: Date.now },
     expiresAt: Date
   }],
+  employeeInfo: {
+    fullName: String,
+    position: String,
+    department: String,
+    signedDate: String,
+    isSigned: Boolean
+  },
   updatedAt: { type: Date, default: Date.now }
 });
 

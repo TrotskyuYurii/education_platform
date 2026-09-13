@@ -23,8 +23,11 @@ export interface InstructionSection {
   pageReference: string;
   readTimeMin: number;
   summary: string;
+  contentMarkdown?: string;
   contentHtml?: string;
   keyPoints: string[];
+  keyFields?: string[];
+  images?: string[];
   steps?: {
     number: number;
     title: string;
@@ -32,6 +35,7 @@ export interface InstructionSection {
     tip?: string;
     warning?: string;
     imageUrl?: string;
+    images?: string[];
   }[];
   tableData?: {
     headers: string[];

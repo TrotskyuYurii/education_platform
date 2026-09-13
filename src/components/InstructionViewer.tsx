@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   InstructionSection, 
+  QuizQuestion,
 } from '../types';
 import { 
   CheckCircle2, 
@@ -14,13 +15,22 @@ import {
   Sparkles,
   Info,
   ArrowLeft,
-  Briefcase
+  Briefcase,
+  Maximize2,
+  Image as ImageIcon,
+  BookOpen,
+  ListChecks,
+  KeyRound,
+  AlertTriangle
 } from 'lucide-react';
+import { RichTextWithImages } from './RichTextWithImages';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 interface InstructionViewerProps {
   sections: InstructionSection[];
   courses?: any[];
   cases?: any[];
+  questions?: QuizQuestion[];
   courseId?: string;
   readSectionIds: string[];
   onToggleReadSection: (sectionId: string) => void;
@@ -33,6 +43,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
   sections,
   courses = [],
   cases = [],
+  questions = [],
   courseId,
   readSectionIds,
   onToggleReadSection,
@@ -42,6 +53,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSectionId, setActiveSectionId] = useState<string>('');
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
 
   const activeCourse = useMemo(() => courses.find(c => c.id === courseId), [courses, courseId]);
 
@@ -76,7 +88,9 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
       sec.title.toLowerCase().includes(query) ||
       sec.subtitle.toLowerCase().includes(query) ||
       sec.summary.toLowerCase().includes(query) ||
+      (sec.contentMarkdown && sec.contentMarkdown.toLowerCase().includes(query)) ||
       sec.keyPoints.some((p) => p.toLowerCase().includes(query)) ||
+      (sec.keyFields && sec.keyFields.some((f) => f.toLowerCase().includes(query))) ||
       (sec.stopRules && sec.stopRules.some((r) => r.toLowerCase().includes(query)))
     ));
   }, [courseSections, searchQuery]);
@@ -326,67 +340,74 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
 
                 <div className="mt-4 p-4 rounded-xl bg-blue-50/70 border border-blue-100 text-blue-950 text-sm leading-relaxed flex items-start gap-3">
                   <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                  <div>
+                  <div className="grow min-w-0">
                     <span className="font-semibold">Суть інструкції: </span>
-                    {activeSection.summary}
+                    <RichTextWithImages 
+                      content={activeSection.summary} 
+                      onImageClick={(url, title) => setLightboxImage({ url, title: title || activeSection.title })}
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Key Highlights / Rules List */}
-              <div className="mb-6">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
-                  <span>Ключові вимоги та обмеження</span>
-                </h3>
-                <ul className="space-y-2.5">
-                  {activeSection.keyPoints.map((point, idx) => (
-                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-700 leading-relaxed">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 shrink-0" />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {/* 1. ПОВНИЙ ТЕКСТ ІНСТРУКЦІЇ (ОРИГІНАЛ З ФОТО ТА ОФОРМЛЕННЯМ) */}
+              {activeSection.contentMarkdown && (
+                <div className="mb-8 p-6 sm:p-7 rounded-2xl bg-white border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between pb-3.5 mb-5 border-b border-slate-100">
+                    <div className="flex items-center gap-2 text-slate-900 font-bold text-sm sm:text-base">
+                      <BookOpen className="w-5 h-5 text-blue-600" />
+                      <span>Повний текст регламенту (вихідний документ)</span>
+                    </div>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-medium">
+                      Оригінальна інструкція
+                    </span>
+                  </div>
+                  <div className="prose prose-slate max-w-none">
+                    <RichTextWithImages 
+                      content={activeSection.contentMarkdown} 
+                      onImageClick={(url, title) => setLightboxImage({ url, title: title || activeSection.title })}
+                    />
+                  </div>
+                </div>
+              )}
 
-              {/* Step-by-Step Execution Workflow (if present) */}
-              {activeSection.steps && activeSection.steps.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 mb-4 flex items-center gap-2">
-                    <span>Покроковий порядок дій</span>
+              {/* General Section Illustrations (if present and not already inside markdown) */}
+              {activeSection.images && activeSection.images.length > 0 && !activeSection.contentMarkdown && (
+                <div className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span>Схеми та загальні ілюстрації інструкції</span>
                   </h3>
-                  <div className="space-y-3">
-                    {activeSection.steps.map((step) => (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {activeSection.images.map((imgUrl, imgIdx) => (
                       <div
-                        key={step.number}
-                        className="p-4 rounded-xl border border-slate-200 hover:border-blue-300 bg-slate-50/50 hover:bg-blue-50/20 transition"
+                        key={imgIdx}
+                        onClick={() => setLightboxImage({ 
+                          url: imgUrl, 
+                          title: `Ілюстрація ${imgIdx + 1}: ${activeSection.title}` 
+                        })}
+                        className="group relative rounded-xl border border-slate-200 bg-white p-2 hover:border-blue-400 hover:shadow-md transition cursor-pointer overflow-hidden"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                            {step.number}
+                        <div className="relative bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden min-h-[140px] max-h-[260px]">
+                          <img
+                            src={imgUrl}
+                            alt={`Ілюстрація ${imgIdx + 1}`}
+                            className="max-h-[250px] w-auto max-w-full object-contain rounded-md transition group-hover:scale-[1.01]"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/25 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <span className="px-3 py-1.5 rounded-lg bg-slate-900/80 backdrop-blur-xs text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                              <Maximize2 className="w-3.5 h-3.5" />
+                              Збільшити схему
+                            </span>
                           </div>
-                          <div>
-                            <h4 className="text-sm font-bold text-slate-900">
-                              {step.title}
-                            </h4>
-                            <p className="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
-                              {step.description}
-                            </p>
-                            {step.tip && (
-                              <p className="mt-2 text-xs text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-md font-medium">
-                                💡 {step.tip}
-                              </p>
-                            )}
-                            {step.imageUrl && (
-                              <div className="mt-4">
-                                <img 
-                                  src={step.imageUrl} 
-                                  alt={step.title} 
-                                  className="max-w-full h-auto rounded-lg border border-slate-200 shadow-sm"
-                                  loading="lazy"
-                                />
-                              </div>
-                            )}
-                          </div>
+                        </div>
+                        <div className="mt-1.5 px-1 flex items-center justify-between text-[11px] text-slate-500">
+                          <span className="font-medium text-slate-600">Схема / Ілюстрація {imgIdx + 1}</span>
+                          <span className="text-blue-600 font-semibold flex items-center gap-1">
+                            <Maximize2 className="w-3 h-3" />
+                            Перегляд
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -394,96 +415,251 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                 </div>
               )}
 
-              {/* Data / Responsibility Comparison Table (if present) */}
-              {activeSection.tableData && (
+              {/* Step-by-Step Execution Workflow (if present) */}
+              {activeSection.steps && activeSection.steps.length > 0 && (
                 <div className="mb-8">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
-                    <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                    <span>Таблиця відповідностей та відповідальності</span>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 mb-4 flex items-center gap-2">
+                    <ListChecks className="w-4 h-4 text-blue-600" />
+                    <span>Покроковий порядок дій</span>
                   </h3>
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                        <tr>
-                          {activeSection.tableData.headers.map((h, i) => (
-                            <th key={i} className="p-3">
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {activeSection.tableData.rows.map((row, rIdx) => (
-                          <tr key={rIdx} className="hover:bg-slate-50/80 transition">
-                            {row.map((cell, cIdx) => (
-                              <td key={cIdx} className="p-3 align-top font-medium">
-                                {cell}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-3">
+                    {activeSection.steps.map((step) => {
+                      const allStepImgs = step.images && step.images.length > 0
+                        ? step.images
+                        : (step.imageUrl ? [step.imageUrl] : []);
+
+                      return (
+                        <div
+                          key={step.number}
+                          className="p-4 sm:p-5 rounded-xl border border-slate-200 hover:border-blue-300 bg-slate-50/50 hover:bg-blue-50/20 transition"
+                        >
+                          <div className="flex items-start gap-3.5">
+                            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                              {step.number}
+                            </div>
+                            <div className="grow min-w-0">
+                              <h4 className="text-sm sm:text-base font-bold text-slate-900">
+                                {step.title}
+                              </h4>
+                              <div className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+                                <RichTextWithImages 
+                                  content={step.description}
+                                  onImageClick={(url, title) => setLightboxImage({ 
+                                    url, 
+                                    title: title || `Крок ${step.number}: ${step.title}` 
+                                  })}
+                                />
+                              </div>
+
+                              {step.tip && (
+                                <p className="mt-2.5 text-xs text-blue-700 bg-blue-50/90 border border-blue-100 px-3 py-2 rounded-lg font-medium">
+                                  💡 {step.tip}
+                                </p>
+                              )}
+
+                              {step.warning && (
+                                <p className="mt-2.5 text-xs text-amber-800 bg-amber-50/90 border border-amber-200 px-3 py-2 rounded-lg font-medium">
+                                  ⚠️ {step.warning}
+                                </p>
+                              )}
+
+                              {/* Screenshots list in step */}
+                              {allStepImgs.length > 0 && (
+                                <div className="mt-4 space-y-3">
+                                  {allStepImgs.map((imgUrl, imgIdx) => (
+                                    <div 
+                                      key={imgIdx}
+                                      onClick={() => setLightboxImage({ 
+                                        url: imgUrl, 
+                                        title: `Крок ${step.number}: ${step.title}${allStepImgs.length > 1 ? ` (Скріншот ${imgIdx + 1})` : ''}` 
+                                      })}
+                                      className="group relative rounded-xl border border-slate-200/90 bg-white p-2 hover:border-blue-400 hover:shadow-md transition cursor-pointer overflow-hidden max-w-2xl"
+                                    >
+                                      <div className="relative bg-slate-50 rounded-lg flex items-center justify-center overflow-hidden min-h-[140px] max-h-[380px]">
+                                        <img 
+                                          src={imgUrl} 
+                                          alt={`Скріншот до кроку ${step.number}`} 
+                                          className="max-h-[360px] w-auto max-w-full object-contain rounded-md transition group-hover:scale-[1.01]"
+                                          loading="lazy"
+                                        />
+                                        <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/25 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                          <span className="px-3.5 py-1.5 rounded-lg bg-slate-900/80 backdrop-blur-xs text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                                            <Maximize2 className="w-3.5 h-3.5" />
+                                            Натисніть для збільшення
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="mt-1.5 px-1 flex items-center justify-between text-[11px] text-slate-500">
+                                        <span className="flex items-center gap-1 font-medium text-slate-600">
+                                          <ImageIcon className="w-3 h-3 text-slate-400" />
+                                          {allStepImgs.length > 1 ? `Скріншот ${imgIdx + 1}` : 'Скріншот інтерфейсу'}
+                                        </span>
+                                        <span className="text-blue-600 font-semibold flex items-center gap-1">
+                                          <Maximize2 className="w-3 h-3" />
+                                          Детальний перегляд
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Automatic System Actions (if present) */}
-              {activeSection.systemAutomaticActions && (
-                <div className="mb-8 p-5 bg-emerald-50/60 rounded-xl border border-emerald-200">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 mb-2 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Що система BAS УТ 3.2 зробить сама:</span>
-                  </h4>
-                  <ul className="space-y-1.5 text-xs sm:text-sm text-emerald-900">
-                    {activeSection.systemAutomaticActions.map((act, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>{act}</span>
-                      </li>
-                    ))}
-                  </ul>
+              {/* 2. АНАЛІТИЧНИЙ ПІДСУМКОВИЙ БЛОК В КІНЦІ ІНСТРУКЦІЇ: ВИСНОВКИ, КЛЮЧОВІ ПОЛЯ, СТОП-СПИСКИ */}
+              <div className="mt-8 pt-8 border-t-2 border-slate-100 space-y-6">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
+                    Аналітичний підсумок та ключові вимоги інструкції
+                  </h3>
                 </div>
-              )}
 
-              {/* Stop Rules (Red Alert Box if present) */}
-              {activeSection.stopRules && (
-                <div className="mb-8 p-5 bg-rose-50 rounded-xl border-2 border-rose-200">
-                  <h4 className="text-sm font-bold text-rose-900 mb-3 flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-                    <span>СТОП-СПИСОК — Так робити категорично заборонено!</span>
-                  </h4>
-                  <ul className="space-y-2 text-xs sm:text-sm text-rose-950 font-medium">
-                    {activeSection.stopRules.map((rule, idx) => (
-                      <li key={idx} className="flex items-start gap-2.5">
-                        <span className="text-rose-600 font-bold text-base leading-none">✕</span>
-                        <span>{rule}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                {/* Основні висновки */}
+                {activeSection.keyPoints && activeSection.keyPoints.length > 0 && (
+                  <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-blue-50/70 to-indigo-50/50 border border-blue-200/80 shadow-xs">
+                    <h4 className="text-sm font-bold text-blue-950 mb-3 flex items-center gap-2">
+                      <ListChecks className="w-4 h-4 text-blue-600" />
+                      <span>📌 Основні висновки</span>
+                    </h4>
+                    <ul className="space-y-2.5">
+                      {activeSection.keyPoints.map((point, idx) => (
+                        <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-blue-950 leading-relaxed">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 shrink-0" />
+                          <div className="grow min-w-0">
+                            <RichTextWithImages 
+                              content={point} 
+                              onImageClick={(url, title) => setLightboxImage({ url, title: title || `Висновок ${idx + 1}` })}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-              {/* Quick Quiz Card for Mobile (at the bottom of content) */}
-              <div className="block lg:hidden mb-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-xs mt-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="w-5 h-5 text-amber-300" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-blue-100">
-                    Закріплення матеріалу
-                  </span>
+                {/* Ключові поля та обов'язкові реквізити */}
+                {activeSection.keyFields && activeSection.keyFields.length > 0 && (
+                  <div className="p-5 sm:p-6 rounded-2xl bg-amber-50/70 border border-amber-200/80 shadow-xs">
+                    <h4 className="text-sm font-bold text-amber-950 mb-3 flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-amber-600" />
+                      <span>📋 Ключові поля та обов'язкові реквізити</span>
+                    </h4>
+                    <ul className="space-y-2">
+                      {activeSection.keyFields.map((field, fIdx) => (
+                        <li key={fIdx} className="flex items-start gap-2.5 text-xs sm:text-sm text-amber-950 font-medium">
+                          <span className="text-amber-600 font-bold">•</span>
+                          <span>{field}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* СТОП-СПИСКИ */}
+                {activeSection.stopRules && activeSection.stopRules.length > 0 && (
+                  <div className="p-5 sm:p-6 rounded-2xl bg-rose-50 border-2 border-rose-200 shadow-xs">
+                    <h4 className="text-sm font-bold text-rose-900 mb-3 flex items-center gap-2">
+                      <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                      <span>🚫 СТОП-СПИСОК — Так робити категорично заборонено!</span>
+                    </h4>
+                    <ul className="space-y-2.5 text-xs sm:text-sm text-rose-950 font-medium">
+                      {activeSection.stopRules.map((rule, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span className="text-rose-600 font-bold text-base leading-none">✕</span>
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Що система робить сама */}
+                {activeSection.systemAutomaticActions && activeSection.systemAutomaticActions.length > 0 && (
+                  <div className="p-5 sm:p-6 bg-emerald-50/70 rounded-2xl border border-emerald-200 shadow-xs">
+                    <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-emerald-900 mb-2.5 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>⚙️ Що система обліку проводить автоматично:</span>
+                    </h4>
+                    <ul className="space-y-1.5 text-xs sm:text-sm text-emerald-900">
+                      {activeSection.systemAutomaticActions.map((act, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="text-emerald-600 font-bold">✓</span>
+                          <span>{act}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Data / Responsibility Comparison Table (if present) */}
+                {activeSection.tableData && (
+                  <div className="p-5 sm:p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
+                    <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                      <span>📊 Таблиця відповідностей та відповідальності</span>
+                    </h4>
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                      <table className="w-full text-left text-xs sm:text-sm">
+                        <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                          <tr>
+                            {activeSection.tableData.headers.map((h, i) => (
+                              <th key={i} className="p-3">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {activeSection.tableData.rows.map((row, rIdx) => (
+                            <tr key={rIdx} className="hover:bg-slate-50/80 transition">
+                              {row.map((cell, cIdx) => (
+                                <td key={cIdx} className="p-3 align-top font-medium">
+                                  {cell}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. КВІЗ-ОПИТ: ПЕРЕВІРИТИ ЗНАННЯ З ЦІЄЇ ІНСТРУКЦІЇ */}
+              <div className="mt-8 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 sm:p-7 text-white shadow-md flex flex-col sm:flex-row items-center justify-between gap-5">
+                <div className="text-left">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <Sparkles className="w-5 h-5 text-amber-300" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-blue-200">
+                      Контроль засвоєння матеріалу
+                    </span>
+                    {questions.filter(q => q.sectionId === activeSection.id).length > 0 && (
+                      <span className="px-2 py-0.5 bg-blue-500/80 text-white text-[11px] font-bold rounded-full border border-blue-400">
+                        {questions.filter(q => q.sectionId === activeSection.id).length} питань
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">
+                    Готові перевірити свої знання з цієї інструкції?
+                  </h3>
+                  <p className="text-xs sm:text-sm text-blue-100 mt-1 max-w-xl">
+                    Пройдіть тест за цим регламентом: перевірте розуміння правил, дій в системі та СТОП-списків з миттєвим розбором відповідей.
+                  </p>
                 </div>
-                <h3 className="text-base font-bold leading-snug">
-                  Готові перевірити свої знання?
-                </h3>
-                <p className="text-xs text-blue-100 mt-1.5 leading-relaxed">
-                  Пройдіть тематичний тест за цією інструкцією і отримайте оцінку з розбором помилок.
-                </p>
                 <button
-                  onClick={() => onStartQuiz('section', activeSection?.id)}
-                  className="mt-4 w-full py-3 px-3 bg-white text-blue-600 hover:bg-blue-50 font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+                  onClick={() => onStartQuiz('section', activeSection.id)}
+                  className="w-full sm:w-auto shrink-0 py-3.5 px-6 bg-white text-blue-700 hover:bg-blue-50 active:scale-95 font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2.5 cursor-pointer"
                 >
-                  <Award className="w-5 h-5" />
-                  <span>Тест за обраною інструкцією</span>
+                  <Award className="w-5 h-5 text-blue-600" />
+                  <span>Перевірити знання з цієї інструкції</span>
                 </button>
               </div>
 
@@ -530,6 +706,14 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
         </div>
 
       </div>
+
+      {lightboxImage && (
+        <ImageLightboxModal
+          imageUrl={lightboxImage.url}
+          title={lightboxImage.title}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
     </div>
   );
 };

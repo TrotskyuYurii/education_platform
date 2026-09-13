@@ -50,10 +50,33 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const [quizSubmitted, setQuizSubmitted] = useState<boolean>(false);
   const [targetSectionId, setTargetSectionId] = useState<string | undefined>(initialSectionId);
   const [targetCourseId, setTargetCourseId] = useState<string | undefined>(initialCourseId);
+
+  // Sync state if props change
+  useEffect(() => {
+    setTargetSectionId(initialSectionId);
+    setTargetCourseId(initialCourseId);
+    if (initialSectionId || initialCourseId) {
+      setQuizStarted(false);
+      setQuizSubmitted(false);
+      setUserAnswers({});
+      setCurrentIndex(0);
+      setQuizAttempt(prev => prev + 1);
+    }
+  }, [initialSectionId, initialCourseId]);
   
   // Animation overlay state
   const [reaction, setReaction] = useState<{ type: 'success' | 'error', emoji: string, text: string, author?: string } | null>(null);
   const [finalQuote, setFinalQuote] = useState<UkrainianQuote | null>(null);
+
+  const currentTargetSection = useMemo(() => {
+    if (!targetSectionId) return null;
+    return allSections.find(s => s.id === targetSectionId);
+  }, [allSections, targetSectionId]);
+
+  const currentTargetCourse = useMemo(() => {
+    if (!targetCourseId) return null;
+    return courses.find(c => c.id === targetCourseId);
+  }, [courses, targetCourseId]);
 
   // Clear any existing reaction timer when unmounting or starting a new quiz
   useEffect(() => {
@@ -193,10 +216,16 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           </div>
 
           <h2 id="quiz-main-title" className="text-2xl sm:text-3xl font-bold text-slate-900">
-            Перевірка знань
+            {currentTargetSection 
+              ? `Тестування: ${currentTargetSection.title}` 
+              : currentTargetCourse 
+                ? `Тестування курсу: ${currentTargetCourse.title}` 
+                : 'Перевірка знань'}
           </h2>
           <p id="quiz-main-description" className="text-slate-600 mt-2 max-w-xl mx-auto text-sm sm:text-base">
-            Тести складені на основі внутрішніх реагламентів і інструкцій компанії ТОВ Віатек. Закріпіть навички і порядки дій.
+            {currentTargetSection 
+              ? `Перевірте знання порядку дій, ключових полів та СТОП-списків згідно з регламентом "${currentTargetSection.title}".`
+              : 'Тести складені на основі внутрішніх регламентів і інструкцій компанії ТОВ Віатек. Закріпіть навички і порядки дій.'}
           </p>
 
           {/* Mode & Filter Selection */}
@@ -253,11 +282,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     <option key={c.id} value={`course_${c.id}`}>Курс: {c.title}</option>
                   ))}
                 </optgroup>
-                {targetSectionId && (
-                  <optgroup label="Окремий розділ">
-                    <option value={`section_${targetSectionId}`}>Обраний розділ</option>
-                  </optgroup>
-                )}
+                <optgroup label="Окремі інструкції">
+                  {allSections.map(s => (
+                    <option key={s.id} value={`section_${s.id}`}>
+                      Інструкція: {s.title}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 

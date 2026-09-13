@@ -90,12 +90,15 @@ function MainApp() {
       const res = await fetch('/api/progress');
       const data = await res.json();
       if (res.ok && data.progress) {
+        const testScores = data.progress.testScores || [];
         setProgress(prev => ({
           ...prev,
           readSectionIds: data.progress.readSectionIds || [],
-          quizHistory: data.progress.testScores || [],
-          // Map MongoDB testScores to our format if needed, simplistic mapping:
-          bestScore: Math.max(0, ...(data.progress.testScores || []).map((s: any) => s.percentage || 0))
+          quizHistory: testScores,
+          certificates: data.progress.certificates || [],
+          employeeInfo: data.progress.employeeInfo || prev.employeeInfo,
+          bestScore: testScores.length > 0 ? Math.max(0, ...testScores.map((s: any) => s.percentage || 0)) : 0,
+          totalQuestionsAnswered: testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0)
         }));
       }
     } catch (err) {
@@ -107,12 +110,12 @@ function MainApp() {
     Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
   }, []);
 
-  const saveProgressToDb = async (readIds?: string[], testScore?: any) => {
+  const saveProgressToDb = async (readIds?: string[], testScore?: any, employeeInfo?: any) => {
     try {
       await fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ readSectionIds: readIds, testScore })
+        body: JSON.stringify({ readSectionIds: readIds, testScore, employeeInfo })
       });
     } catch (err) {
       console.error('Failed to save progress', err);
@@ -183,6 +186,7 @@ function MainApp() {
       ...prev,
       employeeInfo: profile,
     }));
+    saveProgressToDb(undefined, undefined, profile);
   };
 
   if (!dataLoaded) {
@@ -257,6 +261,7 @@ function MainApp() {
             sections={sections}
             courses={courses}
             cases={cases}
+            questions={questions}
             courseId={activeCourseId}
             readSectionIds={progress.readSectionIds}
             onToggleReadSection={handleToggleReadSection}
@@ -318,6 +323,8 @@ function MainApp() {
           <Dashboard
             progress={progress}
             sections={sections}
+            courses={courses}
+            currentUser={user}
           />
         )}
 

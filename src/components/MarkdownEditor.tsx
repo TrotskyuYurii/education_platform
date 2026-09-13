@@ -37,8 +37,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, on
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64 = event.target?.result as string;
-      // Вставляємо зображення у форматі спеціального тегу для парсера
-      insertText(`\n**Зображення:** ${base64}\n`);
+      const fileName = file.name.replace(/\.[^/.]+$/, '') || 'Скріншот';
+      // Вставляємо зображення у стандартному форматі Markdown
+      insertText(`\n![${fileName}](${base64})\n`);
     };
     reader.readAsDataURL(file);
     
