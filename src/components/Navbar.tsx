@@ -214,8 +214,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                       <div className="overflow-hidden">
                         <p className="text-xs text-slate-500 font-medium">Обліковий запис</p>
-                        <p className="text-sm font-bold text-slate-900 truncate">
-                          {user?.fullName || user?.username || 'Користувач'}
+                        <p className="text-sm font-bold text-slate-900 truncate" title={user?.email || user?.username}>
+                          {user?.fullName || user?.email || user?.username || 'Користувач'}
                         </p>
                       </div>
                     </div>

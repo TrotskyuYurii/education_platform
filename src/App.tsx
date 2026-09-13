@@ -175,7 +175,7 @@ function MainApp() {
   }
 
   // SECURITY REQ: Force setup mode for default admin
-  if (user?.username === 'admin') {
+  if (user?.username === 'admin' || user?.email === 'admin@viatec.ua') {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
         <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
@@ -316,7 +316,7 @@ function MainApp() {
             <span className="font-semibold text-slate-700">ТОВ «ВІАТЕК»</span>
           </div>
           <div className="flex items-center gap-4">
-            <span>Ви увійшли як <strong className="text-slate-700">{user?.username}</strong> ({user?.role})</span>
+            <span>Ви увійшли як <strong className="text-slate-700">{user?.email || user?.username}</strong> ({user?.role})</span>
             <button onClick={logout} className="text-rose-600 hover:underline">Вийти</button>
           </div>
         </div>

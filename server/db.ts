@@ -32,7 +32,8 @@ async function seedDefaults() {
         email: 'admin@viatec.ua',
         passwordHash,
         role: 'admin',
-        departments: ['Всі підрозділи']
+        departments: ['Всі підрозділи'],
+        requireEmailCode: false
       } as any);
       console.log('🌱 Seeded default admin user (username: admin, password: admin123)');
     }

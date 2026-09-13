@@ -2,10 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export interface User {
   id: string;
+  email: string;
   username: string;
   role: 'user' | 'admin';
   departments: string[];
-  allowedCourseIds: string[];
+  allowedCourseIds?: string[];
+  allowedInstructionIds?: string[];
+  requireEmailCode?: boolean;
 }
 
 interface AuthContextType {

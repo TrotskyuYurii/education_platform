@@ -80,7 +80,12 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     }
   };
 
-  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: isSetupMode ? 'admin' : 'user' });
+  const [newUser, setNewUser] = useState({ 
+    email: '', 
+    password: '', 
+    requireEmailCode: true, 
+    role: isSetupMode ? 'admin' : 'user' 
+  });
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
@@ -123,18 +128,35 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserMsg(null);
+
+    const cleanEmail = newUser.email.trim().toLowerCase();
+    if (!cleanEmail.endsWith('@viatec.ua')) {
+      setUserMsg({ type: 'error', text: 'Email має бути виключно в домені @viatec.ua' });
+      return;
+    }
+
+    if (!newUser.password) {
+      setUserMsg({ type: 'error', text: 'Пароль є обов\'язковим полем' });
+      return;
+    }
+
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: newUser.password,
+          role: newUser.role,
+          requireEmailCode: newUser.requireEmailCode
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setUserMsg({ type: 'success', text: `Користувача ${newUser.username} створено!` });
+      setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
       
       const createdRole = newUser.role;
-      setNewUser({ username: '', email: '', password: '', role: 'user' });
+      setNewUser({ email: '', password: '', requireEmailCode: true, role: 'user' });
       fetchUsers();
       
       if (isSetupMode && createdRole === 'admin') {
@@ -155,9 +177,12 @@ export const TestManagement: React.FC<TestManagementProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          email: selectedUser.email,
           departments: selectedUser.departments,
           allowedInstructionIds: selectedUser.allowedInstructionIds,
-          email: selectedUser.email
+          role: selectedUser.role,
+          requireEmailCode: selectedUser.requireEmailCode !== false,
+          password: selectedUser.newPassword || undefined
         })
       });
       const data = await res.json();
@@ -168,7 +193,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       setSelectedUser(null);
       fetchUsers();
     } catch (err) {
-      alert('Помилка оновлення');
+      alert('Помилка оновлення користувача');
     }
   };
 
@@ -1574,17 +1599,32 @@ export const TestManagement: React.FC<TestManagementProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="font-semibold text-slate-800 mb-3">Список користувачів</h4>
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                  <div className="space-y-2 max-h-[460px] overflow-y-auto pr-2">
                     {users.map(u => (
                       <div 
                         key={u._id}
                         onClick={() => setSelectedUser(u)}
-                        className={`p-3 rounded-lg border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50' : 'border-slate-200 hover:border-purple-300'}`}
+                        className={`p-3.5 rounded-xl border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50/70 shadow-xs' : 'border-slate-200 bg-white hover:border-purple-300'}`}
                       >
-                        <div className="font-medium text-slate-900">{u.username} <span className="text-xs text-slate-500 font-normal">({u.role})</span></div>
-                        <div className="text-xs text-slate-500 font-medium">{u.email || '—'}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          Підрозділів: {u.departments?.length || 0} | Дозволених інструкцій: {u.allowedInstructionIds?.length || 0}
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-slate-900 text-sm">{u.email || u.username}</div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'}`}>
+                            {u.role === 'admin' ? 'Адміністратор' : 'Користувач'}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                          <span className="text-slate-500">
+                            Підрозділів: {u.departments?.length || 0}
+                          </span>
+                          {u.requireEmailCode !== false ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              ✉️ Email-код (8 знаків)
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-medium">
+                              Прямий вхід без коду
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1593,25 +1633,64 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
                 <div>
                   {selectedUser ? (
-                    <form onSubmit={handleUpdateUser} className="space-y-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
-                      <h4 className="font-semibold text-slate-800">Редагування: {selectedUser.username}</h4>
+                    <form onSubmit={handleUpdateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-900 text-sm">
+                          Редагування користувача
+                        </h4>
+                        <span className="text-xs text-purple-700 font-mono bg-purple-100 px-2 py-0.5 rounded">
+                          {selectedUser.email || selectedUser.username}
+                        </span>
+                      </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Email (@viatec.ua)</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Email (@viatec.ua) *</label>
                         <input
                           type="email"
                           required
                           value={selectedUser.email || ''}
                           onChange={e => setSelectedUser({...selectedUser, email: e.target.value})}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-white rounded-xl border border-slate-200">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedUser.requireEmailCode !== false}
+                            onChange={e => setSelectedUser({...selectedUser, requireEmailCode: e.target.checked})}
+                            className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
+                          />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">
+                              Авторизація через email код (8 знаків)
+                            </span>
+                            <span className="text-xs text-slate-500 block mt-0.5">
+                              При вході користувач отримує одноразовий 8-значний код на пошту, що діє 5 хвилин.
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Новий пароль (залиште порожнім, щоб не змінювати)
+                        </label>
+                        <input
+                          type="password"
+                          placeholder="••••••••"
+                          value={selectedUser.newPassword || ''}
+                          onChange={e => setSelectedUser({...selectedUser, newPassword: e.target.value})}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Доступ до підрозділів</label>
-                        <div className="space-y-2 max-h-[150px] overflow-y-auto p-2 bg-white border border-slate-200 rounded-lg">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Доступ до підрозділів</label>
+                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
                           {departments.map(d => (
-                            <label key={d._id} className="flex items-center gap-2">
+                            <label key={d._id} className="flex items-center gap-2 cursor-pointer">
                               <input 
                                 type="checkbox" 
                                 checked={selectedUser.departments?.includes(d.name) || false}
@@ -1625,18 +1704,18 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 }}
                                 className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                               />
-                              <span className="text-sm text-slate-700">{d.name}</span>
+                              <span className="text-xs text-slate-700">{d.name}</span>
                             </label>
                           ))}
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Якщо обрано "Всі підрозділи", користувач бачитиме інструкції всіх підрозділів.</p>
+                        <p className="text-[11px] text-slate-500 mt-1">Якщо обрано "Всі підрозділи", користувач бачитиме інструкції всіх підрозділів.</p>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Обмеження за інструкціями (опціонально)</label>
-                        <div className="space-y-2 max-h-[150px] overflow-y-auto p-2 bg-white border border-slate-200 rounded-lg">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Обмеження за інструкціями (опціонально)</label>
+                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
                           {sections.map(s => (
-                            <label key={s.id} className="flex items-center gap-2">
+                            <label key={s.id} className="flex items-center gap-2 cursor-pointer">
                               <input 
                                 type="checkbox" 
                                 checked={selectedUser.allowedInstructionIds?.includes(s.id) || false}
@@ -1650,76 +1729,93 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 }}
                                 className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                               />
-                              <span className="text-sm text-slate-700">{s.title} <span className="text-xs text-slate-400">({s.department})</span></span>
+                              <span className="text-xs text-slate-700">{s.title} <span className="text-slate-400">({s.department})</span></span>
                             </label>
                           ))}
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Якщо обрати конкретні інструкції, користувач бачитиме <b>ТІЛЬКИ ЇХ</b>, ігноруючи фільтр підрозділу.</p>
                       </div>
 
-                      <div className="flex gap-2 pt-2">
-                        <button type="submit" className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition">
-                          Зберегти
+                      <div className="flex gap-2 pt-1">
+                        <button type="submit" className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-xs transition">
+                          Зберегти зміни
                         </button>
-                        <button type="button" onClick={() => setSelectedUser(null)} className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium text-sm transition">
+                        <button type="button" onClick={() => setSelectedUser(null)} className="flex-1 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition">
                           Скасувати
                         </button>
                       </div>
                     </form>
                   ) : (
-                    <form onSubmit={handleCreateUser} className="space-y-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
-                      <h4 className="font-semibold text-slate-800">Новий користувач</h4>
+                    <form onSubmit={handleCreateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
+                      <h4 className="font-bold text-slate-900 text-sm">Створити нового користувача</h4>
                       {userMsg && (
-                        <div className={`p-3 rounded-lg text-sm font-medium ${userMsg.type === 'error' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                        <div className={`p-3 rounded-xl text-xs font-medium ${userMsg.type === 'error' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
                           {userMsg.text}
                         </div>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Ім'я (логін)</label>
-                        <input
-                          type="text"
-                          required
-                          value={newUser.username}
-                          onChange={e => setNewUser({...newUser, username: e.target.value})}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Email (@viatec.ua)</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Корпоративний Email (@viatec.ua) *
+                        </label>
                         <input
                           type="email"
                           required
                           value={newUser.email}
                           onChange={e => setNewUser({...newUser, email: e.target.value})}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                           placeholder="user@viatec.ua"
                         />
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Email використовується як логін для входу в систему.
+                        </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Пароль</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Пароль *
+                        </label>
                         <input
                           type="password"
                           required
                           value={newUser.password}
                           onChange={e => setNewUser({...newUser, password: e.target.value})}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          placeholder="••••••••"
                         />
                       </div>
+                      
+                      <div className="p-3 bg-white rounded-xl border border-slate-200">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newUser.requireEmailCode}
+                            onChange={e => setNewUser({...newUser, requireEmailCode: e.target.checked})}
+                            className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
+                          />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">
+                              Авторизація email код (8 знаків)
+                            </span>
+                            <span className="text-xs text-slate-500 block mt-0.5">
+                              Встановлено за замовчанням. При вході надсилається одноразовий 8-значний код на пошту.
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Роль</label>
                         <select
                           value={newUser.role}
                           onChange={e => setNewUser({...newUser, role: e.target.value})}
                           disabled={isSetupMode}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
                         >
                           <option value="user">Користувач</option>
                           <option value="admin">Адміністратор</option>
                         </select>
                         {isSetupMode && <p className="text-xs text-rose-500 mt-1">В режимі налаштування необхідно створити адміністратора.</p>}
                       </div>
-                      <button type="submit" className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium transition">
-                        Створити
+                      <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-semibold text-xs transition">
+                        Створити користувача
                       </button>
                     </form>
                   )}

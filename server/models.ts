@@ -6,12 +6,17 @@ const userSchema = new mongoose.Schema({
     type: String, 
     required: true, 
     unique: true, 
+    lowercase: true,
+    trim: true,
     match: [/@viatec\.ua$/i, 'Email має бути в домені @viatec.ua'] 
   },
   passwordHash: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   departments: { type: [String], default: ['Всі підрозділи'] },
   allowedInstructionIds: { type: [String], default: [] }, // Changed from allowedCourseIds
+  requireEmailCode: { type: Boolean, default: true },
+  authCode: { type: String, default: null },
+  authCodeExpires: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
