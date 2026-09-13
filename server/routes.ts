@@ -391,11 +391,20 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     try {
       fileResult = await ai.files.upload({
         file: req.file.path,
-        mimeType: mimeType === 'application/pdf' ? 'application/pdf' : 'text/plain' // Fallback to plain text if not recognized as pdf/etc for safety, though Gemini supports many.
+        config: {
+          mimeType: req.file.mimetype,
+          displayName: req.file.originalname
+        }
       });
-    } catch (uploadErr) {
+    } catch (uploadErr: any) {
       console.error('File API upload error', uploadErr);
-      return res.status(500).json({ error: 'Failed to upload document to AI Assistant' });
+      let errMsg = 'Failed to upload document to AI Assistant';
+      if (uploadErr?.message && uploadErr.message.includes('429')) {
+        errMsg = 'Помилка API (429): Недостатньо коштів на балансі Gemini API або перевищено ліміт запитів. Будь ласка, поповніть баланс Google AI Studio.';
+      } else if (uploadErr?.message) {
+        errMsg = uploadErr.message;
+      }
+      return res.status(500).json({ error: errMsg });
     } finally {
       // Clean up the local temp file after uploading to Gemini
       try {
@@ -513,9 +522,15 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     }
 
     res.json({ success: true, markdown: markdownText });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to generate instruction via AI', err);
-    res.status(500).json({ error: 'Помилка при генерації через AI' });
+    let errMsg = 'Помилка при генерації через AI';
+    if (err?.message && err.message.includes('429')) {
+      errMsg = 'Помилка API (429): Недостатньо коштів на балансі Gemini API або перевищено ліміт запитів. Будь ласка, поповніть баланс Google AI Studio.';
+    } else if (err?.message) {
+      errMsg = err.message;
+    }
+    res.status(500).json({ error: errMsg });
   }
 });
 
