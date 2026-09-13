@@ -86,8 +86,10 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   }, [activeTab]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const aiFileInputRef = useRef<HTMLInputElement>(null);
   
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
 
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
@@ -546,6 +548,53 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     }
   };
 
+  const handleAiFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportStatus(null);
+    setIsGeneratingAi(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/admin/generate-instruction', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'AI processing failed');
+
+      const result = parseMarkdown(data.markdown);
+      if (result.sections.length === 0) {
+        setImportStatus({
+          type: 'error',
+          message: 'ШІ не зміг коректно згенерувати інструкцію. Спробуйте інший файл.'
+        });
+        setIsGeneratingAi(false);
+        return;
+      }
+
+      onImport(result.sections, result.questions, false);
+      setImportStatus({
+        type: 'success',
+        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань.`
+      });
+    } catch (err: any) {
+      setImportStatus({
+        type: 'error',
+        message: err.message || 'Помилка при генерації через AI.'
+      });
+    } finally {
+      setIsGeneratingAi(false);
+      if (aiFileInputRef.current) {
+        aiFileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
@@ -830,45 +879,74 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     </div>
                   )}
 
-                  {/* Upload Box */}
-                  <div className="p-6 border-2 border-dashed border-blue-200 hover:border-blue-300 rounded-xl bg-white flex flex-col items-center justify-center text-center transition">
-                    <Upload className="w-8 h-8 text-blue-500 mb-2" />
-                    <p className="text-sm font-semibold text-slate-700 mb-1">
-                      Оберіть .md файл для завантаження
-                    </p>
-                    <p className="text-xs text-slate-400 mb-4 max-w-sm">
-                      Файл має відповідати специфікації шаблону для правильного розпізнавання інструкцій та тестів.
-                    </p>
+                  {/* Upload Boxes Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Manual MD Upload */}
+                    <div className="p-6 border-2 border-dashed border-blue-200 hover:border-blue-300 rounded-xl bg-white flex flex-col items-center justify-center text-center transition">
+                      <FileText className="w-8 h-8 text-blue-500 mb-2" />
+                      <p className="text-sm font-semibold text-slate-700 mb-1">
+                        1. Готовий .md файл
+                      </p>
+                      <p className="text-xs text-slate-400 mb-4 max-w-sm">
+                        Завантажте заздалегідь підготовлений Markdown файл.
+                      </p>
 
-                    <input 
-                      type="file" 
-                      accept=".md,text/markdown"
-                      className="hidden" 
-                      ref={fileInputRef}
-                    />
+                      <input 
+                        type="file" 
+                        accept=".md,text/markdown"
+                        className="hidden" 
+                        ref={fileInputRef}
+                      />
 
-                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <div className="flex flex-col gap-2 w-full max-w-[200px]">
+                        <button
+                          onClick={() => {
+                            if (fileInputRef.current) {
+                              fileInputRef.current.onchange = (e: any) => handleFileUpload(e, false);
+                              fileInputRef.current.click();
+                            }
+                          }}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition w-full"
+                        >
+                          Додати до існуючих
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* AI Generation Upload */}
+                    <div className="p-6 border-2 border-dashed border-indigo-200 hover:border-indigo-300 rounded-xl bg-indigo-50/30 flex flex-col items-center justify-center text-center transition relative overflow-hidden">
+                      {isGeneratingAi && (
+                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+                          <RefreshCw className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
+                          <span className="text-xs font-bold text-indigo-900">ШІ аналізує документ...</span>
+                        </div>
+                      )}
+                      <Sparkles className="w-8 h-8 text-indigo-500 mb-2" />
+                      <p className="text-sm font-semibold text-indigo-900 mb-1">
+                        2. ШІ-Генерація (docx, pdf, txt)
+                      </p>
+                      <p className="text-xs text-indigo-500/80 mb-4 max-w-sm">
+                        Завантажте сирий документ, і ШІ сам згенерує інструкцію та тести.
+                      </p>
+
+                      <input 
+                        type="file" 
+                        accept=".pdf,.txt,.doc,.docx"
+                        className="hidden" 
+                        ref={aiFileInputRef}
+                      />
+
                       <button
                         onClick={() => {
-                          if (fileInputRef.current) {
-                            fileInputRef.current.onchange = (e: any) => handleFileUpload(e, false);
-                            fileInputRef.current.click();
+                          if (aiFileInputRef.current) {
+                            aiFileInputRef.current.onchange = handleAiFileUpload;
+                            aiFileInputRef.current.click();
                           }
                         }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+                        disabled={isGeneratingAi}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition w-full max-w-[200px]"
                       >
-                        Додати до існуючих
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (fileInputRef.current) {
-                            fileInputRef.current.onchange = (e: any) => handleFileUpload(e, true);
-                            fileInputRef.current.click();
-                          }
-                        }}
-                        className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
-                      >
-                        Замінити всю базу
+                        Обробити через ШІ
                       </button>
                     </div>
                   </div>

@@ -2,8 +2,14 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { GoogleGenAI } from '@google/genai';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
+
+const upload = multer({ dest: 'uploads/' });
 
 export const apiRouter = Router();
 
@@ -362,6 +368,154 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to import data' });
+  }
+});
+
+apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Check mime type (we accept text, pdf, word doc generally)
+    // For simplicity, we use Gemini's File API for processing documents natively
+    const mimeType = req.file.mimetype;
+    let fileResult;
+    try {
+      fileResult = await ai.files.upload({
+        file: req.file.path,
+        mimeType: mimeType === 'application/pdf' ? 'application/pdf' : 'text/plain' // Fallback to plain text if not recognized as pdf/etc for safety, though Gemini supports many.
+      });
+    } catch (uploadErr) {
+      console.error('File API upload error', uploadErr);
+      return res.status(500).json({ error: 'Failed to upload document to AI Assistant' });
+    } finally {
+      // Clean up the local temp file after uploading to Gemini
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        console.error('Failed to clean up temp file', e);
+      }
+    }
+
+    // Now wait for the file to be processed
+    let fileState = await ai.files.get({ name: fileResult.name });
+    while (fileState.state === 'PROCESSING') {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      fileState = await ai.files.get({ name: fileResult.name });
+    }
+    
+    if (fileState.state === 'FAILED') {
+      return res.status(500).json({ error: 'AI Assistant failed to process the document format.' });
+    }
+
+    // Now generate the markdown
+    const aiPromptGuide = `ВИКОРИСТОВУЙ ЦЕЙ ПРОМПТ ДЛЯ ІНШИХ МОДЕЛЕЙ ШІ (ChatGPT, Claude, Gemini, DeepSeek):
+-------------------------------------------------------------------------
+Ти — провідний експерт з корпоративного навчання, регламентів бізнес-процесів та укладання професійних тестів.
+Твоє завдання: перенести додану робочу інструкцію/регламент компанії у цей додаток У ТОМУ САМОМУ ВИГЛЯДІ (повний текст, розділи, таблиці, малюнки/скріншоти), забезпечити співробітнику зручне повноцінне читання та ознайомлення, а в кінці вивести контрольні блоки та тестові питання для квіз-опитування.
+
+Формат результату — єдиний самодостатній файл Markdown (.md) суворо за такою структурою:
+
+# Назва інструкції: [Повна назва інструкції або регламенту]
+**Підзаголовок:** [Коротке роз'яснення для кого і в яких ситуаціях застосовується]
+**Підрозділ:** [Назва підрозділу, наприклад: Відділ роздрібного продажу / Казначейство / Бухгалтерія / Склад]
+**Суть:** [1-2 речення з головною суттю регламенту — що потрібно знати в першу чергу]
+**Роль:** [Одне зі значень: all | cashier | manager | accountant]
+**Першоджерело:** [Номер наказу, регламенту або номер сторінки, наприклад: Стор. 1–4, Регламент №12]
+**Час читання:** [Орієнтовний час вивчення, наприклад: 5 хв]
+
+### ПОВНИЙ ТЕКСТ ІНСТРУКЦІЇ
+[Встав сюди ПОВНИЙ оригінальний текст регламенту без скорочень!
+Зберігай усю початкову структуру, заголовки, параграфи, виноски, примітки та описи.]
+
+### ПОКРОКОВИЙ ПОРЯДОК ДІЙ
+[Якщо регламент містить послідовність операцій, розпиши їх покроково:]
+#### Крок 1: [Коротка назва дії]
+[Детальний опис дій співробітника в інтерфейсі програми чи на робочому місці]
+💡 Підказка: [Корисна порада для прискорення роботи або запобігання помилкам]
+⚠️ Увага: [Попередження про критичні нюанси]
+
+#### Крок 2: [Наступна дія]
+[Опис кроку 2]
+
+---
+В КІНЦІ ОСНОВНОЇ ІНСТРУКЦІЇ ОБОВ'ЯЗКОВО СФОРМУЙ 3 АНАЛІТИЧНІ БЛОКИ ТА СИСТЕМНІ ДІЇ:
+
+### ОСНОВНІ ВИСНОВКИ
+- [Ключовий висновок 1 — головне правило, яке працівник повинен запам'ятати]
+- [Ключовий висновок 2]
+- [Ключовий висновок 3]
+
+### КЛЮЧОВІ ПОЛЯ ТА РЕКВІЗИТИ
+- [Обов'язкове поле/реквізит 1: наприклад, «Статус чека — тільки "Пробитий"»]
+- [Обов'язкове поле/реквізит 2: наприклад, «Номер первинного фіскального чека»]
+- [Обов'язкове поле/реквізит 3: наприклад, «Заява покупця з паспортними даними при сумі > 100 грн»]
+
+### СТОП-СПИСКИ
+- [Критична заборона 1: Категорично заборонено видавати готівку, якщо покупка була оплачена карткою!]
+- [Критична заборона 2: Заборонено проводити повернення без заяви покупця при сумі понад 100 грн!]
+- [Критична заборона 3: Дія, яка тягне за собою збій, штраф чи скаргу клієнта]
+
+### АВТОМАТИЧНІ ДІЇ СИСТЕМИ
+- [Дія 1: Що облікова програма (BAS, CRM, ПРРО) проводить автоматично]
+- [Дія 2: Автоматичні бухгалтерські, касові чи складські рухи]
+
+### ТАБЛИЦЯ ВІДПОВІДНОСТЕЙ ТА ВІДПОВІДАЛЬНОСТІ
+| Ситуація / Умова | Дія співробітника | Відповідальна особа | Термін |
+| --- | --- | --- | --- |
+| [Умова 1] | [Дія 1] | [Посада] | [Термін] |
+| [Умова 2] | [Дія 2] | [Посада] | [Термін] |
+
+---
+БЛОК ПИТАНЬ ДЛЯ КВІЗ-ОПИТУ (ТЕСТУВАННЯ):
+
+### ПИТАННЯ: [Текст практичного запитання 1 на основі реальної робочої ситуації?]
+**Складність:** [easy | medium | hard]
+**Контекст:** [Реальна робоча ситуація клієнта або інцидент, на якому ґрунтується питання]
+**Першоджерело:** [Пункт регламенту чи сторінка]
+- [ ] [Неправильний варіант відповіді A]
+- [x] [ПРАВИЛЬНИЙ варіант відповіді — позначається строго через [x]]
+- [ ] [Неправильний варіант відповіді B]
+- [ ] [Неправильний варіант відповіді C]
+**Пояснення:** [Детальне обґрунтування, чому ця відповідь правильна з посиланням на регламент і логіку системи]
+
+ВИМОГИ ДО ТЕСТОВИХ ПИТАНЬ:
+1. Склади від 3 до 6 якісних запитань різної складності (easy, medium, hard).
+2. Запитання обов'язково повинні спиратися на текст інструкції, Ключові поля та СТОП-СПИСКИ.
+3. Рівно один варіант відповіді має бути позначений як правильний через [x].
+4. У відповіді виводь виключно готовий текст Markdown без вступних слів, привітань та сторонніх коментарів.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        { role: 'user', parts: [
+          { text: aiPromptGuide },
+          { fileData: { fileUri: fileResult.uri, mimeType: fileResult.mimeType } }
+        ]}
+      ]
+    });
+
+    const markdownText = response.text || '';
+    
+    // Optional: Clean up the file from Gemini storage
+    try {
+      await ai.files.delete({ name: fileResult.name });
+    } catch (e) {
+      console.error('Failed to delete file from Gemini', e);
+    }
+
+    res.json({ success: true, markdown: markdownText });
+  } catch (err) {
+    console.error('Failed to generate instruction via AI', err);
+    res.status(500).json({ error: 'Помилка при генерації через AI' });
   }
 });
 
