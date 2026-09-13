@@ -25,7 +25,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { user, logout } = useAuth();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const readPercent = totalSections > 0 ? Math.round((readCount / totalSections) * 100) : 0;
+  const clampedReadCount = Math.max(0, Math.min(readCount, totalSections));
+  const readPercent = totalSections > 0 ? Math.round((clampedReadCount / totalSections) * 100) : 0;
 
   // Close dropdown when tapping or clicking outside
   useEffect(() => {
@@ -98,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className={`text-xs px-1.5 py-0.2 rounded-full ${
                 currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-700'
               }`}>
-                {readCount}/{totalSections}
+                {clampedReadCount}/{totalSections}
               </span>
             </button>
 
@@ -332,7 +333,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            Навчальні матеріали ({readCount}/{totalSections})
+            Навчальні матеріали ({clampedReadCount}/{totalSections})
           </button>
           <button
             onClick={() => onSelectTab('quiz')}

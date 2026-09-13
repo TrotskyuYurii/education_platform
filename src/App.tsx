@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Navbar, AppTab } from './components/Navbar';
 import { InstructionViewer } from './components/InstructionViewer';
 import { QuizRunner } from './components/QuizRunner';
@@ -70,6 +70,21 @@ function MainApp() {
   const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
   const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
 
+  // Compute clean and valid read section IDs (filters out obsolete deleted sections and duplicates)
+  const validSectionIdsSet = useMemo(() => new Set(sections.map(s => s.id)), [sections]);
+
+  const validReadSectionIds = useMemo(() => {
+    const seen = new Set<string>();
+    const valid: string[] = [];
+    for (const id of progress.readSectionIds) {
+      if (validSectionIdsSet.has(id) && !seen.has(id)) {
+        seen.add(id);
+        valid.push(id);
+      }
+    }
+    return valid;
+  }, [progress.readSectionIds, validSectionIdsSet]);
+
   const fetchContent = async () => {
     try {
       const res = await fetch('/api/content');
@@ -110,6 +125,16 @@ function MainApp() {
     Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
   }, []);
 
+  // When sections or progress load, clean up any obsolete/deleted section IDs from progress
+  useEffect(() => {
+    if (dataLoaded && sections.length > 0 && progress.readSectionIds.length > 0) {
+      if (progress.readSectionIds.length !== validReadSectionIds.length) {
+        setProgress(prev => ({ ...prev, readSectionIds: validReadSectionIds }));
+        saveProgressToDb(validReadSectionIds);
+      }
+    }
+  }, [dataLoaded, sections, validReadSectionIds, progress.readSectionIds.length]);
+
   const saveProgressToDb = async (readIds?: string[], testScore?: any, employeeInfo?: any) => {
     try {
       await fetch('/api/progress', {
@@ -123,11 +148,14 @@ function MainApp() {
   };
 
   const handleToggleReadSection = (sectionId: string) => {
+    // Only allow toggling if section exists
+    if (!validSectionIdsSet.has(sectionId)) return;
+    
     setProgress((prev) => {
       const exists = prev.readSectionIds.includes(sectionId);
       const updated = exists
-        ? prev.readSectionIds.filter((id) => id !== sectionId)
-        : [...prev.readSectionIds, sectionId];
+        ? prev.readSectionIds.filter((id) => id !== sectionId && validSectionIdsSet.has(id))
+        : Array.from(new Set([...prev.readSectionIds.filter(id => validSectionIdsSet.has(id)), sectionId]));
       
       saveProgressToDb(updated);
       return { ...prev, readSectionIds: updated };
@@ -239,7 +267,7 @@ function MainApp() {
           }
           setCurrentTab(tab);
         }}
-        readCount={progress.readSectionIds.length}
+        readCount={validReadSectionIds.length}
         totalSections={sections.length}
         bestScore={progress.bestScore > 0 ? progress.bestScore : null}
         isSigned={progress.employeeInfo.isSigned}
@@ -250,7 +278,7 @@ function MainApp() {
           <CourseCatalog
             sections={sections}
             courses={courses}
-            readSectionIds={progress.readSectionIds}
+            readSectionIds={validReadSectionIds}
             onOpenCourse={handleOpenCourse}
             onStartCourseQuiz={(courseId, isCourse) => handleStartQuiz(isCourse ? 'course' : 'section', courseId)}
           />
@@ -263,7 +291,7 @@ function MainApp() {
             cases={cases}
             questions={questions}
             courseId={activeCourseId}
-            readSectionIds={progress.readSectionIds}
+            readSectionIds={validReadSectionIds}
             onToggleReadSection={handleToggleReadSection}
             onStartQuiz={handleStartQuiz}
             onStartCases={(courseCases) => {
@@ -313,7 +341,10 @@ function MainApp() {
 
         {currentTab === 'signoff' && (
           <AcknowledgmentForm
-            progress={progress}
+            progress={{
+              ...progress,
+              readSectionIds: validReadSectionIds
+            }}
             onSaveProfile={handleSaveProfile}
             onNavigateToQuiz={() => setCurrentTab('quiz')}
           />
@@ -321,7 +352,10 @@ function MainApp() {
 
         {currentTab === 'dashboard' && (
           <Dashboard
-            progress={progress}
+            progress={{
+              ...progress,
+              readSectionIds: validReadSectionIds
+            }}
             sections={sections}
             courses={courses}
             currentUser={user}

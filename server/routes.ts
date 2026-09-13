@@ -350,6 +350,14 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
     
     if (sections?.length) await Section.insertMany(sections);
     if (questions?.length) await Question.insertMany(questions);
+
+    // After import, ensure users' progress does not reference deleted or non-existent instructions
+    const allCurrentSections = await Section.find({}, { id: 1 });
+    const currentValidIds = allCurrentSections.map(s => s.id);
+    await Progress.updateMany(
+      {},
+      { $pull: { readSectionIds: { $nin: currentValidIds } } } as any
+    );
     
     res.json({ success: true });
   } catch (err) {
@@ -431,6 +439,12 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
     await Course.updateMany(
       { instructionIds: { $in: [secId, instructionId] } } as any,
       { $pull: { instructionIds: { $in: [secId, instructionId] } } } as any
+    );
+
+    // Also remove this deleted instruction from all users' progress to prevent progress overflow
+    await Progress.updateMany(
+      {},
+      { $pull: { readSectionIds: { $in: [secId, instructionId] } } } as any
     );
     
     res.json({ success: true });
@@ -610,6 +624,23 @@ apiRouter.get('/progress', requireAuth, async (req: any, res) => {
     let progress = await Progress.findOne({ userId: req.user._id } as any);
     if (!progress) {
       progress = await Progress.create({ userId: req.user._id, readSectionIds: [], testScores: [] } as any);
+    } else {
+      // Auto-clean stale or duplicate readSectionIds against actual existing sections
+      const currentSections = await Section.find({}, { id: 1 });
+      const validSectionIds = new Set(currentSections.map(s => s.id));
+      const rawIds: string[] = progress.readSectionIds || [];
+      const seen = new Set<string>();
+      const cleanedIds: string[] = [];
+      for (const id of rawIds) {
+        if (validSectionIds.has(id) && !seen.has(id)) {
+          seen.add(id);
+          cleanedIds.push(id);
+        }
+      }
+      if (cleanedIds.length !== rawIds.length) {
+        progress.readSectionIds = cleanedIds;
+        await progress.save();
+      }
     }
     res.json({ progress });
   } catch (err) {
@@ -623,7 +654,19 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     let progress = await Progress.findOne({ userId: req.user._id } as any);
     if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [], certificates: [] } as any);
 
-    if (readSectionIds) progress.readSectionIds = readSectionIds;
+    if (readSectionIds && Array.isArray(readSectionIds)) {
+      const currentSections = await Section.find({}, { id: 1 });
+      const validSectionIds = new Set(currentSections.map(s => s.id));
+      const seen = new Set<string>();
+      const sanitizedIds: string[] = [];
+      for (const id of readSectionIds) {
+        if (validSectionIds.has(id) && !seen.has(id)) {
+          seen.add(id);
+          sanitizedIds.push(id);
+        }
+      }
+      progress.readSectionIds = sanitizedIds;
+    }
     if (employeeInfo) progress.employeeInfo = employeeInfo;
     
     if (testScore) {
@@ -664,6 +707,10 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
 // Admin: Get summary of all users and their progress stats
 apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const currentSections = await Section.find({}, { id: 1 });
+    const validSectionIds = new Set(currentSections.map(s => s.id));
+    const totalSectionsCount = currentSections.length;
+
     const users = await User.find().select('-passwordHash -authCode').sort({ createdAt: -1 });
     const userIds = users.map(u => u._id);
     const progressList = await Progress.find({ userId: { $in: userIds } } as any);
@@ -677,6 +724,11 @@ apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, re
       const testScores = p?.testScores || [];
       const bestScore = testScores.length > 0 ? Math.max(...testScores.map((s: any) => s.percentage || 0)) : 0;
       const totalAnswers = testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+      
+      const rawReadIds: string[] = p?.readSectionIds || [];
+      const validReadSet = new Set(rawReadIds.filter(id => validSectionIds.has(id)));
+      const readCount = Math.min(validReadSet.size, totalSectionsCount);
+
       return {
         _id: u._id,
         id: u._id.toString(),
@@ -688,7 +740,7 @@ apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, re
         createdAt: u.createdAt,
         employeeInfo: p?.employeeInfo || null,
         stats: {
-          readCount: p?.readSectionIds?.length || 0,
+          readCount,
           testsCount: testScores.length,
           bestScore,
           certificatesCount: p?.certificates?.length || 0,
@@ -723,6 +775,22 @@ apiRouter.get('/admin/progress/:userId', requireAuth, requireAdmin, async (req, 
         certificates: [],
         employeeInfo: null
       } as any;
+    } else {
+      const currentSections = await Section.find({}, { id: 1 });
+      const validSectionIds = new Set(currentSections.map(s => s.id));
+      const rawIds: string[] = progress.readSectionIds || [];
+      const seen = new Set<string>();
+      const cleanedIds: string[] = [];
+      for (const id of rawIds) {
+        if (validSectionIds.has(id) && !seen.has(id)) {
+          seen.add(id);
+          cleanedIds.push(id);
+        }
+      }
+      if (cleanedIds.length !== rawIds.length) {
+        progress.readSectionIds = cleanedIds;
+        await progress.save();
+      }
     }
 
     res.json({ 
