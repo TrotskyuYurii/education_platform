@@ -16,21 +16,25 @@ import {
 } from 'lucide-react';
 
 const HAPPY_REACTIONS = [
-  { emoji: '🥳', text: 'Блискуче!' },
-  { emoji: '🚀', text: 'Так тримати!' },
-  { emoji: '🔥', text: 'Просто вогонь!' },
-  { emoji: '🎯', text: 'В яблучко!' },
-  { emoji: '🤩', text: 'Ідеально!' },
-  { emoji: '🏆', text: 'Чудовий результат!' }
+  { emoji: '🇺🇦', text: 'Борітеся — поборете!', author: 'Тарас Шевченко' },
+  { emoji: '⚔️', text: 'Сміливі завжди мають щастя.', author: 'Іван Багряний' },
+  { emoji: '🏔️', text: 'Тільки той досягає мети, хто іде.', author: 'Олександр Олесь' },
+  { emoji: '📖', text: 'Учітесь, читайте, і чужому научайтесь, й свого не цурайтесь.', author: 'Тарас Шевченко' },
+  { emoji: '🌟', text: 'Немає нічого неможливого!', author: 'Іван Франко' },
+  { emoji: '🚀', text: 'Хто не йде вперед, той іде назад.', author: 'Олександр Довженко' },
+  { emoji: '☀️', text: 'Щоб у дні перемоги бути творцем, треба бути борцем.', author: 'Олесь Гончар' },
+  { emoji: '🌿', text: 'Світ ловив мене, та не спіймав.', author: 'Григорій Сковорода' }
 ];
 
 const SAD_REACTIONS = [
-  { emoji: '🙈', text: 'Ой, трохи не туди...' },
-  { emoji: '🫠', text: 'Майже...' },
-  { emoji: '🥺', text: 'Не здавайся!' },
-  { emoji: '🤦‍♂️', text: 'Буває й таке...' },
-  { emoji: '🐢', text: 'Повільно, але вчимося!' },
-  { emoji: '💔', text: 'Наступного разу точно вийде!' }
+  { emoji: '⛏️', text: 'Лупайте сю скалу!', author: 'Іван Франко' },
+  { emoji: '🌱', text: 'Без надії таки сподіваюсь.', author: 'Леся Українка' },
+  { emoji: '📚', text: 'Не розум від книг, а книги від розуму.', author: 'Григорій Сковорода' },
+  { emoji: '🔥', text: 'Не той молодець, що починає, а той, що кінчає.', author: 'Народна мудрість' },
+  { emoji: '💪', text: 'Козацькому роду нема переводу. Спробуй ще!', author: 'Народна мудрість' },
+  { emoji: '🛤️', text: 'Не кажи «не вмію», а кажи «навчуся»!', author: 'Народна мудрість' },
+  { emoji: '⛰️', text: 'Великі діла не робляться раптом.', author: 'Народна мудрість' },
+  { emoji: '🛡️', text: 'Хто нічого не робить, той ніколи не помиляється.', author: 'Народна мудрість' }
 ];
 
 interface QuizRunnerProps {
@@ -66,7 +70,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const [targetCourseId, setTargetCourseId] = useState<string | undefined>(initialCourseId);
   
   // Animation overlay state
-  const [reaction, setReaction] = useState<{ type: 'success' | 'error', emoji: string, text: string } | null>(null);
+  const [reaction, setReaction] = useState<{ type: 'success' | 'error', emoji: string, text: string, author?: string } | null>(null);
 
   // Clear any existing reaction timer when unmounting or starting a new quiz
   useEffect(() => {
@@ -338,7 +342,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   }`}
                 >
                   <span className="text-7xl mb-4 drop-shadow-md">{reaction.emoji}</span>
-                  <span className="text-3xl font-black tracking-wide text-center drop-shadow-md">{reaction.text}</span>
+                  <span className="text-3xl font-black tracking-wide text-center drop-shadow-md mb-2">{reaction.text}</span>
+                  {reaction.author && (
+                    <span className="text-lg font-medium opacity-90 drop-shadow-sm mt-1 italic">
+                      — {reaction.author}
+                    </span>
+                  )}
                 </motion.div>
               </div>
             )}
