@@ -1,226 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
-
-export const LoginScreen: React.FC = () => {
-  const { login } = useAuth();
-  
-  // Step: 'credentials' | 'code'
-  const [step, setStep] = useState<'email' | 'password' | 'code'>('email');
-  
-  // Step 1: Credentials
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  
-  // Step 2: Verification code
-  const [authCode, setAuthCode] = useState('');
-  const [pendingEmail, setPendingEmail] = useState('');
-  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
-  const [debugCode, setDebugCode] = useState<string | undefined>(undefined);
-  const [resendCooldown, setResendCooldown] = useState<number>(0);
-
-  const [error, setError] = useState('');
-  const [infoMsg, setInfoMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const codeInputRef = useRef<HTMLInputElement>(null);
-
-  // Timer countdown for code expiration
-  useEffect(() => {
-    if (step !== 'code' || timeLeft <= 0) return;
-    const interval = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [step, timeLeft]);
-
-  // Resend cooldown timer
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const interval = setInterval(() => {
-      setResendCooldown(prev => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [resendCooldown]);
-
-  // Auto-focus code input when step changes to 'code'
-  useEffect(() => {
-    if (step === 'code') {
-      setTimeout(() => codeInputRef.current?.focus(), 150);
-    }
-  }, [step]);
-
-  const formatTimer = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
-    const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setInfoMsg('');
-
-    const cleanEmail = email.trim().toLowerCase();
-    
-    if (cleanEmail !== 'admin' && !cleanEmail.endsWith('@viatec.ua')) {
-      setError('Вхід дозволено лише з корпоративної пошти у домені @viatec.ua');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail })
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Помилка');
-      }
-
-      if (data.requirePassword) {
-        setStep('password');
-      } else if (data.requireOtp || data.requireEmailCode) {
-        setPendingEmail(data.email || cleanEmail);
-        setTimeLeft(data.expiresInSeconds || 300);
-        setDebugCode(data.debugCode);
-        if (data.message) setInfoMsg(data.message);
-        setAuthCode('');
-        setStep('code');
-        setResendCooldown(30);
-      } else if (data.success) {
-        login(data.user);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Помилка з\'єднання з сервером');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setInfoMsg('');
-
-    const cleanEmail = email.trim().toLowerCase();
-    if (!password) {
-      setError('Введіть пароль');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password })
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Помилка авторизації');
-      }
-
-      if (data.success) {
-        login(data.user);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Помилка з\'єднання з сервером');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setInfoMsg('');
-
-    const cleanCode = authCode.trim().toUpperCase();
-    if (cleanCode.length !== 8) {
-      setError('Код авторизації повинен містити рівно 8 знаків');
-      return;
-    }
-
-    if (timeLeft <= 0) {
-      setError('Термін дії коду вичерпано. Натисніть «Надіслати код повторно» для отримання нового.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: pendingEmail, code: cleanCode })
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Невірний або прострочений код');
-      }
-
-      login(data.user);
-    } catch (err: any) {
-      setError(err.message || 'Помилка перевірки коду');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendCode = async () => {
-    if (resendCooldown > 0 || loading) return;
-    setError('');
-    setInfoMsg('');
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/resend-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: pendingEmail })
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Не вдалося надіслати код повторно');
-      }
-
-      setTimeLeft(data.expiresInSeconds || 300);
-      setDebugCode(data.debugCode);
-      setAuthCode('');
-      setResendCooldown(30);
-      setInfoMsg(`Новий код надіслано на ${pendingEmail}`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBackToCredentials = () => {
-    setStep('email');
-    setAuthCode('');
-    setError('');
-    setInfoMsg('');
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/25">
-          {step === 'email' || step === 'password' ? (
+          {step === 'credentials' ? (
             <Lock className="w-8 h-8 text-white" />
           ) : (
             <ShieldCheck className="w-8 h-8 text-white" />
@@ -251,9 +34,9 @@ export const LoginScreen: React.FC = () => {
             </div>
           )}
 
-          {step === 'email' ? (
-            /* STEP 1: Email Form */
-            <form className="space-y-5" onSubmit={handleEmailSubmit}>
+          {step === 'credentials' ? (
+            /* STEP 1: Email and Password Form */
+            <form className="space-y-5" onSubmit={handleCredentialsSubmit}>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Корпоративний Email (@viatec.ua)
@@ -275,24 +58,11 @@ export const LoginScreen: React.FC = () => {
                   Дозволяється вхід лише для співробітників компанії
                 </p>
               </div>
-              <div className="pt-1">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-xs text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50"
-                >
-                  {loading ? 'Зачекайте...' : 'Далі'}
-                </button>
-              </div>
-            </form>
-          ) : step === 'password' ? (
-            /* STEP 1.5: Password Form */
-            <form className="space-y-5" onSubmit={handlePasswordSubmit}>
-              <div className="text-center">
-                <h3 className="text-lg font-bold text-slate-900">Введіть пароль</h3>
-                <p className="text-xs text-slate-600 mt-1 max-w-xs mx-auto">{email}</p>
-              </div>
+
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Пароль
+                </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                     <Lock className="h-5 w-5 text-slate-400" />
@@ -300,7 +70,6 @@ export const LoginScreen: React.FC = () => {
                   <input
                     type="password"
                     required
-                    autoFocus
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -308,21 +77,14 @@ export const LoginScreen: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="space-y-2 pt-2">
+
+              <div className="pt-1">
                 <button
                   type="submit"
                   disabled={loading}
                   className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-xs text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50"
                 >
-                  {loading ? 'Перевірка...' : 'Увійти'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep('email')}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Повернутися до вводу email</span>
+                  {loading ? 'Перевірка даних...' : 'Увійти'}
                 </button>
               </div>
             </form>
@@ -403,7 +165,7 @@ export const LoginScreen: React.FC = () => {
                   className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Повернутися назад</span>
+                  <span>Повернутися до вводу пароля</span>
                 </button>
               </div>
             </form>

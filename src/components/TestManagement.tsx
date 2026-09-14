@@ -128,7 +128,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [newUser, setNewUser] = useState({ 
     email: '', 
     password: '', 
-    requireEmailCode: true, 
+    authMethod: 'password', 
     role: isSetupMode ? 'admin' : 'user' 
   });
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
@@ -264,7 +264,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
           email: cleanEmail,
           password: newUser.password,
           role: newUser.role,
-          requireEmailCode: newUser.requireEmailCode
+          authMethod: newUser.authMethod
         })
       });
       const data = await res.json();
@@ -272,7 +272,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
       
       const createdRole = newUser.role;
-      setNewUser({ email: '', password: '', requireEmailCode: true, role: 'user' });
+      setNewUser({ email: '', password: '', authMethod: 'password', role: 'user' } as any);
       fetchUsers();
       
       if (isSetupMode && createdRole === 'admin') {
@@ -297,7 +297,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
           departments: selectedUser.departments,
           allowedInstructionIds: selectedUser.allowedInstructionIds,
           role: selectedUser.role,
-          requireEmailCode: selectedUser.requireEmailCode !== false,
+          authMethod: selectedUser.authMethod,
           password: selectedUser.newPassword || undefined
         })
       });
@@ -2020,7 +2020,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           <span className="text-slate-500">
                             Підрозділів: {u.departments?.length || 0}
                           </span>
-                          {u.requireEmailCode !== false ? (
+                          {u.authMethod === 'otp' ? (
                             <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                               ✉️ Email-код (8 знаків)
                             </span>
@@ -2059,22 +2059,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       </div>
 
                       <div className="p-3 bg-white rounded-xl border border-slate-200">
-                        <label className="flex items-start gap-2.5 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedUser.requireEmailCode !== false}
-                            onChange={e => setSelectedUser({...selectedUser, requireEmailCode: e.target.checked})}
-                            className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
-                          />
-                          <div>
-                            <span className="text-xs font-bold text-slate-800 block">
-                              Авторизація через email код (8 знаків)
-                            </span>
-                            <span className="text-xs text-slate-500 block mt-0.5">
-                              При вході користувач отримує одноразовий 8-значний код на пошту, що діє 5 хвилин.
-                            </span>
-                          </div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Варіант авторизації
                         </label>
+                        <select
+                          value={selectedUser.authMethod || 'password'}
+                          onChange={e => setSelectedUser({...selectedUser, authMethod: e.target.value})}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="password">Стандартний логін (email) та пароль</option>
+                          <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
+                        </select>
                       </div>
 
                       <div>
@@ -2187,22 +2182,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       </div>
                       
                       <div className="p-3 bg-white rounded-xl border border-slate-200">
-                        <label className="flex items-start gap-2.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={newUser.requireEmailCode}
-                            onChange={e => setNewUser({...newUser, requireEmailCode: e.target.checked})}
-                            className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-slate-300"
-                          />
-                          <div>
-                            <span className="text-xs font-bold text-slate-800 block">
-                              Авторизація email код (8 знаків)
-                            </span>
-                            <span className="text-xs text-slate-500 block mt-0.5">
-                              Встановлено за замовчанням. При вході надсилається одноразовий 8-значний код на пошту.
-                            </span>
-                          </div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Варіант авторизації
                         </label>
+                        <select
+                          value={(newUser as any).authMethod || 'password'}
+                          onChange={e => setNewUser({...newUser, authMethod: e.target.value} as any)}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="password">Стандартний логін (email) та пароль</option>
+                          <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
+                        </select>
                       </div>
 
                       <div>

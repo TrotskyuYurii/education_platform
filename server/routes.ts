@@ -53,10 +53,6 @@ apiRouter.post('/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Доступ дозволено лише для корпоративних адрес у домені @viatec.ua' });
     }
 
-    if (!password) {
-      return res.status(400).json({ error: 'Пароль є обов\'язковим полем' });
-    }
-
     const user = await User.findOne({ 
       $or: [{ email: loginIdentifier }, { username: loginIdentifier }] 
     } as any);
@@ -77,15 +73,9 @@ apiRouter.post('/auth/login', async (req, res) => {
       }
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Невірний email або пароль' });
-    }
+    const authMethod = user.authMethod || 'password';
 
-    // Check if user requires email code authorization (default: true)
-    const requiresCode = user.requireEmailCode !== false;
-
-    if (requiresCode) {
+    if (authMethod === 'otp') {
       const code = generateAuthCode();
       const expiresInMinutes = 5;
       user.authCode = code;
@@ -103,7 +93,16 @@ apiRouter.post('/auth/login', async (req, res) => {
       });
     }
 
-    // If requireEmailCode is false, proceed with direct login
+    if (!password) {
+      return res.json({ requirePassword: true, email: user.email });
+    }
+
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Невірний email або пароль' });
+    }
+
+    // If requireEmailCode is false or we're using password auth (Option 1)
     const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
     
@@ -235,7 +234,7 @@ apiRouter.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
 apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { departments, allowedInstructionIds, role, email, password, requireEmailCode } = req.body;
+    const { departments, allowedInstructionIds, role, email, password, authMethod } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
@@ -253,7 +252,7 @@ apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
     if (departments !== undefined) updateData.departments = departments;
     if (allowedInstructionIds !== undefined) updateData.allowedInstructionIds = allowedInstructionIds;
     if (role !== undefined) updateData.role = role;
-    if (requireEmailCode !== undefined) updateData.requireEmailCode = Boolean(requireEmailCode);
+    if (authMethod !== undefined) updateData.authMethod = authMethod;
     if (password && password.trim()) {
       updateData.passwordHash = await bcrypt.hash(password, 10);
     }
@@ -298,7 +297,7 @@ apiRouter.delete('/admin/departments/:id', requireAuth, requireAdmin, async (req
 
 apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { email, password, role, departments, allowedInstructionIds, requireEmailCode } = req.body;
+    const { email, password, role, departments, allowedInstructionIds, authMethod } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
@@ -320,7 +319,7 @@ apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
       role: role || 'user',
       departments: departments || ['Всі підрозділи'],
       allowedInstructionIds: allowedInstructionIds || [],
-      requireEmailCode: requireEmailCode !== undefined ? Boolean(requireEmailCode) : true
+      authMethod: authMethod || 'password'
     } as any);
     
     // SECURITY: Delete default admin immediately if a new admin is created
@@ -338,7 +337,7 @@ apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         email: newUser.email,
         username: newUser.username, 
         role: newUser.role,
-        requireEmailCode: newUser.requireEmailCode 
+        authMethod: newUser.authMethod 
       } 
     });
   } catch (err) {
@@ -358,7 +357,7 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
     if (questions?.length) await Question.insertMany(questions);
 
     // After import, ensure users' progress does not reference deleted or non-existent instructions
-    const allCurrentSections = await Section.find({}, { id: 1 });
+    const allCurrentSections = await Section.find({} as any, { id: 1 } as any);
     const currentValidIds = allCurrentSections.map(s => s.id);
     await Progress.updateMany(
       {},
@@ -795,7 +794,7 @@ apiRouter.get('/progress', requireAuth, async (req: any, res) => {
       progress = await Progress.create({ userId: req.user._id, readSectionIds: [], testScores: [] } as any);
     } else {
       // Auto-clean stale or duplicate readSectionIds against actual existing sections
-      const currentSections = await Section.find({}, { id: 1 });
+      const currentSections = await Section.find({} as any, { id: 1 } as any);
       const validSectionIds = new Set(currentSections.map(s => s.id));
       const rawIds: string[] = progress.readSectionIds || [];
       const seen = new Set<string>();
@@ -824,7 +823,7 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [], certificates: [] } as any);
 
     if (readSectionIds && Array.isArray(readSectionIds)) {
-      const currentSections = await Section.find({}, { id: 1 });
+      const currentSections = await Section.find({} as any, { id: 1 } as any);
       const validSectionIds = new Set(currentSections.map(s => s.id));
       const seen = new Set<string>();
       const sanitizedIds: string[] = [];
@@ -876,7 +875,7 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
 // Admin: Get summary of all users and their progress stats
 apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const currentSections = await Section.find({}, { id: 1 });
+    const currentSections = await Section.find({} as any, { id: 1 } as any);
     const validSectionIds = new Set(currentSections.map(s => s.id));
     const totalSectionsCount = currentSections.length;
 
@@ -945,7 +944,7 @@ apiRouter.get('/admin/progress/:userId', requireAuth, requireAdmin, async (req, 
         employeeInfo: null
       } as any;
     } else {
-      const currentSections = await Section.find({}, { id: 1 });
+      const currentSections = await Section.find({} as any, { id: 1 } as any);
       const validSectionIds = new Set(currentSections.map(s => s.id));
       const rawIds: string[] = progress.readSectionIds || [];
       const seen = new Set<string>();

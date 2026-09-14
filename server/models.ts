@@ -14,6 +14,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   departments: { type: [String], default: ['Всі підрозділи'] },
   allowedInstructionIds: { type: [String], default: [] }, // Changed from allowedCourseIds
+  authMethod: { type: String, enum: ['password', 'otp'], default: 'password' },
   requireEmailCode: { type: Boolean, default: true },
   authCode: { type: String, default: null },
   authCodeExpires: { type: Date, default: null },

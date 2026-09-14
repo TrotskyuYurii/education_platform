@@ -1,0 +1,120 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+
+export const LoginScreen: React.FC = () => {
+  const { login } = useAuth();
+  
+  // Step: 'credentials' | 'code'
+  const [step, setStep] = useState<'credentials' | 'code'>('credentials');
+  
+  // Step 1: Credentials
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // Step 2: Verification code
+  const [authCode, setAuthCode] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [debugCode, setDebugCode] = useState<string | undefined>(undefined);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+
+  const [error, setError] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  // Timer countdown for code expiration
+  useEffect(() => {
+    if (step !== 'code' || timeLeft <= 0) return;
+    const interval = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step, timeLeft]);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
+
+  // Auto-focus code input when step changes to 'code'
+  useEffect(() => {
+    if (step === 'code') {
+      setTimeout(() => codeInputRef.current?.focus(), 150);
+    }
+  }, [step]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setInfoMsg('');
+
+    const cleanEmail = email.trim().toLowerCase();
+    
+    if (cleanEmail !== 'admin' && !cleanEmail.endsWith('@viatec.ua')) {
+      setError('Вхід дозволено лише з корпоративної пошти у домені @viatec.ua');
+      return;
+    }
+
+    if (!password) {
+      setError('Введіть пароль');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Помилка авторизації');
+      }
+
+      if (data.requireEmailCode) {
+        // Switch to Step 2: Code Verification
+        setPendingEmail(data.email || cleanEmail);
+        setTimeLeft(data.expiresInSeconds || 300);
+        setDebugCode(data.debugCode);
+        setAuthCode('');
+        setStep('code');
+        setResendCooldown(30); // 30-second cooldown before resending
+        setInfoMsg(`Код авторизації надіслано на вашу пошту ${data.email || cleanEmail}`);
+      } else {
+        // Direct login if email code is not required
+        login(data.user);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Помилка з\'єднання з сервером');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setInfoMsg('');
+
