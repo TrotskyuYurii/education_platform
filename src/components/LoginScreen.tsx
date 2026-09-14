@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
   const { login } = useAuth();
@@ -11,9 +11,11 @@ export const LoginScreen: React.FC = () => {
   // Step 1: Credentials
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   // Step 2: Verification code
   const [authCode, setAuthCode] = useState('');
+  const [showCode, setShowCode] = useState(false);
   const [pendingEmail, setPendingEmail] = useState('');
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
   const [debugCode, setDebugCode] = useState<string | undefined>(undefined);
@@ -97,7 +99,7 @@ export const LoginScreen: React.FC = () => {
         setAuthCode('');
         setStep('code');
         setResendCooldown(30);
-      } else if (data.success) {
+      } else if (data.success || data.user) {
         login(data.user);
       }
     } catch (err: any) {
@@ -131,7 +133,7 @@ export const LoginScreen: React.FC = () => {
         throw new Error(data.error || 'Помилка авторизації');
       }
 
-      if (data.success) {
+      if (data.success || data.user) {
         login(data.user);
       }
     } catch (err: any) {
@@ -298,14 +300,22 @@ export const LoginScreen: React.FC = () => {
                     <Lock className="h-5 w-5 text-slate-400" />
                   </div>
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     autoFocus
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl shadow-xs placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    className="appearance-none block w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-xl shadow-xs placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                    title={showPassword ? "Приховати пароль" : "Показати пароль"}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
               </div>
               <div className="space-y-2 pt-2">
@@ -348,15 +358,23 @@ export const LoginScreen: React.FC = () => {
                 <div className="relative">
                   <input
                     ref={codeInputRef}
-                    type="text"
+                    type={showCode ? "text" : "password"}
                     maxLength={8}
                     required
                     autoComplete="one-time-code"
-                    placeholder="XXXXXXXX"
+                    placeholder="••••••••"
                     value={authCode}
                     onChange={(e) => setAuthCode(e.target.value.toUpperCase())}
-                    className="block w-full py-3 px-4 text-center font-mono text-2xl font-bold tracking-[0.35em] text-slate-800 border-2 border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none uppercase placeholder:text-slate-300 transition"
+                    className="block w-full py-3 px-10 text-center font-mono text-2xl font-bold tracking-[0.35em] text-slate-800 border-2 border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none uppercase placeholder:text-slate-300 transition"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCode(!showCode)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                    title={showCode ? "Приховати код" : "Показати код"}
+                  >
+                    {showCode ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
+                  </button>
                 </div>
 
                 <div className="mt-2.5 flex items-center justify-between text-xs">
