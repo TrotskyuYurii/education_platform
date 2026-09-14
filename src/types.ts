@@ -43,6 +43,7 @@ export interface InstructionSection {
   };
   stopRules?: string[];
   systemAutomaticActions?: string[];
+  isActive?: boolean;
 }
 
 export interface QuizQuestion {
@@ -98,6 +99,12 @@ export interface UserProgress {
     courseId?: string;
     department?: string;
     mode?: string;
+  }>;
+  notifications?: Array<{
+    id: string;
+    message: string;
+    date: string;
+    read: boolean;
   }>;
   certificates?: Array<{
     courseId: string;

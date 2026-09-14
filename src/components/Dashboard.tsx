@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { UserProgress, InstructionSection } from '../types';
+import {
+  UserProgress, InstructionSection } from '../types';
 import { User } from '../context/AuthContext';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -8,7 +9,7 @@ import {
 import { 
   Award, Target, BookOpen, Clock, AlertTriangle, FileCheck, 
   Users, Search, ChevronDown, Check, RotateCcw, Shield, User as UserIcon,
-  Building2, History, RefreshCw, X, Sparkles, CheckCircle2
+  Building2, History, RefreshCw, X, Sparkles, CheckCircle2, Trash2
 } from 'lucide-react';
 import { CertificateView } from './CertificateView';
 
@@ -58,6 +59,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState<string>('all');
+  const [onlyWithCerts, setOnlyWithCerts] = useState(false);
   
   // Certificate viewer
   const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
@@ -84,6 +86,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       fetchUsersList();
     }
   }, [isAdmin]);
+
+  
+  const handleDeleteCertificate = async (courseId: string) => {
+    if (!isAdmin || !selectedUserId) return;
+    if (!confirm('Ви впевнені, що хочете анулювати цей сертифікат? Співробітник отримає сповіщення про це.')) return;
+
+    try {
+      const res = await fetch(`/api/admin/progress/${selectedUserId}/certificate/${courseId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setSelectedCertificate(null);
+        // Refresh target user's progress & users list
+        await fetchSelectedUserProgress(selectedUserId);
+        await fetchUsersList();
+      } else {
+        alert('Помилка при видаленні сертифікату');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Помилка при видаленні сертифікату');
+    }
+  };
 
   // Fetch selected user's detailed progress when selectedUserId changes
   const fetchSelectedUserProgress = async (userId: string) => {
@@ -175,9 +200,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         u.departments.some(d => d.toLowerCase().includes(searchQuery.toLowerCase()));
       
       const matchesDept = deptFilter === 'all' || u.departments.includes(deptFilter);
-      return matchesSearch && matchesDept;
+      const matchesCert = !onlyWithCerts || (u.stats.certificatesCount > 0);
+      return matchesSearch && matchesDept && matchesCert;
     });
-  }, [usersList, searchQuery, deptFilter]);
+  }, [usersList, searchQuery, deptFilter, onlyWithCerts]);
 
   // Aggregate data for average score by department
   const scoreByDept = useMemo(() => {
@@ -244,6 +270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           certificate={selectedCertificate} 
           employeeInfo={activeProgress.employeeInfo}
           onClose={() => setSelectedCertificate(null)}
+          onDelete={isAdmin && selectedUserId ? () => handleDeleteCertificate(selectedCertificate.courseId) : undefined}
         />
       )}
 
@@ -367,28 +394,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           )}
                         </div>
 
-                        {/* Department Filter Chips */}
-                        {allDepartments.length > 0 && (
-                          <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 text-[10px] scrollbar-none">
+                        {/* Filter Chips */}
+                        <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1 text-[10px] scrollbar-none items-center">
+                          <button
+                            type="button"
+                            onClick={() => setDeptFilter('all')}
+                            className={`px-2 py-0.5 rounded-md font-medium whitespace-nowrap transition ${deptFilter === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                          >
+                            Всі підрозділи
+                          </button>
+                          {allDepartments.map(dep => (
                             <button
+                              key={dep}
                               type="button"
-                              onClick={() => setDeptFilter('all')}
-                              className={`px-2 py-0.5 rounded-md font-medium whitespace-nowrap transition ${deptFilter === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                              onClick={() => setDeptFilter(dep)}
+                              className={`px-2 py-0.5 rounded-md font-medium whitespace-nowrap transition ${deptFilter === dep ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                             >
-                              Всі підрозділи
+                              {dep}
                             </button>
-                            {allDepartments.map(dep => (
-                              <button
-                                key={dep}
-                                type="button"
-                                onClick={() => setDeptFilter(dep)}
-                                className={`px-2 py-0.5 rounded-md font-medium whitespace-nowrap transition ${deptFilter === dep ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                              >
-                                {dep}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setOnlyWithCerts(prev => !prev)}
+                            className={`px-2 py-0.5 rounded-md font-semibold whitespace-nowrap transition flex items-center gap-1 ${onlyWithCerts ? 'bg-amber-600 text-white shadow-xs' : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'}`}
+                            title="Показати тільки співробітників із сертифікатами"
+                          >
+                            <Award className="w-3 h-3" />
+                            <span>З сертифікатами ({usersList.filter(u => u.stats.certificatesCount > 0).length})</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Scrollable list */}
@@ -459,6 +493,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                       <span className="shrink-0 text-slate-600 font-medium">
                                         Тестів: {u.stats.testsCount} ({u.stats.bestScore}%)
                                       </span>
+                                      {u.stats.certificatesCount > 0 && (
+                                        <>
+                                          <span className="text-slate-300">·</span>
+                                          <span className="shrink-0 inline-flex items-center gap-0.5 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[9px] font-bold">
+                                            <Award className="w-2.5 h-2.5 text-amber-600" /> {u.stats.certificatesCount}
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -634,12 +676,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       ) : null}
 
-                      <button 
-                        onClick={() => setSelectedCertificate(cert)}
-                        className="w-full py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition"
-                      >
-                        Переглянути сертифікат
-                      </button>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setSelectedCertificate(cert)}
+                          className="flex-1 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition"
+                        >
+                          Переглянути сертифікат
+                        </button>
+                        {isAdmin && selectedUserId && (
+                          <button
+                            onClick={() => handleDeleteCertificate(cert.courseId)}
+                            className="p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-100 transition"
+                            title="Анулювати сертифікат"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
+
                     </div>
                   );
                 })}

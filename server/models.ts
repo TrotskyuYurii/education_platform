@@ -116,6 +116,12 @@ const progressSchema = new mongoose.Schema({
     percentage: Number,
     date: { type: Date, default: Date.now }
   }],
+  notifications: [{
+    id: String,
+    message: String,
+    date: { type: Date, default: Date.now },
+    read: { type: Boolean, default: false }
+  }],
   certificates: [{
     courseId: String,
     courseTitle: String,

@@ -268,7 +268,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <CheckCircle2 className="w-4 h-4" />
                         </div>
                         <div className="text-left">
-                          <div className="leading-tight">Мій профіль</div>
+                          <div className="leading-tight">Підтвердження</div>
                           <div className="text-[11px] text-slate-400 font-normal">Електронний підпис і статус</div>
                         </div>
                       </div>
@@ -296,8 +296,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <Sparkles className="w-4 h-4" />
                         </div>
                         <div className="text-left">
-                          <div className="leading-tight">Аналітика</div>
-                          <div className="text-[11px] text-slate-400 font-normal">Прогрес навчання та статистика</div>
+                          <div className="leading-tight">Профіль</div>
+                          <div className="text-[11px] text-slate-400 font-normal">Прогрес, статистика та сертифікати</div>
                         </div>
                       </div>
                     </button>

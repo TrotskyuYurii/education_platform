@@ -61,6 +61,8 @@ function MainApp() {
       isSigned: false,
     },
     quizHistory: [],
+    certificates: [],
+    notifications: [],
   });
   
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -111,6 +113,7 @@ function MainApp() {
           readSectionIds: data.progress.readSectionIds || [],
           quizHistory: testScores,
           certificates: data.progress.certificates || [],
+          notifications: data.progress.notifications || [],
           employeeInfo: data.progress.employeeInfo || prev.employeeInfo,
           bestScore: testScores.length > 0 ? Math.max(0, ...testScores.map((s: any) => s.percentage || 0)) : 0,
           totalQuestionsAnswered: testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0)
@@ -123,7 +126,20 @@ function MainApp() {
 
   useEffect(() => {
     Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
+
+    // Periodically sync progress/notifications so revocations or updates appear live
+    const interval = setInterval(() => {
+      fetchProgress();
+    }, 15000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Sync progress on switching to catalog or dashboard
+  useEffect(() => {
+    if (currentTab === 'catalog' || currentTab === 'dashboard') {
+      fetchProgress();
+    }
+  }, [currentTab]);
 
   // When sections or progress load, clean up any obsolete/deleted section IDs from progress
   useEffect(() => {
@@ -162,6 +178,22 @@ function MainApp() {
     });
   };
 
+
+  const dismissNotification = async (notifId: string) => {
+    // Optimistically update UI
+    setProgress(prev => ({
+      ...prev,
+      notifications: (prev.notifications || []).filter(n => n.id !== notifId)
+    }));
+    
+    // Call API
+    try {
+      await fetch(`/api/progress/notifications/${notifId}/read`, { method: 'POST' });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  
   const handleStartQuiz = (type: 'all' | 'section' | 'course', id?: string) => {
     setActiveQuizSectionId(type === 'section' ? id : undefined);
     setActiveQuizCourseId(type === 'course' ? id : undefined);
@@ -188,25 +220,53 @@ function MainApp() {
     
     saveProgressToDb(undefined, scoreRec);
 
-    setProgress((prev) => ({
-      ...prev,
-      quizCompleted: true,
-      bestScore: Math.max(prev.bestScore || 0, percentage),
-      totalQuestionsAnswered: (prev.totalQuestionsAnswered || 0) + total,
-      quizHistory: [
-        {
-          date: new Date().toLocaleDateString('uk-UA'),
-          score,
-          total,
-          mode: modeName,
-          percentage,
-          department,
-          courseId,
-          sectionId,
-        },
-        ...prev.quizHistory,
-      ],
-    }));
+    setProgress((prev) => {
+      let updatedCertificates = [...(prev.certificates || [])];
+      
+      // If passed course that has a certificate, add to local state immediately
+      if (percentage >= 80 && courseId) {
+        const course = courses.find(c => c.id === courseId);
+        if (course && course.hasCertificate) {
+          const validityYears = course.certificateValidityYears || 1;
+          const issuedAt = new Date();
+          const expiresAt = new Date();
+          expiresAt.setFullYear(issuedAt.getFullYear() + validityYears);
+          
+          const existingIndex = updatedCertificates.findIndex(c => c.courseId === course.id);
+          if (existingIndex >= 0) {
+            updatedCertificates[existingIndex] = { ...updatedCertificates[existingIndex], issuedAt: issuedAt.toISOString(), expiresAt: expiresAt.toISOString() };
+          } else {
+            updatedCertificates.push({
+              courseId: course.id,
+              courseTitle: course.title,
+              issuedAt: issuedAt.toISOString(),
+              expiresAt: expiresAt.toISOString()
+            });
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        quizCompleted: true,
+        bestScore: Math.max(prev.bestScore || 0, percentage),
+        totalQuestionsAnswered: (prev.totalQuestionsAnswered || 0) + total,
+        certificates: updatedCertificates,
+        quizHistory: [
+          {
+            date: new Date().toLocaleDateString('uk-UA'),
+            score,
+            total,
+            mode: modeName,
+            percentage,
+            department,
+            courseId,
+            sectionId,
+          },
+          ...prev.quizHistory,
+        ],
+      };
+    });
   };
 
   const handleSaveProfile = (profile: UserProgress['employeeInfo']) => {
@@ -254,6 +314,29 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+      
+      {/* Global Notifications */}
+      {progress.notifications && progress.notifications.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full">
+          {progress.notifications.filter(n => !n.read).map(notif => (
+            <div key={notif.id} className="bg-rose-50 border-l-4 border-rose-500 rounded-r-lg p-4 shadow-xl flex items-start justify-between gap-3 animate-in slide-in-from-right">
+              <div>
+                <h4 className="font-bold text-rose-800 text-sm mb-1">Важливе повідомлення</h4>
+                <p className="text-xs text-rose-700">{notif.message}</p>
+                <div className="text-[10px] text-rose-500 mt-2">{new Date(notif.date).toLocaleString('uk-UA')}</div>
+              </div>
+              <button 
+                onClick={() => dismissNotification(notif.id)}
+                className="text-rose-400 hover:text-rose-600 transition p-1"
+                title="Закрити"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <Navbar
         currentTab={currentTab}
         onSelectTab={(tab) => {
@@ -276,6 +359,9 @@ function MainApp() {
       <main className="grow">
         {currentTab === 'catalog' && (
           <CourseCatalog
+            certificates={progress.certificates || []}
+            notifications={progress.notifications || []}
+            onDismissNotification={dismissNotification}
             sections={sections}
             courses={courses}
             readSectionIds={validReadSectionIds}

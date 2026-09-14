@@ -149,7 +149,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [editingCourseDep, setEditingCourseDep] = useState<string>('');
   const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
   const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
-  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds: string[], useCases?: boolean, hasCertificate: boolean, certificateValidityYears: number, isActive: boolean } | null>(null);
+  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds?: string[], useCases?: boolean, hasCertificate?: boolean, certificateValidityYears?: number, isActive?: boolean } | null>(null);
   const [createCourseInstFilter, setCreateCourseInstFilter] = useState<string>('all');
   const [createCourseInstSearch, setCreateCourseInstSearch] = useState<string>('');
   const [editCourseInstFilter, setEditCourseInstFilter] = useState<string>('all');
@@ -943,12 +943,13 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         accept=".pdf,.txt,.doc,.docx"
                         className="hidden" 
                         ref={aiFileInputRef}
+                        onChange={handleAiFileUpload}
                       />
 
                       <button
                         onClick={() => {
                           if (aiFileInputRef.current) {
-                            aiFileInputRef.current.onchange = handleAiFileUpload;
+                            aiFileInputRef.current.value = '';
                             aiFileInputRef.current.click();
                           }
                         }}
@@ -1185,7 +1186,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                               >
                                 <Edit2 className="w-5 h-5" />
                               </button>
-                              {deletingInstId === (inst.id || inst._id) ? (
+                              {deletingInstId === (inst.id || (inst as any)._id) ? (
                                 <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                                   <span className="text-xs font-semibold text-rose-700">Видалити?</span>
                                   <button
@@ -1207,7 +1208,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => setDeletingInstId(inst.id || inst._id)}
+                                  onClick={() => setDeletingInstId(inst.id || (inst as any)._id)}
                                   className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
                                   title="Видалити інструкцію"
                                 >
