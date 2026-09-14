@@ -23,7 +23,9 @@ import {
   Briefcase,
   ChevronDown,
   Building2,
-  X
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -131,6 +133,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     authMethod: 'password', 
     role: isSetupMode ? 'admin' : 'user' 
   });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
@@ -2076,13 +2080,23 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Новий пароль (залиште порожнім, щоб не змінювати)
                         </label>
-                        <input
-                          type="password"
-                          placeholder="••••••••"
-                          value={selectedUser.newPassword || ''}
-                          onChange={e => setSelectedUser({...selectedUser, newPassword: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showEditPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            value={selectedUser.newPassword || ''}
+                            onChange={e => setSelectedUser({...selectedUser, newPassword: e.target.value})}
+                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEditPassword(!showEditPassword)}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                            title={showEditPassword ? "Приховати пароль" : "Показати пароль"}
+                          >
+                            {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
                       </div>
                       
                       <div>
@@ -2171,14 +2185,24 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Пароль *
                         </label>
-                        <input
-                          type="password"
-                          required
-                          value={newUser.password}
-                          onChange={e => setNewUser({...newUser, password: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="••••••••"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showNewPassword ? "text" : "password"}
+                            required
+                            value={newUser.password}
+                            onChange={e => setNewUser({...newUser, password: e.target.value})}
+                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            placeholder="••••••••"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                            title={showNewPassword ? "Приховати пароль" : "Показати пароль"}
+                          >
+                            {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
                       </div>
                       
                       <div className="p-3 bg-white rounded-xl border border-slate-200">
