@@ -25,7 +25,8 @@ import {
   Building2,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Search
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -149,6 +150,10 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
   const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
   const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds: string[], useCases?: boolean, hasCertificate: boolean, certificateValidityYears: number, isActive: boolean } | null>(null);
+  const [createCourseInstFilter, setCreateCourseInstFilter] = useState<string>('all');
+  const [createCourseInstSearch, setCreateCourseInstSearch] = useState<string>('');
+  const [editCourseInstFilter, setEditCourseInstFilter] = useState<string>('all');
+  const [editCourseInstSearch, setEditCourseInstSearch] = useState<string>('');
 
   const [newCase, setNewCase] = useState({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
   const [editingCase, setEditingCase] = useState<any | null>(null);
@@ -226,7 +231,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   React.useEffect(() => {
     if (activeTab === 'users') fetchUsers();
-    if (activeTab === 'departments' || activeTab === 'users' || activeTab === 'list') fetchDepartments();
+    if (['departments', 'users', 'list', 'courses'].includes(activeTab)) fetchDepartments();
   }, [activeTab]);
 
   const fetchUsers = async () => {
@@ -1278,22 +1283,72 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     </div>
                   )}
                   
-                  <div className="text-sm font-medium text-slate-700 mt-2">Оберіть інструкції для курсу:</div>
-                  <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
-                    {sections.map(sec => (
-                      <label key={sec.id} className="flex items-center gap-2">
+                  <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                    <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({newCourse.instructionIds.length} обрано)</div>
+                        <select
+                          value={createCourseInstFilter}
+                          onChange={e => setCreateCourseInstFilter(e.target.value)}
+                          className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="all">Усі підрозділи</option>
+                          {departments.map(d => (
+                            <option key={d._id} value={d.name}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
                         <input
-                          type="checkbox"
-                          checked={newCourse.instructionIds.includes(sec.id)}
-                          onChange={e => {
-                            const ids = newCourse.instructionIds;
-                            if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, sec.id] });
-                            else setNewCourse({ ...newCourse, instructionIds: ids.filter(i => i !== sec.id) });
-                          }}
+                          type="text"
+                          placeholder="Пошук інструкції за назвою..."
+                          value={createCourseInstSearch}
+                          onChange={e => setCreateCourseInstSearch(e.target.value)}
+                          className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
                         />
-                        <span className="text-sm">{sec.title} <span className="text-slate-400 text-xs">({sec.department})</span></span>
-                      </label>
-                    ))}
+                      </div>
+                    </div>
+                    <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
+                      {sections
+                        .filter(sec => createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
+                        .filter(sec => sec.title.toLowerCase().includes(createCourseInstSearch.toLowerCase()))
+                        .map(sec => {
+                          const isSelected = newCourse.instructionIds.includes(sec.id);
+                          return (
+                            <label 
+                              key={sec.id} 
+                              className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                                isSelected 
+                                  ? 'bg-blue-50 border-blue-200 shadow-sm' 
+                                  : 'border-transparent hover:bg-slate-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={e => {
+                                  const ids = newCourse.instructionIds;
+                                  if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, sec.id] });
+                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter(i => i !== sec.id) });
+                                }}
+                                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-medium truncate ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>
+                                  {sec.title}
+                                </div>
+                                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">{sec.department}</span>
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      {sections.filter(sec => createCourseInstFilter === 'all' || sec.department === createCourseInstFilter).filter(sec => sec.title.toLowerCase().includes(createCourseInstSearch.toLowerCase())).length === 0 && (
+                        <div className="p-4 text-center text-sm text-slate-500">Інструкцій не знайдено</div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 mt-4">
@@ -1403,22 +1458,72 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             </label>
                           </div>
 
-                          <div className="text-sm font-medium text-slate-700">Інструкції для курсу:</div>
-                          <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 bg-white p-2 rounded-md">
-                            {sections.map(sec => (
-                              <label key={sec.id} className="flex items-center gap-2">
+                          <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                            <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse.instructionIds.length} обрано)</div>
+                                <select
+                                  value={editCourseInstFilter}
+                                  onChange={e => setEditCourseInstFilter(e.target.value)}
+                                  className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                  <option value="all">Усі підрозділи</option>
+                                  {departments.map(d => (
+                                    <option key={d._id} value={d.name}>{d.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
                                 <input
-                                  type="checkbox"
-                                  checked={editingCourse.instructionIds.includes(sec.id)}
-                                  onChange={e => {
-                                    const ids = editingCourse.instructionIds;
-                                    if (e.target.checked) setEditingCourse({ ...editingCourse, instructionIds: [...ids, sec.id] });
-                                    else setEditingCourse({ ...editingCourse, instructionIds: ids.filter(i => i !== sec.id) });
-                                  }}
+                                  type="text"
+                                  placeholder="Пошук інструкції за назвою..."
+                                  value={editCourseInstSearch}
+                                  onChange={e => setEditCourseInstSearch(e.target.value)}
+                                  className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
                                 />
-                                <span className="text-sm">{sec.title} <span className="text-slate-400 text-xs">({sec.department})</span></span>
-                              </label>
-                            ))}
+                              </div>
+                            </div>
+                            <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
+                              {sections
+                                .filter(sec => editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
+                                .filter(sec => sec.title.toLowerCase().includes(editCourseInstSearch.toLowerCase()))
+                                .map(sec => {
+                                  const isSelected = editingCourse.instructionIds.includes(sec.id);
+                                  return (
+                                    <label 
+                                      key={sec.id} 
+                                      className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                                        isSelected 
+                                          ? 'bg-blue-50 border-blue-200 shadow-sm' 
+                                          : 'border-transparent hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={e => {
+                                          const ids = editingCourse.instructionIds;
+                                          if (e.target.checked) setEditingCourse({ ...editingCourse, instructionIds: [...ids, sec.id] });
+                                          else setEditingCourse({ ...editingCourse, instructionIds: ids.filter(i => i !== sec.id) });
+                                        }}
+                                        className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className={`text-sm font-medium truncate ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>
+                                          {sec.title}
+                                        </div>
+                                        <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">{sec.department}</span>
+                                        </div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              {sections.filter(sec => editCourseInstFilter === 'all' || sec.department === editCourseInstFilter).filter(sec => sec.title.toLowerCase().includes(editCourseInstSearch.toLowerCase())).length === 0 && (
+                                <div className="p-4 text-center text-sm text-slate-500">Інструкцій не знайдено</div>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 mt-4 mb-4">
                             <input
