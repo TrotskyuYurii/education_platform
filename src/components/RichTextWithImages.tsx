@@ -1,42 +1,58 @@
 import React from 'react';
-import { Maximize2, Image as ImageIcon, AlertCircle } from 'lucide-react';
-import { cleanBase64Url } from '../utils/markdownParser';
+import { ImageIcon, Maximize2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface RichTextWithImagesProps {
-  content: string;
+  contentHtml?: string;
+  contentMarkdown?: string;
+  images?: string[];
   className?: string;
-  onImageClick?: (url: string, title?: string) => void;
+  onImageClick?: (url: string, alt: string) => void;
 }
 
-interface TextOrImageSegment {
-  type: 'text' | 'image';
-  text?: string;
-  imageUrl?: string;
-  alt?: string;
-}
+// Ensure base64 urls are clean and well-formed
+const cleanBase64Url = (url: string | undefined): string | null => {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('data:image/')) return trimmed;
+  if (trimmed.startsWith('http')) return trimmed;
+  // If it's a raw base64 string without data prefix, try to guess
+  if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 50) {
+    // If it starts with /9j/, it's likely JPEG
+    if (trimmed.startsWith('/9j/')) return `data:image/jpeg;base64,${trimmed}`;
+    // default to png
+    return `data:image/png;base64,${trimmed}`;
+  }
+  return null;
+};
 
-export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
-  content,
-  className = '',
-  onImageClick
+export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({ 
+  contentHtml, 
+  contentMarkdown, 
+  className = "",
+  onImageClick 
 }) => {
+  const content = contentMarkdown || contentHtml || '';
+  
   if (!content) return null;
 
-  // Split content into text segments and image segments
-  const segments: TextOrImageSegment[] = [];
-
-  // Match:
-  // 1. ![alt](url)
+  // We need to parse out images and text segments so we can render images properly
+  const segments: { type: 'text' | 'image', text?: string, imageUrl?: string, alt?: string }[] = [];
+  
+  // Advanced regex to catch base64 images inside Markdown or HTML tags
+  // 1. ![alt](data:image/...)
   // 2. <img src="url" ... />
   // 3. **Зображення:** url
   // 4. Standalone data:image/... url
   const combinedRegex = /(!\[([\s\S]*?)\]\(\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/[^\s)]+)\s*\)|<img\s+[^>]*src=["']\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/[^"']+)["'][^>]*>|\*\*Зображення:\*\*\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/\S+)|(data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=\s]{40,}))/gi;
-
+  
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = combinedRegex.exec(content)) !== null) {
     const matchIndex = match.index;
+    
     if (matchIndex > lastIndex) {
       const textBefore = content.substring(lastIndex, matchIndex);
       if (textBefore.trim()) {
@@ -86,18 +102,26 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
     }
   }
 
-  // If no images matched, render with structured formatting
+  // If no images matched, render with standard Markdown
   if (segments.length === 0) {
-    return <div className={`space-y-2 ${className}`}>{renderStructuredText(content)}</div>;
+    return (
+      <div className={`markdown-body ${className}`}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
+    );
   }
 
   return (
-    <div className={`space-y-3 ${className}`}>
+    <div className={`space-y-4 ${className}`}>
       {segments.map((seg, idx) => {
         if (seg.type === 'text') {
           return (
-            <div key={idx} className="leading-relaxed">
-              {renderStructuredText(seg.text || '')}
+            <div key={idx} className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {seg.text || ''}
+              </ReactMarkdown>
             </div>
           );
         }
@@ -106,8 +130,8 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
           return (
             <div 
               key={idx} 
-              className="my-3 rounded-xl border border-slate-200/90 bg-white shadow-xs overflow-hidden group hover:border-blue-400 hover:shadow-md transition cursor-pointer"
-              onClick={() => onImageClick && onImageClick(seg.imageUrl!, seg.alt)}
+              className="my-6 rounded-xl border border-slate-200/90 bg-white shadow-xs overflow-hidden group hover:border-blue-400 hover:shadow-md transition cursor-pointer"
+              onClick={() => onImageClick && onImageClick(seg.imageUrl!, seg.alt || '')}
             >
               <div className="relative bg-slate-50 flex items-center justify-center p-2 min-h-[140px] max-h-[420px] overflow-hidden">
                 <img
@@ -116,7 +140,6 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
                   className="max-h-[400px] w-auto max-w-full object-contain rounded-lg transition group-hover:scale-[1.01]"
                   loading="lazy"
                   onError={(e) => {
-                    // Fallback on error
                     const target = e.currentTarget;
                     target.style.display = 'none';
                     const parent = target.parentElement;
@@ -138,7 +161,7 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
                   </span>
                 </div>
               </div>
-
+              
               {seg.alt && seg.alt !== 'Зображення' && seg.alt !== 'Скріншот' && (
                 <div className="px-3.5 py-2 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
                   <span className="flex items-center gap-1.5 font-medium truncate">
@@ -160,222 +183,3 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
     </div>
   );
 };
-
-/**
- * Helper to render structured markdown text (headings, bullet points, callouts, paragraphs)
- */
-function renderStructuredText(text: string): React.ReactNode {
-  const lines = text.split('\n');
-  const elements: React.ReactNode[] = [];
-  let currentList: string[] = [];
-  let listType: 'ul' | 'ol' = 'ul';
-  let tableRows: string[][] = [];
-
-  const flushList = () => {
-    if (currentList.length > 0) {
-      if (listType === 'ol') {
-        elements.push(
-          <ol key={`ol-${elements.length}`} className="list-decimal list-inside space-y-1 my-2 pl-2 text-slate-700">
-            {currentList.map((item, i) => (
-              <li key={i} className="leading-relaxed">{renderInlineMarkdown(item)}</li>
-            ))}
-          </ol>
-        );
-      } else {
-        elements.push(
-          <ul key={`ul-${elements.length}`} className="space-y-1.5 my-2 pl-1">
-            {currentList.map((item, i) => (
-              <li key={i} className="flex items-start gap-2 text-slate-700 text-sm leading-relaxed">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0" />
-                <span>{renderInlineMarkdown(item)}</span>
-              </li>
-            ))}
-          </ul>
-        );
-      }
-      currentList = [];
-    }
-  };
-
-  const flushTable = () => {
-    if (tableRows.length > 0) {
-      const headers = tableRows[0];
-      const bodyRows = tableRows.slice(1).filter(r => !r.every(cell => /^[-:]+$/.test(cell.trim())));
-      elements.push(
-        <div key={`tbl-${elements.length}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                {headers.map((h, i) => (
-                  <th key={i} className="px-3 py-2 font-semibold text-slate-700">{renderInlineMarkdown(h)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {bodyRows.map((row, rIdx) => (
-                <tr key={rIdx} className="hover:bg-slate-50/50">
-                  {row.map((cell, cIdx) => (
-                    <td key={cIdx} className="px-3 py-2 text-slate-600">{renderInlineMarkdown(cell)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-      tableRows = [];
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const line = rawLine.trim();
-
-    // Empty line: flush lists and tables
-    if (!line) {
-      flushList();
-      flushTable();
-      continue;
-    }
-
-    // Markdown Table row: starts and ends with |
-    if (line.startsWith('|') && line.endsWith('|')) {
-      flushList();
-      const cells = line.split('|').slice(1, -1).map(c => c.trim());
-      tableRows.push(cells);
-      continue;
-    } else {
-      flushTable();
-    }
-
-    // Headings
-    if (line.startsWith('#### ')) {
-      flushList();
-      elements.push(
-        <h4 key={`h4-${i}`} className="text-sm font-bold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5">
-          {renderInlineMarkdown(line.replace(/^####\s+/, ''))}
-        </h4>
-      );
-      continue;
-    }
-
-    if (line.startsWith('### ')) {
-      flushList();
-      elements.push(
-        <h3 key={`h3-${i}`} className="text-base font-bold text-slate-900 mt-5 mb-2 pb-1 border-b border-slate-100 flex items-center gap-2">
-          {renderInlineMarkdown(line.replace(/^###\s+/, ''))}
-        </h3>
-      );
-      continue;
-    }
-
-    if (line.startsWith('## ')) {
-      flushList();
-      elements.push(
-        <h2 key={`h2-${i}`} className="text-lg font-bold text-slate-900 mt-6 mb-2">
-          {renderInlineMarkdown(line.replace(/^##\s+/, ''))}
-        </h2>
-      );
-      continue;
-    }
-
-    // Divider
-    if (line === '---' || line === '***') {
-      flushList();
-      elements.push(<hr key={`hr-${i}`} className="my-4 border-slate-200" />);
-      continue;
-    }
-
-    // Callouts: Tip or Warning
-    if (line.startsWith('💡') || line.toLowerCase().startsWith('підказка:') || line.startsWith('> 💡')) {
-      flushList();
-      const tipText = line.replace(/^(?:>\s*)?💡\s*(?:Підказка:\s*)?/i, '');
-      elements.push(
-        <div key={`tip-${i}`} className="my-2.5 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs flex items-start gap-2.5 shadow-xs">
-          <span className="text-base leading-none shrink-0">💡</span>
-          <div className="leading-relaxed font-medium">{renderInlineMarkdown(tipText)}</div>
-        </div>
-      );
-      continue;
-    }
-
-    if (line.startsWith('⚠️') || line.toLowerCase().startsWith('увага:') || line.startsWith('> ⚠️')) {
-      flushList();
-      const warnText = line.replace(/^(?:>\s*)?⚠️\s*(?:Увага:\s*)?/i, '');
-      elements.push(
-        <div key={`warn-${i}`} className="my-2.5 p-3 rounded-xl bg-rose-50/80 border border-rose-200/80 text-rose-900 text-xs flex items-start gap-2.5 shadow-xs">
-          <span className="text-base leading-none shrink-0">⚠️</span>
-          <div className="leading-relaxed font-medium">{renderInlineMarkdown(warnText)}</div>
-        </div>
-      );
-      continue;
-    }
-
-    // Bullet points
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      if (currentList.length === 0) listType = 'ul';
-      currentList.push(line.replace(/^[-*]\s+/, ''));
-      continue;
-    }
-
-    // Numbered list items
-    const numMatch = line.match(/^(\d+)\.\s+(.+)$/);
-    if (numMatch) {
-      if (currentList.length === 0) listType = 'ol';
-      currentList.push(numMatch[2]);
-      continue;
-    }
-
-    // Standard paragraph
-    flushList();
-    elements.push(
-      <p key={`p-${i}`} className="text-sm text-slate-700 leading-relaxed my-1.5">
-        {renderInlineMarkdown(line)}
-      </p>
-    );
-  }
-
-  flushList();
-  flushTable();
-
-  return elements;
-}
-
-/**
- * Helper to render inline markdown (bold, italic, code, links)
- */
-function renderInlineMarkdown(text: string): React.ReactNode {
-  // Split by bold (**text**), code (`code`), or links [text](url)
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[.*?\]\(.*?\))/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={index} className="font-semibold text-slate-900">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return (
-        <code key={index} className="px-1.5 py-0.5 bg-slate-100 text-blue-700 rounded text-xs font-mono">
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
-    if (linkMatch) {
-      return (
-        <a 
-          key={index} 
-          href={linkMatch[2]} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 underline hover:text-blue-800"
-        >
-          {linkMatch[1]}
-        </a>
-      );
-    }
-    return part;
-  });
-}
