@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { QuizQuestion, RoleFilter, InstructionSection } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../context/AuthContext';
 import { 
   Award, 
   CheckCircle2, 
@@ -40,8 +41,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   onBackToManual,
   onStartCases,
 }) => {
+  const { user } = useAuth();
   const [selectedRole, setSelectedRole] = useState<RoleFilter>('all');
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(() => {
+    const specificDept = user?.departments?.find(d => d !== 'Всі підрозділи');
+    return specificDept || 'all';
+  });
   const [examMode, setExamMode] = useState<boolean>(false); // false: instant feedback, true: exam at the end
   const [quizStarted, setQuizStarted] = useState<boolean>(false);
   const [quizAttempt, setQuizAttempt] = useState<number>(0);

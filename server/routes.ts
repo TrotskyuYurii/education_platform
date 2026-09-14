@@ -117,8 +117,8 @@ apiRouter.post('/auth/login', async (req, res) => {
         requireEmailCode: user.requireEmailCode 
       } 
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Внутрішня помилка сервера під час авторизації' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Внутрішня помилка сервера під час авторизації' });
   }
 });
 
@@ -202,8 +202,8 @@ apiRouter.post('/auth/resend-code', async (req, res) => {
       message: `Новий код авторизації надіслано на ${user.email}`,
       debugCode: emailResult.simulated ? code : undefined
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Не вдалося повторно надіслати код' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Не вдалося повторно надіслати код' });
   }
 });
 

@@ -2078,20 +2078,22 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Новий пароль (залиште порожнім, щоб не змінювати)
+                          Новий пароль {selectedUser.authMethod === 'otp' ? '(не використовується)' : '(залиште порожнім, щоб не змінювати)'}
                         </label>
                         <div className="relative">
                           <input
                             type={showEditPassword ? "text" : "password"}
                             placeholder="••••••••"
+                            disabled={selectedUser.authMethod === 'otp'}
                             value={selectedUser.newPassword || ''}
                             onChange={e => setSelectedUser({...selectedUser, newPassword: e.target.value})}
-                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
                           />
                           <button
                             type="button"
+                            disabled={selectedUser.authMethod === 'otp'}
                             onClick={() => setShowEditPassword(!showEditPassword)}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
                             title={showEditPassword ? "Приховати пароль" : "Показати пароль"}
                           >
                             {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -2183,21 +2185,23 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Пароль *
+                          Пароль {newUser.authMethod === 'otp' ? '(не використовується)' : '*'}
                         </label>
                         <div className="relative">
                           <input
                             type={showNewPassword ? "text" : "password"}
-                            required
+                            required={newUser.authMethod !== 'otp'}
+                            disabled={newUser.authMethod === 'otp'}
                             value={newUser.password}
                             onChange={e => setNewUser({...newUser, password: e.target.value})}
-                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
                             placeholder="••••••••"
                           />
                           <button
                             type="button"
+                            disabled={newUser.authMethod === 'otp'}
                             onClick={() => setShowNewPassword(!showNewPassword)}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
                             title={showNewPassword ? "Приховати пароль" : "Показати пароль"}
                           >
                             {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

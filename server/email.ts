@@ -91,11 +91,13 @@ export async function sendAuthCodeEmail(
       });
       console.log(`✅ Real email successfully sent via SMTP to ${toEmail}`);
       return { success: true, simulated: false };
-    } catch (err) {
+    } catch (err: any) {
       console.error(`❌ Failed to send SMTP email to ${toEmail}:`, err);
-      return { success: true, simulated: true };
+      throw new Error(`Помилка відправки листа з кодом. Авторизація неможлива. Деталі: ${err.message}`);
     }
   }
 
-  return { success: true, simulated: true };
+  // Security Policy: Never allow simulated code access if SMTP is missing or fails
+  console.error(`❌ Failed to send auth code to ${toEmail} because SMTP is not configured.`);
+  throw new Error('Поштовий сервер (SMTP) не налаштовано. Відправка коду та авторизація тимчасово недоступні. Зверніться до адміністратора.');
 }

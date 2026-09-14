@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { InstructionSection } from '../types';
 import { BookOpen, Search, ArrowRight, Play, BookText } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface CourseCatalogProps {
   sections: InstructionSection[];
@@ -17,7 +18,11 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
   onOpenCourse,
   onStartCourseQuiz
 }) => {
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const { user } = useAuth();
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(() => {
+    const specificDept = user?.departments?.find(d => d !== 'Всі підрозділи');
+    return specificDept || 'all';
+  });
   const [searchQuery, setSearchQuery] = useState('');
 
   // Extract unique departments
