@@ -107,16 +107,20 @@ function MainApp() {
       const res = await fetch('/api/progress');
       const data = await res.json();
       if (res.ok && data.progress) {
-        const testScores = data.progress.testScores || [];
+        const historyList = data.progress.quizHistory || data.progress.testScores || [];
         setProgress(prev => ({
           ...prev,
           readSectionIds: data.progress.readSectionIds || [],
-          quizHistory: testScores,
+          quizHistory: historyList,
           certificates: data.progress.certificates || [],
           notifications: data.progress.notifications || [],
           employeeInfo: data.progress.employeeInfo || prev.employeeInfo,
-          bestScore: testScores.length > 0 ? Math.max(0, ...testScores.map((s: any) => s.percentage || 0)) : 0,
-          totalQuestionsAnswered: testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0)
+          bestScore: data.progress.bestScore !== undefined 
+            ? data.progress.bestScore 
+            : (historyList.length > 0 ? Math.max(0, ...historyList.map((s: any) => s.percentage || 0)) : 0),
+          totalQuestionsAnswered: data.progress.totalQuestionsAnswered !== undefined
+            ? data.progress.totalQuestionsAnswered
+            : historyList.reduce((sum: number, s: any) => sum + (s.total || 0), 0)
         }));
       }
     } catch (err) {

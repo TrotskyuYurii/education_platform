@@ -38,6 +38,8 @@ const requireAuth = async (req: any, res: any, next: any) => {
 import { requirePermission } from './modules/core/permissions.js';
 import { Role } from './models.js';
 import { rolesRouter } from './modules/roles/routes.js';
+import { progressV2Router } from './modules/learning/routes.js';
+import { ProgressService } from './modules/learning/service.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
 const requireAdmin = requirePermission('admin.access');
@@ -45,6 +47,7 @@ const requireAdmin = requirePermission('admin.access');
 // --- Mount V2 Routers ---
 apiRouter.use('/v2/org', requireAuth, orgRouter);
 apiRouter.use('/v2/roles', requireAuth, rolesRouter);
+apiRouter.use('/v2/progress', requireAuth, progressV2Router);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -887,29 +890,10 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
 
 apiRouter.get('/progress', requireAuth, async (req: any, res) => {
   try {
-    let progress = await Progress.findOne({ userId: req.user._id } as any);
-    if (!progress) {
-      progress = await Progress.create({ userId: req.user._id, readSectionIds: [], testScores: [] } as any);
-    } else {
-      // Auto-clean stale or duplicate readSectionIds against actual existing sections
-      const currentSections = await Section.find({} as any, { id: 1 } as any);
-      const validSectionIds = new Set(currentSections.map(s => s.id));
-      const rawIds: string[] = progress.readSectionIds || [];
-      const seen = new Set<string>();
-      const cleanedIds: string[] = [];
-      for (const id of rawIds) {
-        if (validSectionIds.has(id) && !seen.has(id)) {
-          seen.add(id);
-          cleanedIds.push(id);
-        }
-      }
-      if (cleanedIds.length !== rawIds.length) {
-        progress.readSectionIds = cleanedIds;
-        await progress.save();
-      }
-    }
+    const progress = await ProgressService.getUserProgress(req.user._id);
     res.json({ progress });
   } catch (err) {
+    console.error('Failed to fetch progress', err);
     res.status(500).json({ error: 'Failed to fetch progress' });
   }
 });
@@ -917,55 +901,21 @@ apiRouter.get('/progress', requireAuth, async (req: any, res) => {
 apiRouter.post('/progress', requireAuth, async (req: any, res) => {
   try {
     const { readSectionIds, testScore, employeeInfo } = req.body;
-    let progress = await Progress.findOne({ userId: req.user._id } as any);
-    if (!progress) progress = new Progress({ userId: req.user._id, readSectionIds: [], testScores: [], certificates: [] } as any);
-
+    
     if (readSectionIds && Array.isArray(readSectionIds)) {
-      const currentSections = await Section.find({} as any, { id: 1 } as any);
-      const validSectionIds = new Set(currentSections.map(s => s.id));
-      const seen = new Set<string>();
-      const sanitizedIds: string[] = [];
-      for (const id of readSectionIds) {
-        if (validSectionIds.has(id) && !seen.has(id)) {
-          seen.add(id);
-          sanitizedIds.push(id);
-        }
-      }
-      progress.readSectionIds = sanitizedIds;
+      await ProgressService.saveReadSections(req.user._id, readSectionIds);
     }
-    if (employeeInfo) progress.employeeInfo = employeeInfo;
-    
+    if (employeeInfo) {
+      await ProgressService.saveAcknowledgment(req.user._id, employeeInfo);
+    }
     if (testScore) {
-      progress.testScores.push(testScore);
-      
-      if (testScore.courseId && testScore.percentage >= 80) {
-        const course = await Course.findOne({ id: testScore.courseId } as any);
-        if (course && course.hasCertificate) {
-          const hasExisting = progress.certificates.find((c: any) => c.courseId === course.id);
-          const validityYears = course.certificateValidityYears || 1;
-          const issuedAt = new Date();
-          const expiresAt = new Date();
-          expiresAt.setFullYear(issuedAt.getFullYear() + validityYears);
-          
-          if (hasExisting) {
-            hasExisting.issuedAt = issuedAt;
-            hasExisting.expiresAt = expiresAt;
-          } else {
-            progress.certificates.push({
-              courseId: course.id,
-              courseTitle: course.title,
-              issuedAt,
-              expiresAt
-            });
-          }
-        }
-      }
+      await ProgressService.recordAttempt(req.user._id, testScore);
     }
-    
-    progress.updatedAt = new Date();
-    await progress.save();
+
+    const progress = await ProgressService.getUserProgress(req.user._id);
     res.json({ success: true, progress });
   } catch (err) {
+    console.error('Failed to update progress', err);
     res.status(500).json({ error: 'Failed to update progress' });
   }
 });
@@ -979,51 +929,7 @@ apiRouter.get('/admin/users-progress', requireAuth, requirePermission('analytics
       return res.json({ users: [] });
     }
 
-    const currentSections = await Section.find({} as any, { id: 1 } as any);
-    const validSectionIds = new Set(currentSections.map(s => s.id));
-    const totalSectionsCount = currentSections.length;
-
-    const users = await User.find(userFilter).select('-passwordHash -authCode').sort({ createdAt: -1 });
-    const userIds = users.map(u => u._id);
-    const progressList = await Progress.find({ userId: { $in: userIds } } as any);
-    const progressMap = new Map();
-    progressList.forEach((p: any) => {
-      progressMap.set(p.userId.toString(), p);
-    });
-
-    const userStats = users.map(u => {
-      const p = progressMap.get(u._id.toString());
-      const testScores = p?.testScores || [];
-      const bestScore = testScores.length > 0 ? Math.max(...testScores.map((s: any) => s.percentage || 0)) : 0;
-      const totalAnswers = testScores.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
-      
-      const rawReadIds: string[] = p?.readSectionIds || [];
-      const validReadSet = new Set(rawReadIds.filter(id => validSectionIds.has(id)));
-      const readCount = Math.min(validReadSet.size, totalSectionsCount);
-
-      return {
-        _id: u._id,
-        id: u._id.toString(),
-        email: u.email || u.username,
-        username: u.username,
-        fullName: u.fullName,
-        role: u.role,
-        roleKeys: u.roleKeys || [],
-        departments: u.departments || [],
-        allowedInstructionIds: u.allowedInstructionIds || [],
-        createdAt: u.createdAt,
-        employeeInfo: p?.employeeInfo || null,
-        stats: {
-          readCount,
-          testsCount: testScores.length,
-          bestScore,
-          certificatesCount: p?.certificates?.length || 0,
-          totalQuestionsAnswered: totalAnswers,
-          lastActivity: p?.updatedAt || p?.testScores?.[p.testScores.length - 1]?.date || null
-        }
-      };
-    });
-
+    const userStats = await ProgressService.getUsersProgressReport(userFilter);
     res.json({ users: userStats });
   } catch (err) {
     console.error('Failed to fetch users progress', err);
@@ -1031,37 +937,16 @@ apiRouter.get('/admin/users-progress', requireAuth, requirePermission('analytics
   }
 });
 
-
 // Delete/Revoke a user's certificate
 apiRouter.delete('/admin/progress/:userId/certificate/:courseId', requireAuth, requirePermission('certificate.revoke'), async (req, res) => {
   try {
     const { userId, courseId } = req.params;
-    let progress = await Progress.findOne({ userId } as any);
-    if (!progress) {
-      return res.status(404).json({ error: 'Прогрес не знайдено' });
-    }
-
-    const certIndex = progress.certificates.findIndex((c: any) => c.courseId === courseId);
-    if (certIndex === -1) {
-      return res.status(404).json({ error: 'Сертифікат не знайдено' });
-    }
-
-    const cert = progress.certificates[certIndex];
-    progress.certificates.splice(certIndex, 1);
-
-    // Add notification
-    progress.notifications.push({
-      id: Math.random().toString(36).substring(7),
-      message: `Ваш сертифікат за курс «${cert.courseTitle}» був анульований адміністратором.`,
-      date: new Date(),
-      read: false
-    });
-
-    await progress.save();
+    await ProgressService.revokeCertificate(String(userId), String(courseId), (req as any).user._id);
+    const progress = await ProgressService.getUserProgress(String(userId));
     res.json({ success: true, progress });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to delete certificate', err);
-    res.status(500).json({ error: 'Не вдалося видалити сертифікат' });
+    res.status(500).json({ error: err.message || 'Не вдалося видалити сертифікат' });
   }
 });
 
@@ -1069,22 +954,14 @@ apiRouter.delete('/admin/progress/:userId/certificate/:courseId', requireAuth, r
 apiRouter.post('/progress/notifications/:id/read', requireAuth, async (req: any, res) => {
   try {
     const { id } = req.params;
-    let progress = await Progress.findOne({ userId: req.user._id } as any);
-    if (progress) {
-      const notif = progress.notifications.find((n: any) => n.id === id);
-      if (notif) {
-        notif.read = true;
-        await progress.save();
-      }
-      res.json({ success: true, progress });
-    } else {
-      res.status(404).json({ error: 'Not found' });
-    }
+    await ProgressService.markNotificationRead(req.user._id, id);
+    const progress = await ProgressService.getUserProgress(req.user._id);
+    res.json({ success: true, progress });
   } catch (err) {
+    console.error('Failed to mark notification as read', err);
     res.status(500).json({ error: 'Failed' });
   }
 });
-
 
 // Admin: Get full progress for a specific user
 apiRouter.get('/admin/progress/:userId', requireAuth, requireAdmin, async (req, res) => {
@@ -1095,32 +972,7 @@ apiRouter.get('/admin/progress/:userId', requireAuth, requireAdmin, async (req, 
       return res.status(404).json({ error: 'Користувача не знайдено' });
     }
 
-    let progress = await Progress.findOne({ userId: targetUser._id } as any);
-    if (!progress) {
-      progress = {
-        userId: targetUser._id,
-        readSectionIds: [],
-        testScores: [],
-        certificates: [],
-        employeeInfo: null
-      } as any;
-    } else {
-      const currentSections = await Section.find({} as any, { id: 1 } as any);
-      const validSectionIds = new Set(currentSections.map(s => s.id));
-      const rawIds: string[] = progress.readSectionIds || [];
-      const seen = new Set<string>();
-      const cleanedIds: string[] = [];
-      for (const id of rawIds) {
-        if (validSectionIds.has(id) && !seen.has(id)) {
-          seen.add(id);
-          cleanedIds.push(id);
-        }
-      }
-      if (cleanedIds.length !== rawIds.length) {
-        progress.readSectionIds = cleanedIds;
-        await progress.save();
-      }
-    }
+    const progress = await ProgressService.getUserProgress(targetUser._id);
 
     res.json({ 
       user: {
