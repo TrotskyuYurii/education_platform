@@ -5,7 +5,8 @@ import {
   QuizAttempt, 
   CertificateRecord, 
   Acknowledgment, 
-  LearningNotification 
+  LearningNotification,
+  LearningAssignment
 } from './models.js';
 
 export class ProgressService {
@@ -276,6 +277,11 @@ export class ProgressService {
           completedAt: new Date()
         }))
       );
+
+      // Auto-complete assignments for read sections
+      for (const sId of sanitizedIds) {
+        await this.syncAssignmentCompletion(userObjectId, 'instruction', sId);
+      }
     }
 
     await this.syncToLegacy(userObjectId);
@@ -300,6 +306,16 @@ export class ProgressService {
       passed: (testScore.percentage || 0) >= 80,
       date: testScore.date ? new Date(testScore.date) : new Date()
     });
+
+    // Auto-complete assignments for passed course or test
+    if (testScore.percentage >= 80) {
+      if (testScore.courseId) {
+        await this.syncAssignmentCompletion(userObjectId, 'course', testScore.courseId, testScore.percentage);
+      }
+      if (testScore.sectionId) {
+        await this.syncAssignmentCompletion(userObjectId, 'instruction', testScore.sectionId, testScore.percentage);
+      }
+    }
 
     // Check certificate issuance
     if (testScore.courseId && testScore.percentage >= 80) {
@@ -547,5 +563,315 @@ export class ProgressService {
         }
       };
     });
+  }
+
+  // ==========================================
+  // Крок 7. Рушій призначень (Assignment Engine)
+  // ==========================================
+
+  /**
+   * Automatically synchronizes assignment completion when employee completes reading or passes quiz
+   */
+  static async syncAssignmentCompletion(
+    userId: mongoose.Types.ObjectId,
+    targetType: 'course' | 'instruction',
+    targetId: string,
+    score?: number
+  ) {
+    try {
+      await LearningAssignment.updateMany(
+        {
+          userId,
+          targetType,
+          targetId,
+          status: { $in: ['assigned', 'in_progress', 'overdue'] }
+        },
+        {
+          $set: {
+            status: 'completed',
+            completedAt: new Date(),
+            ...(score !== undefined ? { score } : {})
+          }
+        }
+      );
+    } catch (err) {
+      console.error('Failed to sync assignment completion:', err);
+    }
+  }
+
+  /**
+   * Create assignment (single user, multiple users, department, or all)
+   */
+  static async createAssignment(data: {
+    assignedBy: string | mongoose.Types.ObjectId;
+    assignedByName?: string;
+    targetType: 'course' | 'instruction';
+    targetId: string;
+    title: string;
+    targetScope: 'single' | 'multiple' | 'department' | 'all';
+    userId?: string;
+    userIds?: string[];
+    department?: string;
+    dueDate: Date | string;
+    priority?: 'recommended' | 'mandatory' | 'critical';
+    notes?: string;
+  }) {
+    let targetUserIds: mongoose.Types.ObjectId[] = [];
+    if (data.targetScope === 'single' && data.userId) {
+      targetUserIds = [new mongoose.Types.ObjectId(data.userId)];
+    } else if (data.targetScope === 'multiple' && Array.isArray(data.userIds)) {
+      targetUserIds = data.userIds.map(id => new mongoose.Types.ObjectId(id));
+    } else if (data.targetScope === 'department' && data.department) {
+      const deptUsers = await User.find({
+        $or: [
+          { departmentId: data.department },
+          { departments: data.department }
+        ]
+      }, { _id: 1 });
+      targetUserIds = deptUsers.map(u => u._id);
+    } else if (data.targetScope === 'all') {
+      const allUsers = await User.find({ isBlocked: { $ne: true } }, { _id: 1 });
+      targetUserIds = allUsers.map(u => u._id);
+    }
+
+    if (targetUserIds.length === 0) {
+      throw new Error('Не знайдено співробітників для призначення');
+    }
+
+    const assignedByObjId = typeof data.assignedBy === 'string' ? new mongoose.Types.ObjectId(data.assignedBy) : data.assignedBy;
+    const dueDate = new Date(data.dueDate);
+    const priority = data.priority || 'mandatory';
+    const notes = data.notes || '';
+
+    const createdAssignments = [];
+    const formattedDue = dueDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    for (const uid of targetUserIds) {
+      // Check if user already completed this course or instruction
+      let isAlreadyCompleted = false;
+      let existingScore: number | undefined = undefined;
+      if (data.targetType === 'course') {
+        const cert = await CertificateRecord.findOne({ userId: uid, courseId: data.targetId, status: 'active' });
+        const passedQuiz = await QuizAttempt.findOne({ userId: uid, courseId: data.targetId, passed: true }).sort({ percentage: -1 });
+        isAlreadyCompleted = !!(cert || passedQuiz);
+        if (passedQuiz) existingScore = passedQuiz.percentage;
+      } else {
+        const read = await ReadingProgress.findOne({ userId: uid, sectionId: data.targetId });
+        isAlreadyCompleted = !!read;
+      }
+
+      const status = isAlreadyCompleted ? 'completed' : 'assigned';
+      const user = await User.findById(uid, { departmentId: 1, departments: 1 });
+      const dept = user?.departmentId || (user?.departments && user.departments[0]) || '';
+
+      const assignment = await LearningAssignment.findOneAndUpdate(
+        { userId: uid, targetType: data.targetType, targetId: data.targetId },
+        {
+          $set: {
+            title: data.title,
+            department: dept,
+            assignedBy: assignedByObjId,
+            assignedByName: data.assignedByName || 'Керівник',
+            assignedDate: new Date(),
+            dueDate,
+            priority,
+            status,
+            completedAt: isAlreadyCompleted ? new Date() : undefined,
+            score: existingScore,
+            notes
+          }
+        },
+        { upsert: true, new: true }
+      );
+
+      createdAssignments.push(assignment);
+
+      // In-app notification for the user
+      await LearningNotification.create({
+        userId: uid,
+        notificationId: `notif-assign-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        message: `Вам призначено ${priority === 'critical' ? 'термінове' : 'обов\'язкове'} навчання: «${data.title}». Дедлайн: до ${formattedDue}.${notes ? ` Вказівка керівника: ${notes}` : ''}`,
+        type: 'assignment_new',
+        read: false,
+        date: new Date()
+      });
+    }
+
+    return createdAssignments;
+  }
+
+  /**
+   * Get assignments for a single employee (their personalized view)
+   */
+  static async getUserAssignments(userId: string | mongoose.Types.ObjectId) {
+    const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const assignments = await LearningAssignment.find({ userId: userObjectId }).sort({ dueDate: 1 });
+    const now = new Date();
+
+    const result = [];
+    for (const a of assignments) {
+      let status = a.status;
+      if (status !== 'completed' && a.dueDate < now) {
+        status = 'overdue';
+        if (a.status !== 'overdue') {
+          a.status = 'overdue';
+          await a.save();
+        }
+      }
+
+      const diffTime = a.dueDate.getTime() - now.getTime();
+      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      result.push({
+        _id: a._id.toString(),
+        id: a._id.toString(),
+        userId: a.userId.toString(),
+        targetType: a.targetType,
+        targetId: a.targetId,
+        title: a.title,
+        department: a.department,
+        assignedBy: a.assignedBy?.toString(),
+        assignedByName: a.assignedByName,
+        assignedDate: a.assignedDate.toISOString(),
+        dueDate: a.dueDate.toISOString(),
+        priority: a.priority,
+        status,
+        completedAt: a.completedAt?.toISOString(),
+        score: a.score,
+        notes: a.notes,
+        daysRemaining,
+        isOverdue: status === 'overdue' || (status !== 'completed' && daysRemaining < 0)
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Get assignments management report (for Managers & Admins with scoping)
+   */
+  static async getAssignmentsReport(userFilter: any = {}) {
+    const targetUsers = await User.find(userFilter, { _id: 1, fullName: 1, email: 1, username: 1, departmentId: 1, departments: 1 });
+    const userMap = new Map(targetUsers.map(u => [u._id.toString(), u]));
+    const targetUserIds = targetUsers.map(u => u._id);
+
+    const assignments = await LearningAssignment.find({ userId: { $in: targetUserIds } }).sort({ dueDate: 1, createdAt: -1 });
+    const now = new Date();
+
+    let total = assignments.length;
+    let completed = 0;
+    let inProgress = 0;
+    let assigned = 0;
+    let overdue = 0;
+
+    const items = [];
+    for (const a of assignments) {
+      let status = a.status;
+      if (status !== 'completed' && a.dueDate < now) {
+        status = 'overdue';
+        if (a.status !== 'overdue') {
+          a.status = 'overdue';
+          await a.save();
+        }
+      }
+
+      if (status === 'completed') completed++;
+      else if (status === 'in_progress') inProgress++;
+      else if (status === 'overdue') overdue++;
+      else assigned++;
+
+      const diffTime = a.dueDate.getTime() - now.getTime();
+      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const u = userMap.get(a.userId.toString());
+
+      items.push({
+        _id: a._id.toString(),
+        id: a._id.toString(),
+        userId: a.userId.toString(),
+        user: u ? {
+          _id: u._id.toString(),
+          username: u.username,
+          fullName: u.fullName || u.username,
+          email: u.email || u.username,
+          department: u.departmentId || (u.departments && u.departments[0]) || 'Загальний'
+        } : undefined,
+        targetType: a.targetType,
+        targetId: a.targetId,
+        title: a.title,
+        department: a.department || (u?.departmentId || (u?.departments && u.departments[0]) || ''),
+        assignedBy: a.assignedBy?.toString(),
+        assignedByName: a.assignedByName,
+        assignedDate: a.assignedDate.toISOString(),
+        dueDate: a.dueDate.toISOString(),
+        priority: a.priority,
+        status,
+        completedAt: a.completedAt?.toISOString(),
+        score: a.score,
+        notes: a.notes,
+        daysRemaining,
+        isOverdue: status === 'overdue' || (status !== 'completed' && daysRemaining < 0)
+      });
+    }
+
+    const complianceRate = total > 0 ? Math.round((completed / total) * 100) : 100;
+
+    return {
+      stats: {
+        total,
+        completed,
+        inProgress,
+        assigned,
+        overdue,
+        complianceRate
+      },
+      assignments: items
+    };
+  }
+
+  /**
+   * Remind user about approaching or overdue deadline
+   */
+  static async remindAssignment(assignmentId: string, senderName?: string) {
+    const assignment = await LearningAssignment.findById(assignmentId);
+    if (!assignment) throw new Error('Призначення не знайдено');
+
+    const formattedDue = assignment.dueDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    await LearningNotification.create({
+      userId: assignment.userId,
+      notificationId: `remind-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      message: `🔔 Нагадування${senderName ? ` від ${senderName}` : ''}: наближається або минув дедлайн вивчення «${assignment.title}» (до ${formattedDue}). Будь ласка, завершіть матеріал!`,
+      type: 'assignment_reminder',
+      read: false,
+      date: new Date()
+    });
+    return { success: true };
+  }
+
+  /**
+   * Update assignment details (due date, priority, status, notes)
+   */
+  static async updateAssignment(assignmentId: string, data: { dueDate?: string | Date; priority?: string; notes?: string; status?: string }) {
+    const assignment = await LearningAssignment.findById(assignmentId);
+    if (!assignment) throw new Error('Призначення не знайдено');
+
+    if (data.dueDate) {
+      assignment.dueDate = new Date(data.dueDate);
+      if (assignment.status === 'overdue' && assignment.dueDate > new Date()) {
+        assignment.status = 'assigned';
+      }
+    }
+    if (data.priority) assignment.priority = data.priority as any;
+    if (data.notes !== undefined) assignment.notes = data.notes;
+    if (data.status) assignment.status = data.status as any;
+
+    await assignment.save();
+    return assignment;
+  }
+
+  /**
+   * Delete an assignment
+   */
+  static async deleteAssignment(assignmentId: string) {
+    await LearningAssignment.findByIdAndDelete(assignmentId);
+    return { success: true };
   }
 }

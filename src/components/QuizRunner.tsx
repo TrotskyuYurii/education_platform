@@ -14,7 +14,8 @@ import {
   Check, 
   FileText, 
   Sparkles,
-  Briefcase
+  Briefcase,
+  Clock
 } from 'lucide-react';
 import { SUCCESS_QUOTES, RESILIENCE_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
 
@@ -24,6 +25,7 @@ interface QuizRunnerProps {
   initialCourseId?: string;
   allSections: InstructionSection[];
   courses?: any[];
+  quizHistory?: any[];
   onRecordScore: (score: number, total: number, modeName: string, department?: string, courseId?: string, sectionId?: string) => void;
   onNavigateToSignoff: () => void;
   onBackToManual: () => void;
@@ -36,6 +38,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   initialCourseId,
   allSections,
   courses = [],
+  quizHistory = [],
   onRecordScore,
   onNavigateToSignoff,
   onBackToManual,
@@ -90,8 +93,13 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
   // Extract unique departments for dropdown
   const departments = useMemo(() => {
-    const deps = new Set(allQuestions.map(q => q.department));
-    return Array.from(deps).filter(Boolean);
+    const deps = new Set<string>();
+    allQuestions.forEach(q => {
+      const d = q.department;
+      const name = typeof d === 'string' ? d : (d as any)?.name;
+      if (name && typeof name === 'string' && name.trim()) deps.add(name.trim());
+    });
+    return Array.from(deps).sort((a, b) => a.localeCompare(b, 'uk'));
   }, [allQuestions]);
 
   // Extract unique courses for dropdown (now using props)
@@ -157,6 +165,19 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     }
   };
 
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (quizStarted && !quizSubmitted && timeLeft !== null && timeLeft > 0) {
+      const timerId = setTimeout(() => {
+        setTimeLeft(prev => prev !== null ? prev - 1 : null);
+      }, 1000);
+      return () => clearTimeout(timerId);
+    } else if (quizStarted && !quizSubmitted && timeLeft === 0) {
+      handleFinishQuiz();
+    }
+  }, [quizStarted, quizSubmitted, timeLeft]);
+
   const handleStartQuiz = () => {
     setUserAnswers({});
     setCurrentIndex(0);
@@ -165,6 +186,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     setQuizAttempt((prev) => prev + 1);
     setReaction(null);
     setFinalQuote(null);
+    if (currentTargetCourse?.quizTimeLimitMin) {
+      setTimeLeft(currentTargetCourse.quizTimeLimitMin * 60);
+    } else {
+      setTimeLeft(null);
+    }
   };
 
   const handleFinishQuiz = () => {
@@ -177,7 +203,8 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       }
     });
 
-    const isPassedResult = questionsToRun.length > 0 && ((correctCount / questionsToRun.length) >= 0.8);
+    const passScorePercent = currentTargetCourse?.quizPassScorePercent || 80;
+    const isPassedResult = questionsToRun.length > 0 && ((correctCount / questionsToRun.length) * 100 >= passScorePercent);
     const quoteList = isPassedResult ? SUCCESS_QUOTES : RESILIENCE_QUOTES;
     setFinalQuote(quoteList[Math.floor(Math.random() * quoteList.length)]);
 
@@ -208,7 +235,8 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     return questionsToRun[Number(idx)]?.correctIndex === ans;
   }).length;
   const percentage = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
-  const isPassed = percentage >= 80;
+  const passScorePercent = currentTargetCourse?.quizPassScorePercent || 80;
+  const isPassed = percentage >= passScorePercent;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -246,9 +274,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   className="w-full text-xs font-semibold p-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">Всі підрозділи</option>
-                  {departments.map(dep => (
-                    <option key={dep} value={dep}>{dep}</option>
-                  ))}
+                  {departments.map((dep, idx) => {
+                    const label = typeof dep === 'string' ? dep : ((dep as any)?.name || String(dep));
+                    return <option key={`quiz-dept-${label}-${idx}`} value={label}>{label}</option>;
+                  })}
                 </select>
               </div>
             )}
@@ -329,15 +358,35 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           </div>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button
-              onClick={handleStartQuiz}
-              disabled={questionsToRun.length === 0}
-              id="btn-start-quiz-now"
-              className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>Розпочати тестування ({questionsToRun.length} питань)</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {(() => {
+              const pastAttempts = currentTargetCourse ? quizHistory.filter((h: any) => h.courseId === currentTargetCourse.id).length : 0;
+              const maxAttempts = currentTargetCourse?.quizMaxAttempts;
+              const hasNoAttempts = maxAttempts ? pastAttempts >= maxAttempts : false;
+
+              return (
+                <div className="flex flex-col items-center w-full sm:w-auto">
+                  <button
+                    onClick={handleStartQuiz}
+                    disabled={questionsToRun.length === 0 || hasNoAttempts}
+                    id="btn-start-quiz-now"
+                    className="w-full px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span>Розпочати тестування ({questionsToRun.length} питань)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  {maxAttempts && (
+                    <span className={`text-xs font-semibold mt-2 ${hasNoAttempts ? 'text-rose-600' : 'text-slate-500'}`}>
+                      Використано спроб: {pastAttempts} з {maxAttempts}
+                    </span>
+                  )}
+                  {currentTargetCourse?.quizTimeLimitMin && (
+                    <span className="text-xs font-semibold mt-1 text-slate-500">
+                      ⏱ Ліміт часу: {currentTargetCourse.quizTimeLimitMin} хв
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <button
               onClick={onBackToManual}
               className="w-full sm:w-auto px-5 py-3 text-slate-600 hover:text-slate-900 font-semibold text-xs transition"
@@ -394,9 +443,19 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   {currentQ.sourceDocPage}
                 </span>
               </div>
-              <span className="text-xs text-slate-500 font-bold">
-                Відповідей: {answeredCount}/{totalCount}
-              </span>
+              <div className="flex items-center gap-3">
+                {timeLeft !== null && (
+                  <div className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-md border ${
+                    timeLeft < 60 ? 'bg-rose-50 text-rose-600 border-rose-100 animate-pulse' : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}>
+                    <Clock className="w-3.5 h-3.5" />
+                    {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+                  </div>
+                )}
+                <span className="text-xs text-slate-500 font-bold hidden sm:inline">
+                  Відповідей: {answeredCount}/{totalCount}
+                </span>
+              </div>
             </div>
 
             <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">

@@ -67,6 +67,22 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
     allowedScopes: ['department', 'all']
   },
   {
+    code: 'knowledge.space.manage',
+    name: 'Керування просторами бази знань',
+    category: 'knowledge',
+    categoryLabel: 'База знань та регламенти',
+    description: 'Створення, редагування, групування та налаштування тематичних просторів (робочих областей) бази знань',
+    allowedScopes: ['all']
+  },
+  {
+    code: 'knowledge.version.manage',
+    name: 'Керування версіями та статусами регламентів',
+    category: 'knowledge',
+    categoryLabel: 'База знань та регламенти',
+    description: 'Створення нових ревізій регламентів, відновлення попередніх версій, зміна життєвого циклу (чернетка, рецензія, публікація, архів)',
+    allowedScopes: ['department', 'all']
+  },
+  {
     code: 'learning.assignment.view',
     name: 'Перегляд призначеного навчання',
     category: 'learning',

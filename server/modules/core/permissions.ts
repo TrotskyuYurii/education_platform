@@ -89,6 +89,8 @@ export const getUserEffectivePermissions = async (user: any) => {
         'org.manage': 'all',
         'knowledge.article.view': 'all',
         'knowledge.article.publish': 'all',
+        'knowledge.space.manage': 'all',
+        'knowledge.version.manage': 'all',
         'learning.assignment.view': 'all',
         'learning.assignment.create': 'all',
         'analytics.report.view': 'all',

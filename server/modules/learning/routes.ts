@@ -126,3 +126,110 @@ progressV2Router.delete('/admin/certificates/:userId/:courseId', requirePermissi
     res.status(500).json({ error: err.message || 'Не вдалося анулювати сертифікат' });
   }
 });
+
+// ==========================================
+// Крок 7. Рушій призначень (Assignment Engine)
+// ==========================================
+
+// 9. Current user: get my assignments
+progressV2Router.get('/assignments', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const assignments = await ProgressService.getUserAssignments(user._id);
+    res.json({ assignments });
+  } catch (err: any) {
+    console.error('Failed to get user assignments', err);
+    res.status(500).json({ error: 'Помилка отримання призначень' });
+  }
+});
+
+// 10. Admin / Manager: get assignments report (with RBAC scoping)
+progressV2Router.get('/admin/assignments', requirePermission('learning.assignment.view'), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userFilter = await scopeFilter(user, 'learning.assignment.view');
+    if (userFilter._id === null) {
+      return res.json({ stats: { total: 0, completed: 0, inProgress: 0, assigned: 0, overdue: 0, complianceRate: 100 }, assignments: [] });
+    }
+
+    const report = await ProgressService.getAssignmentsReport(userFilter);
+    res.json(report);
+  } catch (err: any) {
+    console.error('Failed to get assignments report', err);
+    res.status(500).json({ error: 'Помилка завантаження звіту призначень' });
+  }
+});
+
+// 11. Admin / Manager: create assignment (single, multiple, department, all)
+progressV2Router.post('/admin/assignments', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
+  try {
+    const currentUser = (req as any).user;
+    const { targetType, targetId, title, targetScope, userId, userIds, department, dueDate, priority, notes } = req.body;
+
+    if (!targetId || !title || !dueDate) {
+      return res.status(400).json({ error: 'targetId, title та dueDate є обов\'язковими' });
+    }
+
+    const result = await ProgressService.createAssignment({
+      assignedBy: currentUser._id,
+      assignedByName: currentUser.fullName || currentUser.username || 'Керівник',
+      targetType: targetType || 'course',
+      targetId,
+      title,
+      targetScope: targetScope || 'single',
+      userId,
+      userIds,
+      department,
+      dueDate,
+      priority: priority || 'mandatory',
+      notes
+    });
+
+    res.json({ success: true, count: result.length, assignments: result });
+  } catch (err: any) {
+    console.error('Failed to create assignment', err);
+    res.status(500).json({ error: err.message || 'Помилка створення призначення' });
+  }
+});
+
+// 12. Admin / Manager: update assignment (deadline, priority, notes, status)
+progressV2Router.patch('/admin/assignments/:id', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { dueDate, priority, notes, status } = req.body;
+
+    const updated = await ProgressService.updateAssignment(String(id), { dueDate, priority, notes, status });
+    res.json({ success: true, assignment: updated });
+  } catch (err: any) {
+    console.error('Failed to update assignment', err);
+    res.status(500).json({ error: err.message || 'Помилка оновлення призначення' });
+  }
+});
+
+// 13. Admin / Manager: send deadline reminder to employee
+progressV2Router.post('/admin/assignments/:id/remind', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
+  try {
+    const currentUser = (req as any).user;
+    const { id } = req.params;
+
+    const result = await ProgressService.remindAssignment(String(id), currentUser.fullName || currentUser.username);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to send reminder', err);
+    res.status(500).json({ error: err.message || 'Помилка надсилання нагадування' });
+  }
+});
+
+// 14. Admin / Manager: delete assignment
+progressV2Router.delete('/admin/assignments/:id', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await ProgressService.deleteAssignment(String(id));
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to delete assignment', err);
+    res.status(500).json({ error: err.message || 'Помилка видалення призначення' });
+  }
+});

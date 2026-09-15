@@ -5,17 +5,38 @@ import {
   Briefcase, 
   CheckCircle2, 
   Sparkles, 
-  Settings2,
-  ShieldCheck,
-  BrainCircuit,
-  FileText,
-  Megaphone,
-  Bell
+  Settings2, 
+  ShieldCheck, 
+  BrainCircuit, 
+  FileText, 
+  Megaphone, 
+  Bell,
+  FolderTree,
+  GitBranch,
+  ArrowLeft,
+  Search,
+  CalendarClock
 } from 'lucide-react';
 
-export const AboutApp: React.FC = () => {
+interface AboutAppProps {
+  onBack?: () => void;
+}
+
+export const AboutApp: React.FC<AboutAppProps> = ({ onBack }) => {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6">
+      {onBack && (
+        <div className="mb-6">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600 transition px-3 py-1.5 rounded-lg hover:bg-slate-100"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Назад до навчальних матеріалів</span>
+          </button>
+        </div>
+      )}
+
       <div className="mb-10 text-center">
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">
           Про додаток «Навчальний портал»
@@ -43,9 +64,9 @@ export const AboutApp: React.FC = () => {
                 </div>
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 mb-1">Навчальні курси (Каталог)</h3>
+                <h3 className="font-bold text-slate-900 mb-1">Навчальні курси (Каталог та Конструктор)</h3>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Доступ до структурованої бази знань, регламентів та посадових інструкцій. Матеріали відфільтровані за відділами та ролями. Користувачі можуть читати теорію та відстежувати свій прогрес вивчення.
+                  Доступ до структурованої бази знань, регламентів та посадових інструкцій. Матеріали відфільтровані за відділами та ролями. Користувачі можуть читати теорію та відстежувати свій прогрес вивчення. Для адміністраторів доступний зручний конструктор курсів зі швидким пошуком інструкцій за назвою та підрозділом, лічильниками матеріалів, надійним редагуванням та безпечним видаленням навчальних програм.
                 </p>
               </div>
             </div>
@@ -192,6 +213,110 @@ export const AboutApp: React.FC = () => {
                 </p>
               </div>
             </div>
+            <div className="p-5 bg-slate-50 rounded-xl border border-slate-100 flex gap-4">
+              <div className="mt-1">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                  <FolderTree className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">База знань: Простори, версії та життєвий цикл (Крок 4)</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Корпоративна база знань структурована за принципом робочих просторів (Knowledge Spaces): загальні корпоративні стандарти, складська логістика, фінанси та бухгалтерія, IT та безпека систем. Матеріали підтримують швидку фільтрацію за просторами в каталозі курсів та інструкцій.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Версіонування та історія ревізій:</strong> Будь-яке оновлення інструкції фіксує новий знімок версії (v1.0, v1.1 тощо) із зазначенням автора, дати та опису змін. В панелі адміністрування («База знань») доступний детальний журнал ревізій, порівняння та миттєвий відкат до будь-якої збереженої версії.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Життєвий цикл регламентів:</strong> Документи проходять статуси «Чернетка» (Draft), «На рецензії» (In Review), «Опубліковано» (Published) та «Архів» (Archived) під контролем рольових прав (RBAC permissions: <code className="text-xs bg-slate-200 px-1 py-0.5 rounded font-mono">knowledge.space.manage</code>, <code className="text-xs bg-slate-200 px-1 py-0.5 rounded font-mono">knowledge.version.manage</code>).
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 bg-blue-50/60 rounded-xl border border-blue-200/80 flex gap-4">
+              <div className="mt-1">
+                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-xs">
+                  <Search className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <span>Глобальний пошук: Omnisearch & Command Palette (Крок 5)</span>
+                  <span className="text-[10px] font-mono font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                    ⌘K / Ctrl+K
+                  </span>
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Швидкий доступ до будь-якого знання компанії з будь-якого екрана за допомогою гарячої комбінації клавіш <kbd className="px-1.5 py-0.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded shadow-2xs text-slate-800">⌘K</kbd> (або <kbd className="px-1.5 py-0.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded shadow-2xs text-slate-800">Ctrl+K</kbd>) та кнопки пошуку у верхній навігаційній панелі.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Крос-сутностний повнотекстовий пошук:</strong> Система миттєво сканує всі типи навчального контенту: регламенти та інструкції, тестові завдання, симулятори кейсів, навчальні курси, а також базу термінів і суворих СТОП-правил компанії (наприклад, «РМК», «картка», «100 грн», «повернення день у день», «коригування ПДВ»).
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Розумні можливості:</strong> Фільтрація за типами сутностей та Просторами знань (Knowledge Spaces), підсвічування знайдених слів у фрагментах тексту, збереження історії останніх запитів користувача, зручна клавіатурна навігація (<kbd className="px-1 py-0.2 text-[10px] font-mono bg-white border border-slate-300 rounded">↑</kbd><kbd className="px-1 py-0.2 text-[10px] font-mono bg-white border border-slate-300 rounded">↓</kbd> та <kbd className="px-1 py-0.2 text-[10px] font-mono bg-white border border-slate-300 rounded">↵ Enter</kbd>) та прямий безшовний перехід одразу до відповідного регламенту чи тесту.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 bg-indigo-50/60 rounded-xl border border-indigo-200/80 flex gap-4">
+              <div className="mt-1">
+                <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-xs">
+                  <CalendarClock className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <span>Рушій призначень та обов'язкового навчання (Крок 7)</span>
+                  <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Assignment Engine
+                  </span>
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Повнофункціональна система адресного призначення курсів та регламентів окремим співробітникам або цілим підрозділам компанії з чітким контролем строків та пріоритетів.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Керування призначеннями (для керівників):</strong> В адмін-панелі («Призначення») керівники можуть створювати індивідуальні або групові завдання на проходження матеріалів, встановлювати дедлайн (термін здачі), рівень пріоритету (🚨 Терміново, 📌 Обов'язково, 💡 Рекомендовано) та залишати персональні вказівки. Зведена аналітика відображає KPI: кількість призначень, успішно завершені, в процесі та прострочені завдання. Доступна фільтрація, відправка ручних нагадувань у сповіщення працівника та скасування призначень.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Особисті завдання співробітника:</strong> У каталозі навчальних матеріалів для працівника відображається інтерактивний віджет «Мої обов'язкові призначення» з таймером зворотного відліку до дедлайну, статусом прогресу та кнопкою швидкого переходу («Розпочати» / «Продовжити»).
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Автоматична синхронізація виконання:</strong> Як тільки працівник дочитує призначену інструкцію або успішно складає тестування за призначеним курсом, система автоматично переводить статус призначення у «Виконано» (completed), фіксує точний час завершення та отриманий бал без необхідності ручного підтвердження адміністратором.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 bg-emerald-50/60 rounded-xl border border-emerald-200/80 flex gap-4">
+              <div className="mt-1">
+                <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white shadow-xs">
+                  <Award className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <span>Курси-кроки та розширений рушій квізів (Крок 8)</span>
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Progressive Learning
+                  </span>
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Система пропонує розширені можливості контролю навчання, перетворюючи звичайні курси на послідовні навчальні програми зі строгими правилами атестації.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Послідовне проходження (Курси-кроки):</strong> Керівники можуть активувати режим прогресивного вивчення. У цьому режимі кожен наступний урок (інструкція) у курсі автоматично блокується замком (🔒), поки співробітник не підтвердить ознайомлення з попереднім кроком. Це гарантує, що працівники не будуть «перестрибувати» через важливу інформацію і дотримуватимуться методології вивчення матеріалу.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Розширений контроль тестування:</strong> Для кожного курсу тепер можна індивідуально налаштувати суворі параметри перевірки знань: 
+                  встановлювати мінімальний прохідний відсоток (напр., 85% або 100%), 
+                  обмежувати максимальну кількість спроб здачі (напр., лише 2 спроби для запобігання підбору відповідей), 
+                  а також активувати таймер зворотного відліку, який автоматично завершує тест, коли час вичерпується (екстремальний режим перевірки рефлексів касира або оператора). Інтерфейс квізу відображає інтерактивний таймер та залишок дозволених спроб.
+                </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">
+                  <strong>Керування курсами та регламентами:</strong> Зручний конструктор курсів дозволяє створювати навчальні траєкторії, вибираючи з повного переліку доступних інструкцій та регламентів із пошуком за назвою. Створені курси можна в будь-який момент редагувати або безпечно видаляти з підтвердженням дії без втрати первинних регламентів.
+                </p>
+              </div>
+            </div>
+
             <div className="p-5 bg-slate-50 rounded-xl border border-slate-100 flex gap-4">
               <div className="mt-1">
                 <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">

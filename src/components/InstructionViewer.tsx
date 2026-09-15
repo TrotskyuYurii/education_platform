@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { InstructionSection, QuizQuestion } from '../types';
+import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { 
   BookOpen, 
   CheckCircle2, 
@@ -17,7 +17,9 @@ import {
   Circle,
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  FolderTree,
+  GitBranch
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,7 +30,9 @@ interface InstructionViewerProps {
   courses: any[];
   cases: any[];
   questions: QuizQuestion[];
+  spaces?: KnowledgeSpace[];
   courseId: string | undefined;
+  initialSectionId?: string;
   readSectionIds: string[];
   onToggleReadSection: (id: string, isRead: boolean) => void;
   onStartQuiz: (type: 'course' | 'section', id: string) => void;
@@ -41,14 +45,16 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
   courses,
   cases,
   questions,
+  spaces = [],
   courseId,
+  initialSectionId,
   readSectionIds,
   onToggleReadSection,
   onStartQuiz,
   onStartCases,
   onBackToCatalog
 }) => {
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(initialSectionId || null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Setup active course and sections
@@ -58,11 +64,13 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
     : sections;
 
   useEffect(() => {
-    if (courseSections.length > 0 && !activeSectionId) {
+    if (initialSectionId && courseSections.some(s => s.id === initialSectionId)) {
+      setActiveSectionId(initialSectionId);
+    } else if (courseSections.length > 0 && !activeSectionId) {
       // Auto select first section
       setActiveSectionId(courseSections[0].id);
     }
-  }, [courseSections, activeSectionId]);
+  }, [courseSections, initialSectionId, activeSectionId]);
 
   const activeSection = courseSections.find(s => s.id === activeSectionId) || courseSections[0];
   const isCompleted = activeSection && readSectionIds.includes(activeSection.id);
@@ -112,23 +120,37 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
         {courseSections.map((sec, idx) => {
           const isRead = readSectionIds.includes(sec.id);
           const isActive = sec.id === activeSection.id;
+          
+          let isLocked = false;
+          if (activeCourse?.isProgressive && idx > 0) {
+            const prevSec = courseSections[idx - 1];
+            if (!readSectionIds.includes(prevSec.id)) {
+              isLocked = true;
+            }
+          }
+
           return (
             <button
               key={sec.id}
+              disabled={isLocked}
               onClick={() => {
-                setActiveSectionId(sec.id);
-                setIsMobileMenuOpen(false);
+                if (!isLocked) {
+                  setActiveSectionId(sec.id);
+                  setIsMobileMenuOpen(false);
+                }
               }}
               className={`w-full text-left px-3 py-3 rounded-xl transition-all flex items-start gap-3 ${
                 isActive 
                   ? 'bg-blue-50 border border-blue-200 shadow-sm' 
-                  : 'hover:bg-slate-100 border border-transparent'
+                  : isLocked
+                    ? 'opacity-50 cursor-not-allowed bg-slate-50 border border-transparent'
+                    : 'hover:bg-slate-100 border border-transparent cursor-pointer'
               }`}
             >
               <div className={`shrink-0 mt-0.5 flex items-center justify-center w-5 h-5 rounded-full ${
-                isRead ? 'bg-emerald-100 text-emerald-600' : isActive ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-400'
+                isRead ? 'bg-emerald-100 text-emerald-600' : isActive ? 'bg-blue-100 text-blue-600' : isLocked ? 'bg-slate-200 text-slate-400' : 'bg-slate-200 text-slate-500'
               }`}>
-                {isRead ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
+                {isRead ? <CheckCircle2 className="w-3.5 h-3.5" /> : isLocked ? <div className="text-[10px]">🔒</div> : <span className="text-[10px] font-bold">{idx + 1}</span>}
               </div>
               <div>
                 <div className={`text-sm font-semibold leading-tight mb-1 ${isActive ? 'text-blue-900' : 'text-slate-700'}`}>{sec.title}</div>
@@ -199,9 +221,34 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           <div className="flex-1 p-5 sm:p-8 md:p-12 max-w-4xl mx-auto w-full">
             {/* Breadcrumb / Metadata */}
             <div className="flex flex-wrap items-center gap-2 mb-6">
+              {(() => {
+                const activeSpace = spaces.find(s => s.id === (activeSection.spaceId || 'space-general'));
+                return activeSpace ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold uppercase tracking-wider">
+                    <FolderTree className="w-3 h-3 text-blue-600" />
+                    {activeSpace.name}
+                  </span>
+                ) : null;
+              })()}
               <span className="inline-flex px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
                 {activeSection.department || 'Загальний'}
               </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-mono font-bold tracking-wider">
+                <GitBranch className="w-3 h-3" />
+                v{activeSection.version || '1.0'}
+              </span>
+              {activeSection.status && (
+                <span className={`inline-flex px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                  activeSection.status === 'draft' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                  activeSection.status === 'in_review' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                  activeSection.status === 'archived' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                  'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}>
+                  {activeSection.status === 'draft' ? 'Чернетка' :
+                   activeSection.status === 'in_review' ? 'На рецензії' :
+                   activeSection.status === 'archived' ? 'Архів' : 'Опубліковано'}
+                </span>
+              )}
               <span className="inline-flex px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold uppercase tracking-wider">
                 Час: {activeSection.readTimeMin} хв
               </span>

@@ -9,8 +9,10 @@ import { CourseCatalog } from './components/CourseCatalog';
 import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
 import { AboutApp } from './components/AboutApp';
+import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { useAuth } from './context/AuthContext';
-import { InstructionSection, QuizQuestion, UserProgress } from './types';
+import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
+import { Info, Search } from 'lucide-react';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -48,6 +50,7 @@ function MainApp() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
+  const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
   const [progress, setProgress] = useState<UserProgress>({
     readSectionIds: [],
     quizCompleted: false,
@@ -69,8 +72,53 @@ function MainApp() {
   const [activeQuizSectionId, setActiveQuizSectionId] = useState<string | undefined>(undefined);
   const [activeQuizCourseId, setActiveQuizCourseId] = useState<string | undefined>(undefined);
   const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | undefined>(undefined);
   const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
   const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // Global hotkey Ctrl+K / Cmd+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleNavigateToSearchResult = (item: SearchResultItem) => {
+    setIsSearchOpen(false);
+    if (item.type === 'instruction' || item.type === 'glossary') {
+      if (item.courseId) setActiveCourseId(item.courseId);
+      if (item.sectionId) setSelectedSectionId(item.sectionId);
+      setCurrentTab('manual');
+    } else if (item.type === 'question') {
+      if (item.courseId) setActiveQuizCourseId(item.courseId);
+      if (item.sectionId) setActiveQuizSectionId(item.sectionId);
+      setCurrentTab('quiz');
+    } else if (item.type === 'case') {
+      if (item.id) {
+        const foundCase = cases.find(c => c.id === item.id);
+        if (foundCase) {
+          setActiveCasesToRun([foundCase]);
+          setCaseSimulatorMode('run');
+        } else {
+          setActiveCasesToRun(cases.filter(c => c.isActive !== false));
+          setCaseSimulatorMode('list');
+        }
+      } else {
+        setActiveCasesToRun(cases.filter(c => c.isActive !== false));
+        setCaseSimulatorMode('list');
+      }
+      setCurrentTab('cases');
+    } else if (item.type === 'course') {
+      setActiveCourseId(item.id);
+      setCurrentTab('manual');
+    }
+  };
 
   // Compute clean and valid read section IDs (filters out obsolete deleted sections and duplicates)
   const validSectionIdsSet = useMemo(() => new Set(sections.map(s => s.id)), [sections]);
@@ -96,6 +144,7 @@ function MainApp() {
         setQuestions(data.questions || []);
         setCourses(data.courses || []);
         setCases(data.cases || []);
+        setSpaces(data.spaces || []);
       }
     } catch (err) {
       console.error('Failed to fetch content', err);
@@ -306,6 +355,7 @@ function MainApp() {
             questions={questions}
             courses={courses}
             cases={cases}
+            spaces={spaces}
             isSetupMode={true}
             onImport={async () => {}}
             onReset={() => {}}
@@ -343,6 +393,7 @@ function MainApp() {
 
       <Navbar
         currentTab={currentTab}
+        onOpenSearch={() => setIsSearchOpen(true)}
         onSelectTab={(tab) => {
           if (tab === 'quiz') {
             setActiveQuizSectionId(undefined);
@@ -368,8 +419,13 @@ function MainApp() {
             onDismissNotification={dismissNotification}
             sections={sections}
             courses={courses}
+            spaces={spaces}
             readSectionIds={validReadSectionIds}
             onOpenCourse={handleOpenCourse}
+            onOpenInstruction={(secId) => {
+              setSelectedSectionId(secId);
+              setCurrentTab('manual');
+            }}
             onStartCourseQuiz={(courseId, isCourse) => handleStartQuiz(isCourse ? 'course' : 'section', courseId)}
           />
         )}
@@ -380,7 +436,9 @@ function MainApp() {
             courses={courses}
             cases={cases}
             questions={questions}
+            spaces={spaces}
             courseId={activeCourseId}
+            initialSectionId={selectedSectionId}
             readSectionIds={validReadSectionIds}
             onToggleReadSection={handleToggleReadSection}
             onStartQuiz={handleStartQuiz}
@@ -407,6 +465,7 @@ function MainApp() {
             initialCourseId={activeQuizCourseId}
             allSections={sections}
             courses={courses}
+            quizHistory={progress.quizHistory || []}
             onRecordScore={handleRecordScore}
             onNavigateToSignoff={() => setCurrentTab('signoff')}
             onBackToManual={() => setCurrentTab('manual')}
@@ -458,6 +517,7 @@ function MainApp() {
             questions={questions}
             courses={courses}
             cases={cases}
+            spaces={spaces}
             onRefresh={fetchContent}
             onImport={async (newSections, newQuestions, replace) => {
               try {
@@ -479,14 +539,38 @@ function MainApp() {
         )}
         
         {currentTab === 'about' && (
-          <AboutApp />
+          <AboutApp onBack={() => setCurrentTab('catalog')} />
         )}
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-6 print:hidden mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <span className="font-semibold text-slate-700">ТОВ «ВІАТЕК»</span>
+            <span className="hidden sm:inline text-slate-300">•</span>
+            <span className="hidden sm:inline">Корпоративний навчальний портал</span>
+            <span className="hidden sm:inline text-slate-300">•</span>
+            <button 
+              id="footer-btn-about"
+              onClick={() => setCurrentTab('about')} 
+              className={`inline-flex items-center gap-1.5 transition ${
+                currentTab === 'about' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-blue-600 hover:underline'
+              }`}
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span>Про додаток</span>
+            </button>
+            <span className="hidden sm:inline text-slate-300">•</span>
+            <button 
+              id="footer-btn-search"
+              onClick={() => setIsSearchOpen(true)} 
+              className="inline-flex items-center gap-1.5 text-slate-500 hover:text-blue-600 hover:underline transition"
+              title="Швидкий пошук (⌘K або Ctrl+K)"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Швидкий пошук</span>
+              <kbd className="px-1 py-0.2 text-[9px] font-mono bg-slate-100 border border-slate-200 rounded text-slate-600">⌘K</kbd>
+            </button>
           </div>
           <div className="flex items-center gap-4">
             <span>Ви увійшли як <strong className="text-slate-700">{user?.email || user?.username}</strong> ({user?.role})</span>
@@ -494,6 +578,18 @@ function MainApp() {
           </div>
         </div>
       </footer>
+
+      {/* Global Omnisearch Modal */}
+      <GlobalSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        spaces={spaces}
+        sections={sections}
+        questions={questions}
+        cases={cases}
+        courses={courses}
+        onNavigateToResult={handleNavigateToSearchResult}
+      />
     </div>
   );
 }

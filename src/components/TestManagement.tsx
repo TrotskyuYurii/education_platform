@@ -1,7 +1,9 @@
 import { OrganizationSettings } from './Admin/OrganizationSettings';
 import { RoleSettings } from './Admin/RoleSettings';
+import { KnowledgeSettings } from './Admin/KnowledgeSettings';
+import { AssignmentSettings } from './Admin/AssignmentSettings';
 import React, { useState, useRef } from 'react';
-import { InstructionSection, QuizQuestion } from '../types';
+import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
 import { MarkdownEditor } from './MarkdownEditor';
 import { 
@@ -29,7 +31,10 @@ import {
   X,
   Eye,
   EyeOff,
-  Search
+  Search,
+  FolderTree,
+  GitBranch,
+  CalendarClock
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -37,19 +42,21 @@ interface TestManagementProps {
   questions: QuizQuestion[];
   courses: any[];
   cases: any[];
+  spaces?: KnowledgeSpace[];
   onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
   onReset: () => void;
   isSetupMode?: boolean;
   onRefresh?: () => Promise<void>;
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
   questions,
   courses,
   cases,
+  spaces = [],
   onImport,
   onReset,
   isSetupMode,
@@ -57,15 +64,55 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 }) => {
   
   
-  const [newCourse, setNewCourse] = useState<any>({ title: '', department: '', instructionIds: [] });
+  const [newCourse, setNewCourse] = useState<any>({ 
+    title: '', 
+    department: '', 
+    instructionIds: [], 
+    caseIds: [], 
+    useCases: false, 
+    hasCertificate: false, 
+    certificateValidityYears: 1,
+    isProgressive: false,
+    quizPassScorePercent: 80,
+    quizTimeLimitMin: undefined,
+    quizMaxAttempts: undefined
+  });
   const [editingCourse, setEditingCourse] = useState<any>(null);
-  const [createCourseInstFilter, setCreateCourseInstFilter] = useState('');
-        const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [createCourseInstFilter, setCreateCourseInstFilter] = useState('all');
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
-  const handleDeleteCourse = async (id: string) => { setIsDeletingCourse(true); try { await fetch('/api/admin/courses/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingCourse(false); setDeletingCourseId(null); } };
+  const availableDepartments = React.useMemo(() => {
+    const set = new Set<string>();
+    departments.forEach(d => { if (d?.name && typeof d.name === 'string' && d.name.trim()) set.add(d.name.trim()); });
+    sections.forEach(s => { if (s?.department && typeof s.department === 'string' && s.department.trim()) set.add(s.department.trim()); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
+  }, [departments, sections]);
+
+  const handleDeleteCourse = async (id: string) => {
+    if (!id) return;
+    setIsDeletingCourse(true);
+    try {
+      const res = await fetch('/api/admin/courses/' + encodeURIComponent(id), { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити курс');
+      }
+    } catch(e) {
+      console.error('Error deleting course:', e);
+      alert('Помилка при видаленні курсу');
+    } finally {
+      setIsDeletingCourse(false);
+      setDeletingCourseId(null);
+    }
+  };
   
 
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
@@ -105,12 +152,31 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     fetchRoles();
     fetchUsers();
   }, []);
-  const handleDeleteInstruction = async (id: string) => { setIsDeletingInst(true); try { await fetch('/api/admin/instructions/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingInst(false); setDeletingInstId(null); } };
+  const handleDeleteInstruction = async (id: string) => {
+    if (!id) return;
+    setIsDeletingInst(true);
+    try {
+      const res = await fetch('/api/admin/instructions/' + encodeURIComponent(id), { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити інструкцію');
+      }
+    } catch(e) {
+      console.error('Error deleting instruction:', e);
+      alert('Помилка при видаленні інструкції');
+    } finally {
+      setIsDeletingInst(false);
+      setDeletingInstId(null);
+    }
+  };
 
-
-      
   const [createCourseInstSearch, setCreateCourseInstSearch] = useState('');
-  const [editCourseInstFilter, setEditCourseInstFilter] = useState('');
+  const [editCourseInstFilter, setEditCourseInstFilter] = useState('all');
   const [editCourseInstSearch, setEditCourseInstSearch] = useState('');
 const [users, setUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -139,7 +205,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'help', 'users', 'organization'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'help', 'users', 'roles', 'organization'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -278,7 +344,28 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       setUserMsg({ type: 'error', text: err.message });
     }
   };
-  const handleDeleteCase = async (id: string) => { setIsDeletingCase(true); try { await fetch('/api/admin/cases/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingCase(false); setDeletingCaseId(null); } };
+  const handleDeleteCase = async (id: string) => { 
+    if (!id) return;
+    setIsDeletingCase(true); 
+    try { 
+      const res = await fetch('/api/admin/cases/' + encodeURIComponent(id), { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      }); 
+      if (res.ok) {
+        if (onRefresh) await onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити кейс');
+      }
+    } catch(e) {
+      console.error('Error deleting case:', e);
+      alert('Помилка при видаленні кейсу');
+    } finally { 
+      setIsDeletingCase(false); 
+      setDeletingCaseId(null); 
+    } 
+  };
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -657,6 +744,44 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         : 'bg-slate-200 text-slate-600'
                     }`}>
                       {cases.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('knowledge')}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'knowledge' 
+                        ? 'bg-blue-100 text-blue-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FolderTree className="w-4 h-4" />
+                      <span>База знань</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'knowledge' 
+                        ? 'bg-blue-200/80 text-blue-900' 
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {spaces.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('assignments')}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'assignments' 
+                        ? 'bg-blue-100 text-blue-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <CalendarClock className="w-4 h-4 text-blue-600" />
+                      <span>Призначення</span>
+                    </div>
+                    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-blue-200 text-blue-800">
+                      Крок 7
                     </span>
                   </button>
 
@@ -1161,7 +1286,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                   <button
                                     type="button"
                                     disabled={isDeletingInst}
-                                    onClick={() => handleDeleteInstruction(inst.id)}
+                                    onClick={() => handleDeleteInstruction(inst.id || (inst as any)._id)}
                                     className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                                   >
                                     {isDeletingInst ? '...' : 'Так'}
@@ -1221,8 +1346,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     className="px-3 py-2 border border-slate-300 rounded-md text-sm"
                   >
                     <option value="">Оберіть підрозділ...</option>
-                    {departments.map(d => (
-                      <option key={d._id} value={d.name}>{d.name}</option>
+                    {availableDepartments.map(depName => (
+                      <option key={depName} value={depName}>{depName}</option>
                     ))}
                   </select>
                   
@@ -1256,23 +1381,26 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                   <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                     <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({newCourse.instructionIds.length} обрано)</div>
+                        <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({newCourse.instructionIds?.length || 0} обрано)</div>
                         <select
                           value={createCourseInstFilter}
                           onChange={e => setCreateCourseInstFilter(e.target.value)}
                           className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
-                          <option value="all">Усі підрозділи</option>
-                          {departments.map(d => (
-                            <option key={d._id} value={d.name}>{d.name}</option>
-                          ))}
+                          <option value="all">Усі підрозділи ({sections.length})</option>
+                          {availableDepartments.map(depName => {
+                            const count = sections.filter(s => s.department === depName).length;
+                            return (
+                              <option key={depName} value={depName}>{depName} ({count})</option>
+                            );
+                          })}
                         </select>
                       </div>
                       <div className="relative">
                         <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
                         <input
                           type="text"
-                          placeholder="Пошук інструкції за назвою..."
+                          placeholder="Пошук інструкції за назвою або підрозділом..."
                           value={createCourseInstSearch}
                           onChange={e => setCreateCourseInstSearch(e.target.value)}
                           className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
@@ -1281,13 +1409,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     </div>
                     <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
                       {sections
-                        .filter(sec => createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
-                        .filter(sec => sec.title.toLowerCase().includes(createCourseInstSearch.toLowerCase()))
+                        .filter(sec => !createCourseInstFilter || createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
+                        .filter(sec => {
+                          const q = createCourseInstSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+                        })
                         .map(sec => {
-                          const isSelected = newCourse.instructionIds.includes(sec.id);
+                          const secId = sec.id || (sec as any)._id;
+                          const isSelected = (newCourse.instructionIds || []).includes(secId);
                           return (
                             <label 
-                              key={sec.id} 
+                              key={secId} 
                               className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                                 isSelected 
                                   ? 'bg-blue-50 border-blue-200 shadow-sm' 
@@ -1298,9 +1431,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                 type="checkbox"
                                 checked={isSelected}
                                 onChange={e => {
-                                  const ids = newCourse.instructionIds;
-                                  if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, sec.id] });
-                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter((i: any) => i !== sec.id) });
+                                  const ids = newCourse.instructionIds || [];
+                                  if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, secId] });
+                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter((i: any) => i !== secId) });
                                 }}
                                 className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
@@ -1315,23 +1448,77 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             </label>
                           );
                         })}
-                      {sections.filter(sec => createCourseInstFilter === 'all' || sec.department === createCourseInstFilter).filter(sec => sec.title.toLowerCase().includes(createCourseInstSearch.toLowerCase())).length === 0 && (
-                        <div className="p-4 text-center text-sm text-slate-500">Інструкцій не знайдено</div>
-                      )}
+                      {sections.length === 0 ? (
+                        <div className="p-6 text-center text-sm text-slate-500">
+                          В базі знань ще немає інструкцій. Створіть їх у вкладці «Регламенти / Інструкції».
+                        </div>
+                      ) : sections
+                          .filter(sec => !createCourseInstFilter || createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
+                          .filter(sec => {
+                            const q = createCourseInstSearch.trim().toLowerCase();
+                            if (!q) return true;
+                            return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+                          }).length === 0 ? (
+                        <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
+                      ) : null}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-4">
-                    <input
-                      type="checkbox"
-                      id="new-course-use-cases"
-                      checked={newCourse.useCases}
-                      onChange={e => setNewCourse({ ...newCourse, useCases: e.target.checked })}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <label htmlFor="new-course-use-cases" className="text-sm text-slate-700">
-                      Використовувати практичні кейси
+                  <div className="flex flex-col gap-2 mt-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={newCourse.useCases || false}
+                        onChange={e => setNewCourse({ ...newCourse, useCases: e.target.checked })}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-slate-700">Використовувати практичні кейси</span>
                     </label>
+
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={newCourse.isProgressive || false}
+                        onChange={e => setNewCourse({ ...newCourse, isProgressive: e.target.checked })}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-slate-700">Послідовне проходження (Курси-кроки)</span>
+                    </label>
+
+                    <div className="grid grid-cols-3 gap-3 mt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Мін. бал (%)</label>
+                        <input
+                          type="number"
+                          min="1" max="100"
+                          value={newCourse.quizPassScorePercent ?? 80}
+                          onChange={e => setNewCourse({ ...newCourse, quizPassScorePercent: Number(e.target.value) })}
+                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Ліміт часу (хв)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Без ліміту"
+                          value={newCourse.quizTimeLimitMin || ''}
+                          onChange={e => setNewCourse({ ...newCourse, quizTimeLimitMin: e.target.value ? Number(e.target.value) : undefined })}
+                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Макс. спроб</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Без ліміту"
+                          value={newCourse.quizMaxAttempts || ''}
+                          onChange={e => setNewCourse({ ...newCourse, quizMaxAttempts: e.target.value ? Number(e.target.value) : undefined })}
+                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <button
                     onClick={async () => {
@@ -1343,17 +1530,30 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           body: JSON.stringify(newCourse)
                         });
                         if (res.ok) {
-                          setNewCourse({ title: '', department: '', instructionIds: [], caseIds: [], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
+                          setNewCourse({ 
+                            title: '', 
+                            department: '', 
+                            instructionIds: [], 
+                            caseIds: [], 
+                            useCases: false, 
+                            hasCertificate: false, 
+                            certificateValidityYears: 1,
+                            isProgressive: false,
+                            quizPassScorePercent: 80,
+                            quizTimeLimitMin: undefined,
+                            quizMaxAttempts: undefined
+                          });
                           if (onRefresh) await onRefresh();
                         } else {
-                          alert('Не вдалося створити курс');
+                          const errData = await res.json().catch(() => ({}));
+                          alert(errData.error || 'Не вдалося створити курс');
                         }
                       } catch (err) {
                         console.error('Failed to create course:', err);
                         alert('Помилка при створенні курсу');
                       }
                     }}
-                    className="self-start px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold mt-2"
+                    className="self-start px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold mt-2 shadow-xs transition"
                   >
                     Створити курс
                   </button>
@@ -1366,37 +1566,40 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     Немає створених курсів.
                   </div>
                 ) : (
-                  courses.map((course) => (
-                    <div key={course.id} className="flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50">
-                      {editingCourse?.id === course.id ? (
+                  courses.map((course) => {
+                    const currentCourseId = course.id || course._id;
+                    const isEditing = editingCourse?.id === currentCourseId || editingCourse?._id === currentCourseId;
+                    return (
+                    <div key={currentCourseId} className="flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50">
+                      {isEditing ? (
                         <div className="space-y-3">
                           <input
                             type="text"
                             placeholder="Назва курсу"
-                            value={editingCourse?.title}
+                            value={editingCourse?.title || ''}
                             onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, title: e.target.value })}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
                           />
                           <select
-                            value={editingCourse?.department}
+                            value={editingCourse?.department || ''}
                             onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, department: e.target.value })}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
                           >
                             <option value="">Оберіть підрозділ...</option>
-                            {departments.map(d => (
-                              <option key={d._id} value={d.name}>{d.name}</option>
+                            {availableDepartments.map(depName => (
+                              <option key={depName} value={depName}>{depName}</option>
                             ))}
                           </select>
                           
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              id={`edit-cert-${course.id}`}
-                              checked={editingCourse?.hasCertificate}
+                              id={`edit-cert-${currentCourseId}`}
+                              checked={editingCourse?.hasCertificate || false}
                               onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, hasCertificate: e.target.checked })}
                               className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                             />
-                            <label htmlFor={`edit-cert-${course.id}`} className="text-sm text-slate-700">
+                            <label htmlFor={`edit-cert-${currentCourseId}`} className="text-sm text-slate-700">
                               Видавати сертифікат
                             </label>
                           </div>
@@ -1408,7 +1611,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                 type="number"
                                 min="1"
                                 max="10"
-                                value={editingCourse?.certificateValidityYears}
+                                value={editingCourse?.certificateValidityYears || 1}
                                 onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, certificateValidityYears: parseInt(e.target.value) || 1 })}
                                 className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
                               />
@@ -1418,12 +1621,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              id={`edit-course-active-${course.id}`}
-                              checked={editingCourse?.isActive}
+                              id={`edit-course-active-${currentCourseId}`}
+                              checked={editingCourse?.isActive !== false}
                               onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked })}
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <label htmlFor={`edit-course-active-${course.id}`} className="text-sm font-bold text-slate-700">
+                            <label htmlFor={`edit-course-active-${currentCourseId}`} className="text-sm font-bold text-slate-700">
                               Курс активний (доступний для проходження)
                             </label>
                           </div>
@@ -1431,23 +1634,26 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                             <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
-                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds.length} обрано)</div>
+                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds?.length || 0} обрано)</div>
                                 <select
                                   value={editCourseInstFilter}
                                   onChange={e => setEditCourseInstFilter(e.target.value)}
                                   className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 >
-                                  <option value="all">Усі підрозділи</option>
-                                  {departments.map(d => (
-                                    <option key={d._id} value={d.name}>{d.name}</option>
-                                  ))}
+                                  <option value="all">Усі підрозділи ({sections.length})</option>
+                                  {availableDepartments.map(depName => {
+                                    const count = sections.filter(s => s.department === depName).length;
+                                    return (
+                                      <option key={depName} value={depName}>{depName} ({count})</option>
+                                    );
+                                  })}
                                 </select>
                               </div>
                               <div className="relative">
                                 <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
                                 <input
                                   type="text"
-                                  placeholder="Пошук інструкції за назвою..."
+                                  placeholder="Пошук інструкції за назвою або підрозділом..."
                                   value={editCourseInstSearch}
                                   onChange={e => setEditCourseInstSearch(e.target.value)}
                                   className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
@@ -1456,13 +1662,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             </div>
                             <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
                               {sections
-                                .filter(sec => editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
-                                .filter(sec => sec.title.toLowerCase().includes(editCourseInstSearch.toLowerCase()))
+                                .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
+                                .filter(sec => {
+                                  const q = editCourseInstSearch.trim().toLowerCase();
+                                  if (!q) return true;
+                                  return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+                                })
                                 .map(sec => {
-                                  const isSelected = editingCourse?.instructionIds.includes(sec.id);
+                                  const secId = sec.id || (sec as any)._id;
+                                  const isSelected = (editingCourse?.instructionIds || []).includes(secId);
                                   return (
                                     <label 
-                                      key={sec.id} 
+                                      key={secId} 
                                       className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                                         isSelected 
                                           ? 'bg-blue-50 border-blue-200 shadow-sm' 
@@ -1474,8 +1685,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                         checked={isSelected}
                                         onChange={e => {
                                           const ids = editingCourse?.instructionIds || [];
-                                          if (e.target.checked) setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: [...ids, sec.id] });
-                                          else setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: ids.filter((i: any) => i !== sec.id) });
+                                          if (e.target.checked) setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: [...ids, secId] });
+                                          else setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: ids.filter((i: any) => i !== secId) });
                                         }}
                                         className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                       />
@@ -1490,29 +1701,82 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                     </label>
                                   );
                                 })}
-                              {sections.filter(sec => editCourseInstFilter === 'all' || sec.department === editCourseInstFilter).filter(sec => sec.title.toLowerCase().includes(editCourseInstSearch.toLowerCase())).length === 0 && (
-                                <div className="p-4 text-center text-sm text-slate-500">Інструкцій не знайдено</div>
-                              )}
+                              {sections.length === 0 ? (
+                                <div className="p-6 text-center text-sm text-slate-500">В базі знань немає доступних інструкцій</div>
+                              ) : sections
+                                  .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
+                                  .filter(sec => {
+                                    const q = editCourseInstSearch.trim().toLowerCase();
+                                    if (!q) return true;
+                                    return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+                                  }).length === 0 ? (
+                                <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
+                              ) : null}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 mt-4 mb-4">
-                            <input
-                              type="checkbox"
-                              id={`edit-course-use-cases-${course.id}`}
-                              checked={editingCourse?.useCases || false}
-                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: e.target.checked })}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor={`edit-course-use-cases-${course.id}`} className="text-sm text-slate-700">
-                              Використовувати практичні кейси
+                          <div className="flex flex-col gap-2 mt-4 mb-4">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={editingCourse?.useCases || false}
+                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: e.target.checked })}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-slate-700">Використовувати практичні кейси</span>
                             </label>
+                            
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={editingCourse?.isProgressive || false}
+                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, isProgressive: e.target.checked })}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-slate-700">Послідовне проходження (Курси-кроки)</span>
+                            </label>
+                            
+                            <div className="grid grid-cols-3 gap-3 mt-2">
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Мін. бал (%)</label>
+                                <input
+                                  type="number"
+                                  min="1" max="100"
+                                  value={editingCourse?.quizPassScorePercent ?? 80}
+                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizPassScorePercent: Number(e.target.value) })}
+                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Ліміт часу (хв)</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="Без ліміту"
+                                  value={editingCourse?.quizTimeLimitMin || ''}
+                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizTimeLimitMin: e.target.value ? Number(e.target.value) : undefined })}
+                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">Макс. спроб</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="Без ліміту"
+                                  value={editingCourse?.quizMaxAttempts || ''}
+                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizMaxAttempts: e.target.value ? Number(e.target.value) : undefined })}
+                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
                           </div>
                           <div className="flex gap-2">
                             <button
                               onClick={async () => {
                                 if (!editingCourse?.title || !editingCourse?.department) return alert('Заповніть назву та підрозділ');
                                 try {
-                                  const res = await fetch(`/api/admin/courses/${editingCourse?.id}`, {
+                                  const courseIdToUpdate = editingCourse?.id || editingCourse?._id || currentCourseId;
+                                  const res = await fetch(`/api/admin/courses/${encodeURIComponent(courseIdToUpdate)}`, {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(editingCourse)
@@ -1521,7 +1785,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                                     setEditingCourse(null);
                                     if (onRefresh) await onRefresh();
                                   } else {
-                                    alert('Не вдалося зберегти зміни курсу');
+                                    const errData = await res.json().catch(() => ({}));
+                                    alert(errData.error || 'Не вдалося зберегти зміни курсу');
                                   }
                                 } catch (err) {
                                   console.error('Failed to edit course:', err);
@@ -1566,26 +1831,32 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => setEditingCourse({
-                                id: course.id,
+                                id: currentCourseId,
+                                _id: course._id,
                                 title: course.title,
                                 department: course.department,
                                 instructionIds: course.instructionIds || [],
                                 useCases: course.useCases || false,
                                 hasCertificate: course.hasCertificate || false,
-                                certificateValidityYears: course.certificateValidityYears || 1
+                                certificateValidityYears: course.certificateValidityYears || 1,
+                                isProgressive: course.isProgressive || false,
+                                quizPassScorePercent: course.quizPassScorePercent ?? 80,
+                                quizTimeLimitMin: course.quizTimeLimitMin,
+                                quizMaxAttempts: course.quizMaxAttempts,
+                                isActive: course.isActive !== undefined ? course.isActive : true
                               })}
                               className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
                               title="Редагувати курс"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            {deletingCourseId === (course.id || course._id) ? (
+                            {deletingCourseId === currentCourseId ? (
                               <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                                 <span className="text-xs font-semibold text-rose-700">Видалити?</span>
                                 <button
                                   type="button"
                                   disabled={isDeletingCourse}
-                                  onClick={() => handleDeleteCourse(course.id)}
+                                  onClick={() => handleDeleteCourse(currentCourseId)}
                                   className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                                 >
                                   {isDeletingCourse ? '...' : 'Так'}
@@ -1601,7 +1872,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               </div>
                             ) : (
                               <button
-                                onClick={() => setDeletingCourseId(course.id || course._id)}
+                                onClick={() => setDeletingCourseId(currentCourseId)}
                                 className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
                                 title="Видалити курс"
                               >
@@ -1612,7 +1883,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         </div>
                       )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1831,7 +2103,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             <button 
                               type="button"
                               disabled={isDeletingCase}
-                              onClick={() => handleDeleteCase(c.id)} 
+                              onClick={() => handleDeleteCase(currentCaseId)} 
                               className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                             >
                               {isDeletingCase ? '...' : 'Так'}
@@ -2086,7 +2358,19 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     {users.map(u => (
                       <div 
                         key={u._id}
-                        onClick={() => setSelectedUser(u)}
+                        onClick={() => {
+                          const normalizedDeptId = typeof u.departmentId === 'object' && u.departmentId ? u.departmentId._id : u.departmentId;
+                          const normalizedManagerId = typeof u.managerId === 'object' && u.managerId ? u.managerId._id : u.managerId;
+                          const normalizedDepts = Array.isArray(u.departments)
+                            ? u.departments.map((d: any) => typeof d === 'string' ? d : d?.name).filter(Boolean)
+                            : [];
+                          setSelectedUser({
+                            ...u,
+                            departmentId: normalizedDeptId,
+                            managerId: normalizedManagerId,
+                            departments: normalizedDepts
+                          });
+                        }}
                         className={`p-3.5 rounded-xl border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50/70 shadow-xs' : 'border-slate-200 bg-white hover:border-purple-300'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -2117,9 +2401,13 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         <div className="mt-2 flex items-center justify-between gap-2 text-xs border-t border-slate-100 pt-2">
                           <span className="text-slate-500">
                             {u.departmentId ? (
-                              <span>Відділ: <strong className="text-slate-700">{departments.find(d => d._id === u.departmentId || d.id === u.departmentId)?.name || 'Призначено'}</strong></span>
+                              <span>Відділ: <strong className="text-slate-700">{
+                                typeof u.departmentId === 'object' && u.departmentId
+                                  ? (u.departmentId.name || 'Призначено')
+                                  : (departments.find(d => (d._id || d.id) === u.departmentId)?.name || 'Призначено')
+                              }</strong></span>
                             ) : (
-                              <span>Підрозділів: {u.departments?.length || 0}</span>
+                              <span>Підрозділів: {Array.isArray(u.departments) ? u.departments.length : 0}</span>
                             )}
                           </span>
                           {u.authMethod === 'otp' ? (
@@ -2211,7 +2499,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">Основний підрозділ</label>
                           <select
-                            value={selectedUser.departmentId || ''}
+                            value={typeof selectedUser.departmentId === 'object' ? (selectedUser.departmentId?._id || '') : (selectedUser.departmentId || '')}
                             onChange={e => setSelectedUser({...selectedUser, departmentId: e.target.value || undefined})}
                             className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                           >
@@ -2225,7 +2513,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">Керівник (Manager)</label>
                           <select
-                            value={selectedUser.managerId || ''}
+                            value={typeof selectedUser.managerId === 'object' ? (selectedUser.managerId?._id || '') : (selectedUser.managerId || '')}
                             onChange={e => setSelectedUser({...selectedUser, managerId: e.target.value || undefined})}
                             className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                           >
@@ -2494,6 +2782,32 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
           {/* TAB: DEPARTMENTS */}
           {activeTab === 'organization' && <OrganizationSettings />}
+
+          {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
+          {activeTab === 'knowledge' && (
+            <div className="flex-1 p-6 overflow-y-auto">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <FolderTree className="w-5 h-5 text-blue-600" /> База знань: Простори, версії та статуси
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Керування робочими просторами (областями знань), публікацією ревізій, історією змін та життєвим циклом регламентів
+                </p>
+              </div>
+              <KnowledgeSettings 
+                spaces={spaces}
+                sections={sections}
+                onRefresh={onRefresh || (async () => {})}
+              />
+            </div>
+          )}
+
+          {/* TAB: ASSIGNMENTS (Крок 7. Рушій призначень) */}
+          {activeTab === 'assignments' && (
+            <div className="flex-1 p-6 overflow-y-auto">
+              <AssignmentSettings courses={courses} sections={sections} />
+            </div>
+          )}
 
         </div>
       </div>

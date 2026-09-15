@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { User, Department } from './models.js'; // Ensure .js for ESM
+import { KnowledgeService } from './modules/knowledge/service.js';
 
 export async function connectDB() {
   const uri = process.env.MONGODB_URI;
@@ -50,5 +51,12 @@ async function seedDefaults() {
   if (!defaultDep) {
     await Department.create({ name: 'Всі підрозділи' } as any);
     console.log('🌱 Seeded default department "Всі підрозділи"');
+  }
+
+  // Seed Knowledge Base Spaces and initial document revisions
+  try {
+    await KnowledgeService.initializeDefaults();
+  } catch (kErr) {
+    console.error('⚠️ Could not initialize knowledge spaces defaults:', kErr);
   }
 }

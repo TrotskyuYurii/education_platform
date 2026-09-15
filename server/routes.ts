@@ -40,6 +40,10 @@ import { Role } from './models.js';
 import { rolesRouter } from './modules/roles/routes.js';
 import { progressV2Router } from './modules/learning/routes.js';
 import { ProgressService } from './modules/learning/service.js';
+import { knowledgeRouter } from './modules/knowledge/routes.js';
+import { KnowledgeService } from './modules/knowledge/service.js';
+import { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.js';
+import { searchRouter } from './modules/search/routes.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
 const requireAdmin = requirePermission('admin.access');
@@ -48,6 +52,12 @@ const requireAdmin = requirePermission('admin.access');
 apiRouter.use('/v2/org', requireAuth, orgRouter);
 apiRouter.use('/v2/roles', requireAuth, rolesRouter);
 apiRouter.use('/v2/progress', requireAuth, progressV2Router);
+apiRouter.use('/progress-v2', requireAuth, progressV2Router);
+apiRouter.use('/assignments', requireAuth, progressV2Router);
+apiRouter.use('/v2/knowledge', requireAuth, knowledgeRouter);
+apiRouter.use('/knowledge', requireAuth, knowledgeRouter);
+apiRouter.use('/search', requireAuth, searchRouter);
+apiRouter.use('/v2/search', requireAuth, searchRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -636,18 +646,34 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
 
 apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } = req.body;
+    const { 
+      title, 
+      department, 
+      instructionIds, 
+      useCases, 
+      hasCertificate, 
+      certificateValidityYears,
+      isProgressive,
+      quizTimeLimitMin,
+      quizPassScorePercent,
+      quizMaxAttempts
+    } = req.body;
     const course = await Course.create({ 
       id: `course-${Date.now()}`, 
       title, 
       department, 
-      instructionIds,
-      useCases,
-      hasCertificate,
-      certificateValidityYears
+      instructionIds: Array.isArray(instructionIds) ? instructionIds : [],
+      useCases: !!useCases,
+      hasCertificate: !!hasCertificate,
+      certificateValidityYears: certificateValidityYears || 1,
+      isProgressive: !!isProgressive,
+      quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
+      quizPassScorePercent: quizPassScorePercent !== undefined ? Number(quizPassScorePercent) : 80,
+      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined
     } as any);
     res.json({ success: true, course });
   } catch (err) {
+    console.error('Error creating course:', err);
     res.status(500).json({ error: 'Failed to create course' });
   }
 });
@@ -662,8 +688,11 @@ apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, re
         ...(isObjectId ? [{ _id: courseId }] : [])
       ]
     };
-    await Course.findOneAndDelete(query);
-    res.json({ success: true });
+    let deleted = await Course.findOneAndDelete(query);
+    if (!deleted && isObjectId) {
+      deleted = await Course.findByIdAndDelete(courseId);
+    }
+    res.json({ success: true, deleted: !!deleted });
   } catch (err) {
     console.error('Error deleting course:', err);
     res.status(500).json({ error: 'Failed to delete course' });
@@ -672,14 +701,52 @@ apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, re
 
 apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } = req.body;
+    const courseId = req.params.id;
+    const isObjectId = mongoose.isValidObjectId(courseId);
+    const query: any = {
+      $or: [
+        { id: courseId },
+        ...(isObjectId ? [{ _id: courseId }] : [])
+      ]
+    };
+    const { 
+      title, 
+      department, 
+      instructionIds, 
+      useCases, 
+      hasCertificate, 
+      certificateValidityYears,
+      isProgressive,
+      quizTimeLimitMin,
+      quizPassScorePercent,
+      quizMaxAttempts,
+      isActive
+    } = req.body;
+    
+    const updateData: any = {
+      title,
+      department,
+      instructionIds: Array.isArray(instructionIds) ? instructionIds : [],
+      useCases: !!useCases,
+      hasCertificate: !!hasCertificate,
+      certificateValidityYears: certificateValidityYears || 1,
+      isProgressive: !!isProgressive,
+      quizPassScorePercent: quizPassScorePercent !== undefined ? Number(quizPassScorePercent) : 80,
+      quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
+      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined
+    };
+    if (isActive !== undefined) {
+      updateData.isActive = !!isActive;
+    }
+
     const course = await Course.findOneAndUpdate(
-      { id: req.params.id } as any,
-      { title, department, instructionIds, useCases, hasCertificate, certificateValidityYears } as any,
+      query,
+      updateData,
       { new: true } as any
     );
     res.json({ success: true, course });
   } catch (err) {
+    console.error('Error updating course:', err);
     res.status(500).json({ error: 'Failed to update course' });
   }
 });
@@ -723,17 +790,64 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
   }
 });
 
-apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (req: any, res) => {
   try {
-    const { section, questions } = req.body;
+    const { section, questions, createRevision, changeSummary, incrementType } = req.body;
     const instructionId = req.params.id;
 
+    // Get current section to check if version needs incrementing
+    const existingSection = await Section.findOne({ id: instructionId });
+    
+    let updatePayload = { ...section };
+    if (createRevision && existingSection) {
+      const currentVerStr = existingSection.version || '1.0';
+      const currentVerNum = existingSection.versionNumber || 1;
+      const [maj = '1', min = '0'] = currentVerStr.split('.');
+      let newVersion = incrementType === 'major' 
+        ? `${parseInt(maj, 10) + 1}.0`
+        : `${maj}.${parseInt(min, 10) + 1}`;
+      
+      updatePayload.version = newVersion;
+      updatePayload.versionNumber = currentVerNum + 1;
+      updatePayload.changeLog = changeSummary || `Оновлення редакції до v${newVersion}`;
+      updatePayload.lastReviewedAt = new Date();
+      updatePayload.reviewedBy = req.user?._id;
+    }
+
     // Update section fields fully
-    await Section.findOneAndUpdate(
+    const updatedSection = await Section.findOneAndUpdate(
       { id: instructionId } as any,
-      section,
+      updatePayload,
       { new: true } as any
     );
+
+    // If createRevision or if no revisions exist yet, snapshot in InstructionVersion
+    if (updatedSection) {
+      const revCount = await InstructionVersion.countDocuments({ sectionId: instructionId });
+      if (createRevision || revCount === 0) {
+        await InstructionVersion.create({
+          sectionId: instructionId,
+          version: updatedSection.version || '1.0',
+          versionNumber: updatedSection.versionNumber || 1,
+          status: updatedSection.status || 'published',
+          title: updatedSection.title,
+          subtitle: updatedSection.subtitle || '',
+          summary: updatedSection.summary || '',
+          contentMarkdown: updatedSection.contentMarkdown || '',
+          contentHtml: updatedSection.contentHtml || '',
+          keyPoints: updatedSection.keyPoints || [],
+          keyFields: updatedSection.keyFields || [],
+          stopRules: updatedSection.stopRules || [],
+          steps: updatedSection.steps || [],
+          tableData: updatedSection.tableData || null,
+          changeSummary: changeSummary || updatedSection.changeLog || 'Оновлення редакції',
+          authorId: req.user?._id,
+          authorName: req.user?.fullName || req.user?.username || 'Адміністратор',
+          authorEmail: req.user?.email || '',
+          createdAt: new Date()
+        });
+      }
+    }
 
     // Replace all questions for this section
     await Question.deleteMany({ sectionId: instructionId } as any);
@@ -743,7 +857,7 @@ apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (
       await Question.insertMany(qsToInsert);
     }
 
-    res.json({ success: true });
+    res.json({ success: true, section: updatedSection });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fully update instruction' });
   }
@@ -882,7 +996,10 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
     }
     const cases = await Case.find(caseQuery);
     
-    res.json({ courses, sections, questions, cases });
+    // Fetch knowledge spaces
+    const spaces = await KnowledgeService.getSpaces(req.user.role === 'admin');
+    
+    res.json({ courses, sections, questions, cases, spaces });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch content' });
   }

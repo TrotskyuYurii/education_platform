@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
@@ -8,6 +8,7 @@ export type AppTab = 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'mana
 interface NavbarProps {
   currentTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
+  onOpenSearch?: () => void;
   readCount: number;
   totalSections: number;
   bestScore: number | null;
@@ -17,6 +18,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
+  onOpenSearch,
   readCount,
   totalSections,
   bestScore,
@@ -136,19 +138,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Кейси</span>
             </button>
 
-            <button
-              id="tab-btn-about"
-              onClick={() => onSelectTab('about')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'about'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Info className="w-4 h-4" />
-              <span>Про додаток</span>
-            </button>
-
             {canManage && (
               <button
                 id="tab-btn-management"
@@ -165,6 +154,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
           </nav>
+
+          {/* Global Omnisearch Trigger Button */}
+          {onOpenSearch && (
+            <button
+              id="global-search-trigger"
+              onClick={onOpenSearch}
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-blue-600 hover:border-slate-300 transition flex items-center justify-center shadow-2xs group shrink-0"
+              title="Швидкий глобальний пошук (⌘K або Ctrl+K)"
+              aria-label="Швидкий глобальний пошук"
+            >
+              <Search className="w-4 h-4 text-slate-500 group-hover:text-blue-600 transition" />
+            </button>
+          )}
 
           {/* Quick Progress Badge & Profile Menu */}
           <div className="flex items-center gap-3 sm:gap-4" ref={profileMenuRef}>
@@ -302,6 +304,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                     </button>
 
+                    <button
+                      id="submenu-btn-about"
+                      onClick={() => {
+                        onSelectTab('about');
+                        setIsProfileMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition min-h-[44px] ${
+                        currentTab === 'about'
+                          ? 'bg-blue-50 text-blue-700 font-semibold'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          currentTab === 'about' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <Info className="w-4 h-4" />
+                        </div>
+                        <div className="text-left">
+                          <div className="leading-tight">Про додаток</div>
+                          <div className="text-[11px] text-slate-400 font-normal">Довідка, можливості та опис системи</div>
+                        </div>
+                      </div>
+                    </button>
+
                     <div className="border-t border-slate-100 my-1" />
 
                     <button
@@ -350,14 +377,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Кейси
-          </button>
-          <button
-            onClick={() => onSelectTab('about')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${
-              currentTab === 'about' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            Про додаток
           </button>
           {canManage && (
             <button

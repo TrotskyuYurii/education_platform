@@ -71,6 +71,13 @@ const courseSchema = new mongoose.Schema({
   useCases: { type: Boolean, default: false },
   hasCertificate: { type: Boolean, default: false },
   certificateValidityYears: { type: Number, default: 0 },
+  isProgressive: { type: Boolean, default: false },
+  quizTimeLimitMin: { type: Number },
+  quizPassScorePercent: { type: Number, default: 80 },
+  quizMaxAttempts: { type: Number },
+  spaceId: { type: String, default: 'space-general' },
+  version: { type: String, default: '1.0' },
+  status: { type: String, enum: ['draft', 'in_review', 'published', 'archived'], default: 'published' },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
@@ -119,6 +126,14 @@ const sectionSchema = new mongoose.Schema({
   },
   stopRules: [String],
   systemAutomaticActions: [String],
+  spaceId: { type: String, default: 'space-general' },
+  version: { type: String, default: '1.0' },
+  versionNumber: { type: Number, default: 1 },
+  status: { type: String, enum: ['draft', 'in_review', 'published', 'archived'], default: 'published' },
+  changeLog: { type: String, default: 'Початкова публікація' },
+  lastReviewedAt: { type: Date },
+  reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reviewNotes: { type: String },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
@@ -198,3 +213,4 @@ export const Course = mongoose.models.Course || mongoose.model('Course', courseS
 export const Case = mongoose.models.Case || mongoose.model('Case', caseSchema);
 
 export const Role = mongoose.models.Role || mongoose.model('Role', roleSchema);
+export { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.js';

@@ -66,15 +66,39 @@ const learningNotificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   notificationId: { type: String, required: true },
   message: { type: String, required: true },
-  type: { type: String, enum: ['certificate_revoked', 'certificate_expiring', 'general'], default: 'general' },
+  type: { type: String, enum: ['certificate_revoked', 'certificate_expiring', 'assignment_new', 'assignment_reminder', 'general'], default: 'general' },
   read: { type: Boolean, default: false, index: true },
   date: { type: Date, default: Date.now }
 }, {
   timestamps: true
 });
 
+// 6. Learning Assignment (Крок 7. Рушій призначень)
+const learningAssignmentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  targetType: { type: String, enum: ['course', 'instruction'], default: 'course' },
+  targetId: { type: String, required: true, index: true }, // courseId or sectionId
+  title: { type: String, required: true },
+  department: { type: String, default: '' },
+  assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assignedByName: { type: String, default: 'Керівник' },
+  assignedDate: { type: Date, default: Date.now, index: true },
+  dueDate: { type: Date, required: true, index: true },
+  priority: { type: String, enum: ['recommended', 'mandatory', 'critical'], default: 'mandatory', index: true },
+  status: { type: String, enum: ['assigned', 'in_progress', 'completed', 'overdue'], default: 'assigned', index: true },
+  completedAt: { type: Date },
+  score: { type: Number },
+  notes: { type: String, default: '' }
+}, {
+  timestamps: true
+});
+
+learningAssignmentSchema.index({ userId: 1, targetType: 1, targetId: 1 });
+learningAssignmentSchema.index({ status: 1, dueDate: 1 });
+
 export const ReadingProgress = mongoose.models.ReadingProgress || mongoose.model('ReadingProgress', readingProgressSchema);
 export const QuizAttempt = mongoose.models.QuizAttempt || mongoose.model('QuizAttempt', quizAttemptSchema);
 export const CertificateRecord = mongoose.models.CertificateRecord || mongoose.model('CertificateRecord', certificateRecordSchema);
 export const Acknowledgment = mongoose.models.Acknowledgment || mongoose.model('Acknowledgment', acknowledgmentSchema);
 export const LearningNotification = mongoose.models.LearningNotification || mongoose.model('LearningNotification', learningNotificationSchema);
+export const LearningAssignment = mongoose.models.LearningAssignment || mongoose.model('LearningAssignment', learningAssignmentSchema);

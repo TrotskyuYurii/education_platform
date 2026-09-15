@@ -35,24 +35,44 @@ export const UserAnalyticsPicker: React.FC<UserAnalyticsPickerProps> = ({
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [onlyWithCerts, setOnlyWithCerts] = useState(false);
 
+  // Helper to extract string department list for a user
+  const getUserDepts = (u: any): string[] => {
+    const list: string[] = [];
+    if (Array.isArray(u?.departments)) {
+      u.departments.forEach((d: any) => {
+        const name = typeof d === 'string' ? d : d?.name;
+        if (name && typeof name === 'string' && name.trim()) list.push(name.trim());
+      });
+    }
+    if (u?.departmentId) {
+      const name = typeof u.departmentId === 'object' ? u.departmentId?.name : (typeof u.departmentId === 'string' ? u.departmentId : null);
+      if (name && typeof name === 'string' && name.trim() && !list.includes(name.trim())) {
+        list.push(name.trim());
+      }
+    }
+    return list;
+  };
+
   // Department list from all users for filtering
   const allDepartments = useMemo(() => {
     const set = new Set<string>();
     usersList.forEach(u => {
-      (u.departments || []).forEach(d => set.add(d));
+      getUserDepts(u).forEach(d => set.add(d));
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
   }, [usersList]);
 
   // Filtered users for the dropdown
   const filteredUsers = useMemo(() => {
     return usersList.filter(u => {
+      const userDepts = getUserDepts(u);
+      const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
-        u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.employeeInfo?.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.departments.some(d => d.toLowerCase().includes(searchQuery.toLowerCase()));
+        u.email.toLowerCase().includes(searchLower) ||
+        (u.employeeInfo?.fullName || '').toLowerCase().includes(searchLower) ||
+        userDepts.some(d => d.toLowerCase().includes(searchLower));
       
-      const matchesDept = deptFilter === 'all' || u.departments.includes(deptFilter);
+      const matchesDept = deptFilter === 'all' || userDepts.includes(deptFilter);
       const matchesCert = !onlyWithCerts || (u.stats.certificatesCount > 0);
       return matchesSearch && matchesDept && matchesCert;
     });
@@ -109,7 +129,7 @@ export const UserAnalyticsPicker: React.FC<UserAnalyticsPickerProps> = ({
                 </div>
                 <div className="text-[10px] text-slate-500 truncate">
                   {selectedUserId 
-                    ? (activeUser?.departments?.join(', ') || 'Всі підрозділи') 
+                    ? (getUserDepts(activeUser).join(', ') || 'Всі підрозділи') 
                     : currentUser?.email
                   }
                 </div>
@@ -242,7 +262,7 @@ export const UserAnalyticsPicker: React.FC<UserAnalyticsPickerProps> = ({
                               </div>
                               <div className="text-[10px] text-slate-500 truncate flex items-center gap-2 mt-0.5">
                                 <span className="truncate">
-                                  {u.departments?.join(', ') || 'Всі підрозділи'}
+                                  {getUserDepts(u).join(', ') || 'Всі підрозділи'}
                                 </span>
                                 <span className="text-slate-300">·</span>
                                 <span className="shrink-0 text-slate-600 font-medium">
@@ -312,7 +332,7 @@ export const UserAnalyticsPicker: React.FC<UserAnalyticsPickerProps> = ({
               </span>
             )}
             <span className="text-slate-400">
-              Підрозділ: {activeUser?.departments?.join(', ') || 'Загальний'}
+              Підрозділ: {getUserDepts(activeUser).join(', ') || 'Загальний'}
             </span>
           </div>
 
