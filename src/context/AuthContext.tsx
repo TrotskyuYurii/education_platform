@@ -71,7 +71,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchCurrentUser();
   }, []);
 
-  const login = (userData: User) => setUser(userData);
+  const login = (userData: User) => {
+    try { localStorage.setItem('viatec_current_tab', 'myday'); } catch {}
+    setUser(userData);
+  };
   
   const logout = async () => {
     try {
