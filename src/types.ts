@@ -205,6 +205,9 @@ export interface UserProgress {
     message: string;
     date: string;
     read: boolean;
+    title?: string;
+    type?: string;
+    isCritical?: boolean;
   }>;
   certificates?: Array<{
     courseId: string;

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { SearchService } from './service.js';
+import { SearchQueryLog } from '../analytics/models.js';
 
 export const searchRouter = Router();
 
@@ -22,6 +23,16 @@ searchRouter.get('/', async (req, res) => {
     });
 
     res.json({ success: true, ...data });
+
+    // Крок 12: log real (non-empty) queries for the "запити без результатів" report.
+    // Fire-and-forget, after the response — must never delay or break search itself.
+    if (q.trim()) {
+      SearchQueryLog.create({
+        userId: (req as any).user?._id,
+        query: q.trim(),
+        resultCount: data.total
+      }).catch((err: any) => console.error('Failed to log search query:', err));
+    }
   } catch (err: any) {
     console.error('Search error:', err);
     res.status(500).json({ error: 'Помилка виконання пошуку', details: err.message });

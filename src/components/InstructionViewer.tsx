@@ -74,6 +74,12 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
 
   const activeSection = courseSections.find(s => s.id === activeSectionId) || courseSections[0];
   const isCompleted = activeSection && readSectionIds.includes(activeSection.id);
+
+  // Крок 12 (Аналітика): count opens per section for the "популярні / без переглядів" report.
+  useEffect(() => {
+    if (!activeSection?.id) return;
+    fetch(`/api/sections/${activeSection.id}/view`, { method: 'POST' }).catch(() => {});
+  }, [activeSection?.id]);
   
   // Progress calculations
   const totalSections = courseSections.length;

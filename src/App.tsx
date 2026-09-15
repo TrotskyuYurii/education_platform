@@ -12,6 +12,8 @@ import { AboutApp } from './components/AboutApp';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { MyDay } from './components/MyDay';
 import { PeopleDirectory } from './components/People';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
+import { LoadingScreen } from './components/LoadingScreen';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
@@ -20,7 +22,7 @@ export default function App() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">Завантаження...</div>;
+    return <LoadingScreen message="Перевірка сесії..." />;
   }
 
   if (!user) {
@@ -79,6 +81,7 @@ function MainApp() {
   const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [analyticsFocusUserId, setAnalyticsFocusUserId] = useState<string | null>(null);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
 
   // Global hotkey Ctrl+K / Cmd+K
   useEffect(() => {
@@ -334,7 +337,7 @@ function MainApp() {
   };
 
   if (!dataLoaded) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">Завантаження даних...</div>;
+    return <LoadingScreen message="Завантаження ваших даних..." />;
   }
 
   // SECURITY REQ: Force setup mode for default admin
@@ -375,28 +378,36 @@ function MainApp() {
       {/* Global Notifications */}
       {progress.notifications && progress.notifications.length > 0 && (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full">
-          {progress.notifications.filter(n => !n.read).map(notif => (
-            <div key={notif.id} className="bg-rose-50 border-l-4 border-rose-500 rounded-r-lg p-4 shadow-xl flex items-start justify-between gap-3 animate-in slide-in-from-right">
-              <div>
-                <h4 className="font-bold text-rose-800 text-sm mb-1">Важливе повідомлення</h4>
-                <p className="text-xs text-rose-700">{notif.message}</p>
-                <div className="text-[10px] text-rose-500 mt-2">{new Date(notif.date).toLocaleString('uk-UA')}</div>
+          {progress.notifications.filter(n => !n.read).map(notif => {
+            // isCritical is undefined for notifications created before Крок 11 — treat those as critical too, matching the old behavior.
+            const isCritical = notif.isCritical !== false;
+            const palette = isCritical
+              ? { bg: 'bg-rose-50', border: 'border-rose-500', title: 'text-rose-800', text: 'text-rose-700', date: 'text-rose-500', close: 'text-rose-400 hover:text-rose-600' }
+              : { bg: 'bg-blue-50', border: 'border-blue-500', title: 'text-blue-800', text: 'text-blue-700', date: 'text-blue-500', close: 'text-blue-400 hover:text-blue-600' };
+            return (
+              <div key={notif.id} className={`${palette.bg} border-l-4 ${palette.border} rounded-r-lg p-4 shadow-xl flex items-start justify-between gap-3 animate-in slide-in-from-right`}>
+                <div>
+                  <h4 className={`font-bold ${palette.title} text-sm mb-1`}>{notif.title || 'Важливе повідомлення'}</h4>
+                  <p className={`text-xs ${palette.text}`}>{notif.message}</p>
+                  <div className={`text-[10px] ${palette.date} mt-2`}>{new Date(notif.date).toLocaleString('uk-UA')}</div>
+                </div>
+                <button
+                  onClick={() => dismissNotification(notif.id)}
+                  className={`${palette.close} transition p-1`}
+                  title="Закрити"
+                >
+                  ×
+                </button>
               </div>
-              <button 
-                onClick={() => dismissNotification(notif.id)}
-                className="text-rose-400 hover:text-rose-600 transition p-1"
-                title="Закрити"
-              >
-                ×
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       <Navbar
         currentTab={currentTab}
         onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
         onSelectTab={(tab) => {
           if (tab === 'quiz') {
             setActiveQuizSectionId(undefined);
@@ -645,6 +656,10 @@ function MainApp() {
         courses={courses}
         onNavigateToResult={handleNavigateToSearchResult}
       />
+
+      {isNotificationSettingsOpen && (
+        <NotificationSettingsModal onClose={() => setIsNotificationSettingsOpen(false)} />
+      )}
     </div>
   );
 }

@@ -135,6 +135,7 @@ const sectionSchema = new mongoose.Schema({
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reviewNotes: { type: String },
   isActive: { type: Boolean, default: true },
+  viewsCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

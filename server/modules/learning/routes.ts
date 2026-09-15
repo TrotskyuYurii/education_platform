@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { ProgressService } from './service.js';
-import { requirePermission, scopeFilter } from '../core/permissions.js';
+import { requirePermission, scopeFilter, isUserInScope } from '../core/permissions.js';
+import { User } from '../../models.js';
 
 export const progressV2Router = Router();
 
@@ -104,6 +105,14 @@ progressV2Router.get('/admin/users-report', requirePermission('analytics.report.
 progressV2Router.get('/admin/user/:userId', requirePermission('analytics.report.view'), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
+    // SECURITY: requirePermission only confirms the caller holds analytics.report.view at
+    // SOME scope — without this check a manager/HR with a narrower scope (e.g. 'team')
+    // could read any user's full progress by just changing the :userId in the URL.
+    const target = await User.findById(String(userId)).select('_id departmentId managerId');
+    if (!target) return res.status(404).json({ error: 'Користувача не знайдено' });
+    const allowed = await isUserInScope((req as any).user, target, 'analytics.report.view');
+    if (!allowed) return res.status(403).json({ error: 'Немає доступу до аналітики цього користувача' });
+
     const progress = await ProgressService.getUserProgress(String(userId));
     res.json({ progress });
   } catch (err: any) {

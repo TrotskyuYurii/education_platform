@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { logger } from '../../server/modules/core/logger.js';
 import dotenv from 'dotenv';
 
@@ -41,7 +42,9 @@ async function runMigrations() {
 
     logger.info(`Running migration: ${migrationName}`);
     try {
-      const migrationModule = await import(path.join(migrationsDir, file));
+      // pathToFileURL is required on Windows — a bare filesystem path like
+      // "D:\...\file.ts" is not a valid ESM specifier for dynamic import().
+      const migrationModule = await import(pathToFileURL(path.join(migrationsDir, file)).href);
       if (migrationModule.up) {
         await migrationModule.up(isDryRun);
         if (!isDryRun) {

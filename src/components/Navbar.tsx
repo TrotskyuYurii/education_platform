@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users, Bell } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,6 +9,7 @@ interface NavbarProps {
   currentTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   onOpenSearch?: () => void;
+  onOpenNotificationSettings?: () => void;
   readCount: number;
   totalSections: number;
   bestScore: number | null;
@@ -19,6 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
   onOpenSearch,
+  onOpenNotificationSettings,
   readCount,
   totalSections,
   bestScore,
@@ -329,6 +331,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </div>
                       </div>
                     </button>
+
+                    {onOpenNotificationSettings && (
+                      <button
+                        id="submenu-btn-notification-settings"
+                        onClick={() => {
+                          onOpenNotificationSettings();
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 transition min-h-[44px]"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div className="text-left">
+                          <div className="leading-tight">Сповіщення</div>
+                          <div className="text-[11px] text-slate-400 font-normal">Налаштування email-сповіщень</div>
+                        </div>
+                      </button>
+                    )}
 
                     <button
                       id="submenu-btn-about"

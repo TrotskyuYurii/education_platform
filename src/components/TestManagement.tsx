@@ -2,6 +2,9 @@ import { OrganizationSettings } from './Admin/OrganizationSettings';
 import { RoleSettings } from './Admin/RoleSettings';
 import { KnowledgeSettings } from './Admin/KnowledgeSettings';
 import { AssignmentSettings } from './Admin/AssignmentSettings';
+import { NotificationTemplates } from './Admin/NotificationTemplates';
+import { AnalyticsReports } from './Analytics/AnalyticsReports';
+import { useAuth } from '../context/AuthContext';
 import React, { useState, useRef } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
@@ -34,7 +37,9 @@ import {
   Search,
   FolderTree,
   GitBranch,
-  CalendarClock
+  CalendarClock,
+  Bell,
+  BarChart3
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -49,7 +54,7 @@ interface TestManagementProps {
   onRefresh?: () => Promise<void>;
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
@@ -62,9 +67,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   isSetupMode,
   onRefresh
 }) => {
-  
-  
-  const [newCourse, setNewCourse] = useState<any>({ 
+  const { hasPermission } = useAuth();
+
+  const [newCourse, setNewCourse] = useState<any>({
     title: '', 
     department: '', 
     instructionIds: [], 
@@ -235,7 +240,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'help', 'users', 'roles', 'organization'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -871,14 +876,40 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                   <button
                     onClick={() => setActiveTab('organization')}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                      activeTab === 'organization' 
-                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                      activeTab === 'organization'
+                        ? 'bg-purple-100 text-purple-800 shadow-xs'
                         : 'text-slate-600 hover:bg-slate-200/60'
                     }`}
                   >
                     <Settings2 className="w-4 h-4" />
                     <span>Організація</span>
                   </button>
+
+                  <button
+                    onClick={() => setActiveTab('notifications')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'notifications'
+                        ? 'bg-purple-100 text-purple-800 shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <Bell className="w-4 h-4" />
+                    <span>Сповіщення</span>
+                  </button>
+
+                  {hasPermission('analytics.report.view') && (
+                    <button
+                      onClick={() => setActiveTab('analytics')}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                        activeTab === 'analytics'
+                          ? 'bg-purple-100 text-purple-800 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Аналітика</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2873,6 +2904,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
           {/* TAB: DEPARTMENTS */}
           {activeTab === 'organization' && <OrganizationSettings />}
+          {activeTab === 'notifications' && <NotificationTemplates />}
+          {activeTab === 'analytics' && <AnalyticsReports courses={courses} />}
 
           {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
           {activeTab === 'knowledge' && (

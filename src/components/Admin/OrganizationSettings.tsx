@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Check, X, MapPin, Briefcase, Building2 } from 'lucide-react';
-import { useFeature } from '../../hooks/useFeature';
 
 interface Department {
   _id: string;
@@ -28,8 +27,6 @@ interface Location {
 }
 
 export const OrganizationSettings = () => {
-  const newOrgStructureEnabled = useFeature('new_org_structure');
-  
   const [activeSubTab, setActiveSubTab] = useState<'departments' | 'positions' | 'locations'>('departments');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -43,10 +40,8 @@ export const OrganizationSettings = () => {
   const [locForm, setLocForm] = useState({ name: '', city: '', country: '', timezone: '', isActive: true });
 
   useEffect(() => {
-    if (newOrgStructureEnabled) {
-      fetchData();
-    }
-  }, [newOrgStructureEnabled, activeSubTab]);
+    fetchData();
+  }, [activeSubTab]);
 
   const fetchData = async () => {
     try {
@@ -64,16 +59,6 @@ export const OrganizationSettings = () => {
       console.error(err);
     }
   };
-
-  if (!newOrgStructureEnabled) {
-    return (
-      <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-100">
-        <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-        <h3 className="text-lg font-medium text-slate-700">Організаційна структура</h3>
-        <p className="text-slate-500 mt-1">Ця функція наразі вимкнена. Увімкніть фіче-флаг `new_org_structure`.</p>
-      </div>
-    );
-  }
 
   const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();

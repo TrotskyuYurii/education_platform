@@ -13,6 +13,8 @@ const upload = multer({ dest: 'uploads/' });
 
 import { orgRouter } from './modules/org/routes.js';
 import { peopleRouter } from './modules/people/routes.js';
+import { notificationsRouter } from './modules/notifications/routes.js';
+import { analyticsRouter } from './modules/analytics/routes.js';
 export const apiRouter = Router();
 
 
@@ -52,6 +54,8 @@ const requireAdmin = requirePermission('admin.access');
 // --- Mount V2 Routers ---
 apiRouter.use('/v2/org', requireAuth, orgRouter);
 apiRouter.use('/v2/people', requireAuth, peopleRouter);
+apiRouter.use('/v2/notifications', requireAuth, notificationsRouter);
+apiRouter.use('/v2/analytics', requireAuth, analyticsRouter);
 apiRouter.use('/v2/roles', requireAuth, rolesRouter);
 apiRouter.use('/v2/progress', requireAuth, progressV2Router);
 apiRouter.use('/progress-v2', requireAuth, progressV2Router);
@@ -1052,6 +1056,17 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
     res.json({ courses, sections, questions, cases, spaces });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch content' });
+  }
+});
+
+// Крок 12 (Аналітика): fire-and-forget view counter, called once when an
+// employee opens an instruction section. No response body needed beyond ok.
+apiRouter.post('/sections/:id/view', requireAuth, async (req: any, res) => {
+  try {
+    await Section.updateOne({ id: req.params.id } as any, { $inc: { viewsCount: 1 } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to record view' });
   }
 });
 

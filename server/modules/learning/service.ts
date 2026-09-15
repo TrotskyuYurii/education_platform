@@ -1,13 +1,14 @@
 import mongoose from 'mongoose';
 import { User, Section, Course, Progress } from '../../models.js';
-import { 
-  ReadingProgress, 
-  QuizAttempt, 
-  CertificateRecord, 
-  Acknowledgment, 
+import {
+  ReadingProgress,
+  QuizAttempt,
+  CertificateRecord,
+  Acknowledgment,
   LearningNotification,
   LearningAssignment
 } from './models.js';
+import { NotificationService } from '../notifications/service.js';
 
 export class ProgressService {
   /**
@@ -242,9 +243,12 @@ export class ProgressService {
         notifications: notifs.map(n => ({
           id: n.notificationId,
           message: n.message,
-        date: n.date.toISOString(),
-        read: n.read
-      }))
+          date: n.date.toISOString(),
+          read: n.read,
+          title: n.title || undefined,
+          type: n.type,
+          isCritical: n.isCritical
+        }))
     };
   }
 
@@ -320,7 +324,13 @@ export class ProgressService {
     // Check certificate issuance
     if (testScore.courseId && testScore.percentage >= 80) {
       const course = await Course.findOne({ id: testScore.courseId } as any);
+      let certificateIssued = false;
+
       if (course && course.hasCertificate) {
+        const existingCert = await CertificateRecord.findOne({
+          userId: userObjectId, courseId: course.id, status: 'active'
+        });
+
         const validityYears = course.certificateValidityYears || 1;
         const issuedAt = new Date();
         const expiresAt = new Date();
@@ -338,6 +348,29 @@ export class ProgressService {
           },
           { upsert: true, new: true }
         );
+
+        // Only notify on a genuinely new issuance, not on retaking an already-passed course.
+        if (!existingCert) {
+          certificateIssued = true;
+          await NotificationService.send({
+            userId: userObjectId,
+            type: 'certificate_issued',
+            payload: { courseTitle: course.title }
+          });
+        }
+      }
+
+      // "Курс завершено" is its own event, but skip it when certificate_issued
+      // already covers the same accomplishment to avoid two notifications for one action.
+      if (!certificateIssued) {
+        const courseForTitle = course || await Course.findOne({ id: testScore.courseId } as any);
+        if (courseForTitle) {
+          await NotificationService.send({
+            userId: userObjectId,
+            type: 'course_completed',
+            payload: { courseTitle: courseForTitle.title }
+          });
+        }
       }
     }
 
@@ -350,6 +383,8 @@ export class ProgressService {
    */
   static async saveAcknowledgment(userId: string | mongoose.Types.ObjectId, employeeInfo: any) {
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const wasSignedBefore = Boolean((await Acknowledgment.findOne({ userId: userObjectId }))?.isSigned);
 
     const ack = await Acknowledgment.findOneAndUpdate(
       { userId: userObjectId },
@@ -365,6 +400,10 @@ export class ProgressService {
       },
       { upsert: true, new: true }
     );
+
+    if (!wasSignedBefore && ack.isSigned) {
+      await NotificationService.send({ userId: userObjectId, type: 'acknowledgement_confirmed' });
+    }
 
     await this.syncToLegacy(userObjectId);
     return ack;
@@ -409,35 +448,26 @@ export class ProgressService {
       }
     );
 
-    // Create notification
-    const notifId = Math.random().toString(36).substring(7);
     const courseTitle = cert?.courseTitle || 'Курс';
-    await LearningNotification.create({
-      userId: userObjectId,
-      notificationId: notifId,
-      message: `Ваш сертифікат за курс «${courseTitle}» був анульований адміністратором.`,
-      type: 'certificate_revoked',
-      read: false,
-      date: new Date()
-    });
 
-    // Update legacy progress
+    // Remove the revoked certificate from the legacy embedded array (unrelated
+    // to the notification below — NotificationService only touches .notifications).
     const legacy = await Progress.findOne({ userId: userObjectId });
     if (legacy) {
       const idx = legacy.certificates.findIndex((c: any) => c.courseId === courseId);
       if (idx !== -1) {
         legacy.certificates.splice(idx, 1);
+        await legacy.save();
       }
-      legacy.notifications.push({
-        id: notifId,
-        message: `Ваш сертифікат за курс «${courseTitle}» був анульований адміністратором.`,
-        date: new Date(),
-        read: false
-      });
-      await legacy.save();
     }
 
-    return { success: true, notificationId: notifId };
+    const { notificationId } = await NotificationService.send({
+      userId: userObjectId,
+      type: 'certificate_revoked',
+      payload: { courseTitle }
+    });
+
+    return { success: true, notificationId };
   }
 
   /**
@@ -686,14 +716,16 @@ export class ProgressService {
 
       createdAssignments.push(assignment);
 
-      // In-app notification for the user
-      await LearningNotification.create({
+      await NotificationService.send({
         userId: uid,
-        notificationId: `notif-assign-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        message: `Вам призначено ${priority === 'critical' ? 'термінове' : 'обов\'язкове'} навчання: «${data.title}». Дедлайн: до ${formattedDue}.${notes ? ` Вказівка керівника: ${notes}` : ''}`,
         type: 'assignment_new',
-        read: false,
-        date: new Date()
+        payload: {
+          title: data.title,
+          dueDate: formattedDue,
+          notesLine: notes ? ` Вказівка керівника: ${notes}` : ''
+        },
+        // A recommended-priority assignment is still non-critical for notification
+        // purposes; only mandatory/critical assignments escalate on overdue (see scheduler.ts).
       });
     }
 
@@ -835,13 +867,14 @@ export class ProgressService {
     if (!assignment) throw new Error('Призначення не знайдено');
 
     const formattedDue = assignment.dueDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    await LearningNotification.create({
+    await NotificationService.send({
       userId: assignment.userId,
-      notificationId: `remind-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      message: `🔔 Нагадування${senderName ? ` від ${senderName}` : ''}: наближається або минув дедлайн вивчення «${assignment.title}» (до ${formattedDue}). Будь ласка, завершіть матеріал!`,
       type: 'assignment_reminder',
-      read: false,
-      date: new Date()
+      payload: {
+        title: assignment.title,
+        dueDate: formattedDue,
+        senderLine: senderName ? ` від ${senderName}` : ''
+      }
     });
     return { success: true };
   }
@@ -858,6 +891,9 @@ export class ProgressService {
       if (assignment.status === 'overdue' && assignment.dueDate > new Date()) {
         assignment.status = 'assigned';
       }
+      // Deadline moved — let the scheduler re-evaluate and notify again if needed.
+      assignment.deadlineReminderSentAt = undefined;
+      assignment.overdueNotifiedAt = undefined;
     }
     if (data.priority) assignment.priority = data.priority as any;
     if (data.notes !== undefined) assignment.notes = data.notes;

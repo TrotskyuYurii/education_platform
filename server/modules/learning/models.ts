@@ -40,7 +40,10 @@ const certificateRecordSchema = new mongoose.Schema({
   status: { type: String, enum: ['active', 'revoked', 'expired'], default: 'active', index: true },
   revokedAt: { type: Date },
   revokedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  revocationReason: { type: String }
+  revocationReason: { type: String },
+  // Крок 11: set once a "certificate expiring soon" notification has been sent,
+  // so the daily scheduler doesn't re-notify for the same certificate every day.
+  expiryNotifiedAt: { type: Date }
 }, {
   timestamps: true
 });
@@ -65,8 +68,18 @@ const acknowledgmentSchema = new mongoose.Schema({
 const learningNotificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   notificationId: { type: String, required: true },
+  title: { type: String },
   message: { type: String, required: true },
-  type: { type: String, enum: ['certificate_revoked', 'certificate_expiring', 'assignment_new', 'assignment_reminder', 'general'], default: 'general' },
+  type: {
+    type: String,
+    enum: [
+      'certificate_revoked', 'certificate_expiring', 'certificate_issued',
+      'assignment_new', 'assignment_reminder', 'assignment_overdue',
+      'course_completed', 'acknowledgement_confirmed', 'general'
+    ],
+    default: 'general'
+  },
+  isCritical: { type: Boolean, default: false },
   read: { type: Boolean, default: false, index: true },
   date: { type: Date, default: Date.now }
 }, {
@@ -88,7 +101,12 @@ const learningAssignmentSchema = new mongoose.Schema({
   status: { type: String, enum: ['assigned', 'in_progress', 'completed', 'overdue'], default: 'assigned', index: true },
   completedAt: { type: Date },
   score: { type: Number },
-  notes: { type: String, default: '' }
+  notes: { type: String, default: '' },
+  // Крок 11: dedup flags for the daily notification scheduler — each fires
+  // at most once per assignment, independent of the (already-existing) lazy
+  // status flip to 'overdue' that happens on read in getUserAssignments/getAssignmentsReport.
+  deadlineReminderSentAt: { type: Date },
+  overdueNotifiedAt: { type: Date }
 }, {
   timestamps: true
 });

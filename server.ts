@@ -7,6 +7,7 @@ import { connectDB } from './server/db.js';
 import { apiRouter } from './server/routes.js';
 import { errorHandler } from './server/modules/core/errors.js';
 import { FeatureFlag } from './server/modules/core/models.js';
+import { startNotificationScheduler } from './server/modules/notifications/scheduler.js';
 
 async function startServer() {
   const app = express();
@@ -19,6 +20,9 @@ async function startServer() {
 
   // Connect DB
   const isDbConnected = await connectDB();
+  if (isDbConnected) {
+    startNotificationScheduler();
+  }
 
   // API Routes
   app.get('/api/health', (req, res) => {

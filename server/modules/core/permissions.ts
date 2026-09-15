@@ -169,8 +169,13 @@ export const scopeFilter = async (user: any, permission: string) => {
 export const isUserInScope = async (viewer: any, target: any, permission: string): Promise<boolean> => {
   const roleKeys = resolveUserRoleKeys(viewer);
   if (viewer.role === 'admin' || roleKeys.includes('admin')) return true;
-  if (String(viewer._id) === String(target._id)) return true;
 
+  // No blanket "it's my own record" shortcut here: whether a viewer may act on
+  // themselves must come from an actual granted scope for `permission` (mirrors
+  // scopeFilter, where 'self' scope's {_id: viewer._id} filter is what makes
+  // self-access work — a role with NO grant for this permission, e.g. the plain
+  // 'employee' role and 'users.profile.edit', must not be treated as in-scope
+  // just because the target happens to be the viewer).
   const roles = await Role.find({ key: { $in: roleKeys } });
   const scopes: PermissionScope[] = ['self', 'team', 'department', 'all'];
   let maxScopeIdx = -1;
@@ -191,9 +196,9 @@ export const isUserInScope = async (viewer: any, target: any, permission: string
     case 'department':
       return Boolean(viewer.departmentId) && String(viewer.departmentId) === String(target.departmentId);
     case 'team':
-      return Boolean(target.managerId) && String(target.managerId) === String(viewer._id);
+      return String(target._id) === String(viewer._id) || (Boolean(target.managerId) && String(target.managerId) === String(viewer._id));
     case 'self':
-      return false; // already covered by the self-check above
+      return String(target._id) === String(viewer._id);
     default:
       return false;
   }

@@ -40,6 +40,37 @@ export function generateAuthCode(): string {
 }
 
 /**
+ * Generic email sender for notifications. Unlike sendAuthCodeEmail, this never
+ * throws — a notification email failing (or SMTP being unconfigured) must not
+ * break the in-app flow that triggered it, it should just be logged and skipped.
+ */
+export async function sendEmail(
+  toEmail: string,
+  subject: string,
+  html: string,
+  text?: string
+): Promise<{ success: boolean; error?: string }> {
+  const t = getEmailTransporter();
+  if (!t) {
+    console.warn(`✉️ Skipped notification email to ${toEmail} (SMTP not configured): ${subject}`);
+    return { success: false, error: 'SMTP not configured' };
+  }
+  try {
+    await t.sendMail({
+      from: process.env.SMTP_FROM || '"ВІАТЕК Безпека" <no-reply@viatec.ua>',
+      to: toEmail,
+      subject,
+      text: text || subject,
+      html,
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error(`❌ Failed to send notification email to ${toEmail}:`, err);
+    return { success: false, error: err?.message || 'Unknown error' };
+  }
+}
+
+/**
  * Sends one-time authorization code to user's @viatec.ua email
  */
 export async function sendAuthCodeEmail(
