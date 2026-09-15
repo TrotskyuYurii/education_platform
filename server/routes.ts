@@ -12,6 +12,7 @@ import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 const upload = multer({ dest: 'uploads/' });
 
 import { orgRouter } from './modules/org/routes.js';
+import { peopleRouter } from './modules/people/routes.js';
 export const apiRouter = Router();
 
 
@@ -50,6 +51,7 @@ const requireAdmin = requirePermission('admin.access');
 
 // --- Mount V2 Routers ---
 apiRouter.use('/v2/org', requireAuth, orgRouter);
+apiRouter.use('/v2/people', requireAuth, peopleRouter);
 apiRouter.use('/v2/roles', requireAuth, rolesRouter);
 apiRouter.use('/v2/progress', requireAuth, progressV2Router);
 apiRouter.use('/progress-v2', requireAuth, progressV2Router);
@@ -265,9 +267,14 @@ apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
         departmentName,
         positionId: req.user.positionId,
         managerId: req.user.managerId,
+        locationId: req.user.locationId,
+        avatarUrl: req.user.avatarUrl,
+        phone: req.user.phone,
+        hireDate: req.user.hireDate,
+        isActive: req.user.isActive,
         allowedInstructionIds: req.user.allowedInstructionIds,
-        requireEmailCode: req.user.requireEmailCode 
-      } 
+        requireEmailCode: req.user.requireEmailCode
+      }
     });
   } catch (err) {
     res.status(500).json({ error: 'Помилка отримання профілю' });
@@ -300,24 +307,44 @@ apiRouter.get('/admin/users', requireAuth, requirePermission('users.profile.view
 
 apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.edit'), async (req, res) => {
   try {
-    const { departments, departmentId, positionId, managerId, allowedInstructionIds, role, roleKeys, fullName, email, password, authMethod } = req.body;
+    const { isUserInScope } = await import('./modules/core/permissions.js');
+    const targetBefore = await User.findOne({ _id: req.params.id } as any).select('-passwordHash -authCode');
+    if (!targetBefore) return res.status(404).json({ error: 'Користувача не знайдено' });
+
+    // SECURITY: requirePermission only confirms the caller holds users.profile.edit at
+    // SOME scope — it does not know which record is being touched. Without this check a
+    // manager/HR user granted a narrower scope (e.g. 'team') could edit any user by id.
+    const allowed = await isUserInScope((req as any).user, targetBefore, 'users.profile.edit');
+    if (!allowed) return res.status(403).json({ error: 'Немає доступу до редагування цього користувача' });
+
+    const {
+      departments, departmentId, positionId, managerId, locationId,
+      allowedInstructionIds, role, roleKeys, fullName, email, password, authMethod,
+      avatarUrl, phone, hireDate, isActive, customFields
+    } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
     const normalizedEmail = email.toLowerCase().trim();
-    const existingEmail = await User.findOne({ 
-      email: normalizedEmail, 
-      _id: { $ne: req.params.id } 
+    const existingEmail = await User.findOne({
+      email: normalizedEmail,
+      _id: { $ne: req.params.id }
     } as any);
     if (existingEmail) return res.status(400).json({ error: 'Користувач з таким email вже існує' });
-    
-    const updateData: any = { 
+
+    const updateData: any = {
       email: normalizedEmail,
       username: normalizedEmail
     };
     if (fullName !== undefined) updateData.fullName = fullName.trim();
     if (allowedInstructionIds !== undefined) updateData.allowedInstructionIds = allowedInstructionIds;
     if (authMethod !== undefined) updateData.authMethod = authMethod;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+    if (phone !== undefined) updateData.phone = phone;
+    if (hireDate !== undefined) updateData.hireDate = hireDate || null;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (locationId !== undefined) updateData.locationId = locationId || null;
+    if (customFields !== undefined) updateData.customFields = customFields;
 
     if (roleKeys !== undefined && Array.isArray(roleKeys)) {
       updateData.roleKeys = roleKeys.length > 0 ? roleKeys : ['employee'];
@@ -350,14 +377,24 @@ apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.
       updateData.passwordHash = await bcrypt.hash(password, 10);
     }
     const updated = await User.findOneAndUpdate(
-      { _id: req.params.id } as any, 
-      updateData, 
+      { _id: req.params.id } as any,
+      updateData,
       { new: true } as any
     )
       .select('-passwordHash -authCode')
       .populate('departmentId', 'name')
       .populate('positionId', 'title grade')
       .populate('managerId', 'fullName email username');
+
+    const { auditService } = await import('./modules/core/audit.js');
+    await auditService.log({
+      actorId: (req as any).user._id,
+      action: 'USER_PROFILE_UPDATED',
+      entityType: 'User',
+      entityId: String(req.params.id),
+      before: targetBefore.toObject(),
+      after: updated?.toObject()
+    });
 
     res.json({ user: updated });
   } catch (err) {

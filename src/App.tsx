@@ -11,6 +11,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { AboutApp } from './components/AboutApp';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { MyDay } from './components/MyDay';
+import { PeopleDirectory } from './components/People';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
@@ -34,7 +35,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
-      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'signoff', 'profile', 'management', 'about', 'dashboard'].includes(saved)) {
+      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'people', 'signoff', 'profile', 'management', 'about', 'dashboard'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -77,6 +78,7 @@ function MainApp() {
   const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
   const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [analyticsFocusUserId, setAnalyticsFocusUserId] = useState<string | null>(null);
 
   // Global hotkey Ctrl+K / Cmd+K
   useEffect(() => {
@@ -542,6 +544,15 @@ function MainApp() {
           />
         )}
 
+        {currentTab === 'people' && (
+          <PeopleDirectory
+            onViewAnalytics={(userId) => {
+              setAnalyticsFocusUserId(userId);
+              setCurrentTab('dashboard');
+            }}
+          />
+        )}
+
         {currentTab === 'dashboard' && (
           <Dashboard
             progress={{
@@ -551,6 +562,7 @@ function MainApp() {
             sections={sections}
             courses={courses}
             currentUser={user}
+            initialSelectedUserId={analyticsFocusUserId}
           />
         )}
 

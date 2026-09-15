@@ -16,6 +16,11 @@ export interface User {
   departmentName?: string;
   positionId?: string;
   managerId?: string;
+  locationId?: string;
+  avatarUrl?: string;
+  phone?: string;
+  hireDate?: string;
+  isActive?: boolean;
   allowedCourseIds?: string[];
   allowedInstructionIds?: string[];
   requireEmailCode?: boolean;

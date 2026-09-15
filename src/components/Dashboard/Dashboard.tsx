@@ -15,13 +15,17 @@ interface DashboardProps {
   sections: InstructionSection[];
   courses?: any[];
   currentUser?: User | null;
+  // Set by the "Люди" directory when an admin jumps here to inspect one
+  // employee's full learning analytics (see App.tsx / EmployeeCard).
+  initialSelectedUserId?: string | null;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ 
-  progress, 
-  sections, 
-  courses = [], 
-  currentUser 
+export const Dashboard: React.FC<DashboardProps> = ({
+  progress,
+  sections,
+  courses = [],
+  currentUser,
+  initialSelectedUserId
 }) => {
   const isAdmin = Boolean(currentUser?.role === 'admin' || (currentUser?.roleKeys && currentUser.roleKeys.includes('admin')));
 
@@ -58,6 +62,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       fetchUsersList();
     }
   }, [isAdmin, fetchUsersList]);
+
+  useEffect(() => {
+    if (isAdmin && initialSelectedUserId) {
+      setSelectedUserId(initialSelectedUserId);
+      fetchSelectedUserProgress(initialSelectedUserId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, initialSelectedUserId]);
 
   // Fetch selected user's detailed progress
   const fetchSelectedUserProgress = useCallback(async (userId: string) => {

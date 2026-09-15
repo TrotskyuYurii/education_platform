@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
-export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'management' | 'dashboard' | 'about';
+export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'people' | 'signoff' | 'management' | 'dashboard' | 'about';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -149,6 +149,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Briefcase className="w-4 h-4" />
               <span>Кейси</span>
+            </button>
+
+            <button
+              id="tab-btn-people"
+              onClick={() => onSelectTab('people')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                currentTab === 'people'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Люди</span>
             </button>
 
             {canManage && (
@@ -400,6 +413,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Кейси
+          </button>
+          <button
+            id="mobile-tab-btn-people"
+            onClick={() => onSelectTab('people')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
+              currentTab === 'people' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Люди
           </button>
           {canManage && (
             <button

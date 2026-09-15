@@ -82,6 +82,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
   const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
@@ -139,6 +141,20 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       if (res.ok) setDepartments(data.departments);
     } catch (err) {}
   };
+  const fetchPositions = async () => {
+    try {
+      const res = await fetch('/api/v2/org/positions');
+      const data = await res.json();
+      if (res.ok) setPositions(Array.isArray(data) ? data : []);
+    } catch (err) {}
+  };
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch('/api/v2/org/locations');
+      const data = await res.json();
+      if (res.ok) setLocations(Array.isArray(data) ? data : []);
+    } catch (err) {}
+  };
 
   const fetchRoles = async () => {
     try {
@@ -160,6 +176,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   React.useEffect(() => {
     fetchDepartments();
+    fetchPositions();
+    fetchLocations();
     fetchRoles();
     fetchUsers();
     fetchAssignmentsCount();
@@ -297,6 +315,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           role: selectedUser.role,
           roleKeys: selectedUser.roleKeys || ['employee'],
           managerId: selectedUser.managerId,
+          positionId: selectedUser.positionId,
+          locationId: selectedUser.locationId,
+          hireDate: selectedUser.hireDate,
+          isActive: selectedUser.isActive,
           authMethod: selectedUser.authMethod,
           password: selectedUser.newPassword || undefined
         })
@@ -2540,6 +2562,59 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               </option>
                             ))}
                           </select>
+                        </div>
+                      </div>
+
+                      {/* Position, Location, Hire date, Active status — Крок 10 */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Посада</label>
+                          <select
+                            value={typeof selectedUser.positionId === 'object' ? (selectedUser.positionId?._id || '') : (selectedUser.positionId || '')}
+                            onChange={e => setSelectedUser({...selectedUser, positionId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Не обрано</option>
+                            {positions.map(p => (
+                              <option key={p._id} value={p._id}>{p.title}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Локація</label>
+                          <select
+                            value={typeof selectedUser.locationId === 'object' ? (selectedUser.locationId?._id || '') : (selectedUser.locationId || '')}
+                            onChange={e => setSelectedUser({...selectedUser, locationId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Не обрано</option>
+                            {locations.map(l => (
+                              <option key={l._id} value={l._id}>{l.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Дата найму</label>
+                          <input
+                            type="date"
+                            value={selectedUser.hireDate ? String(selectedUser.hireDate).slice(0, 10) : ''}
+                            onChange={e => setSelectedUser({...selectedUser, hireDate: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+
+                        <div className="flex items-end pb-2">
+                          <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedUser.isActive !== false}
+                              onChange={e => setSelectedUser({...selectedUser, isActive: e.target.checked})}
+                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            Активний співробітник
+                          </label>
                         </div>
                       </div>
 

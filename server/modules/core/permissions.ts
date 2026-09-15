@@ -163,6 +163,42 @@ export const scopeFilter = async (user: any, permission: string) => {
   }
 };
 
+// Same scope logic as scopeFilter, evaluated against a single already-loaded target
+// document instead of turned into a Mongo query. Used where the target is fetched
+// once and we need a plain boolean (e.g. deciding what to render/allow for it).
+export const isUserInScope = async (viewer: any, target: any, permission: string): Promise<boolean> => {
+  const roleKeys = resolveUserRoleKeys(viewer);
+  if (viewer.role === 'admin' || roleKeys.includes('admin')) return true;
+  if (String(viewer._id) === String(target._id)) return true;
+
+  const roles = await Role.find({ key: { $in: roleKeys } });
+  const scopes: PermissionScope[] = ['self', 'team', 'department', 'all'];
+  let maxScopeIdx = -1;
+  for (const r of roles) {
+    for (const p of r.permissions || []) {
+      if (p.permission === permission) {
+        const idx = scopes.indexOf(p.scope as PermissionScope);
+        if (idx > maxScopeIdx) maxScopeIdx = idx;
+      }
+    }
+  }
+  if (maxScopeIdx === -1) return false;
+  const maxScope = scopes[maxScopeIdx];
+
+  switch (maxScope) {
+    case 'all':
+      return true;
+    case 'department':
+      return Boolean(viewer.departmentId) && String(viewer.departmentId) === String(target.departmentId);
+    case 'team':
+      return Boolean(target.managerId) && String(target.managerId) === String(viewer._id);
+    case 'self':
+      return false; // already covered by the self-check above
+    default:
+      return false;
+  }
+};
+
 export const getProgressScopeFilter = async (user: any, permission: string) => {
   const userFilter = await scopeFilter(user, permission);
   
