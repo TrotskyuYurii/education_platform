@@ -82,6 +82,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
   const availableDepartments = React.useMemo(() => {
@@ -147,10 +148,21 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     } catch (err) {}
   };
 
+  const fetchAssignmentsCount = async () => {
+    try {
+      const res = await fetch('/api/progress-v2/admin/assignments');
+      const data = await res.json();
+      if (res.ok && data?.stats) {
+        setAssignmentsCount(data.stats.total ?? (Array.isArray(data.assignments) ? data.assignments.length : 0));
+      }
+    } catch (err) {}
+  };
+
   React.useEffect(() => {
     fetchDepartments();
     fetchRoles();
     fetchUsers();
+    fetchAssignmentsCount();
   }, []);
   const handleDeleteInstruction = async (id: string) => {
     if (!id) return;
@@ -780,8 +792,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       <CalendarClock className="w-4 h-4 text-blue-600" />
                       <span>Призначення</span>
                     </div>
-                    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-blue-200 text-blue-800">
-                      Крок 7
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'assignments' 
+                        ? 'bg-blue-200/80 text-blue-900' 
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {assignmentsCount !== null ? assignmentsCount : '—'}
                     </span>
                   </button>
 

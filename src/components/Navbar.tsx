@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
-export type AppTab = 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'management' | 'dashboard' | 'about';
+export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'signoff' | 'management' | 'dashboard' | 'about';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           {/* Logo & Meta */}
           <div 
-            onClick={() => onSelectTab('catalog')}
+            onClick={() => onSelectTab('myday')}
             className="flex items-center gap-3 cursor-pointer select-none group"
             id="nav-logo"
           >
@@ -87,6 +87,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Navigation Tabs */}
           <nav className="hidden md:flex items-center gap-1.5" id="nav-tabs">
+            <button
+              id="tab-btn-myday"
+              onClick={() => onSelectTab('myday')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                currentTab === 'myday'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span>Мій день</span>
+            </button>
+
             <button
               id="tab-btn-manual"
               onClick={() => onSelectTab('catalog')}
@@ -354,6 +367,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Mobile Navigation Bar */}
         <div className="flex md:hidden items-center overflow-x-auto border-t border-slate-100 py-1.5 gap-1.5 no-scrollbar">
+          <button
+            id="mobile-tab-btn-myday"
+            onClick={() => onSelectTab('myday')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
+              currentTab === 'myday' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            <Sun className="w-3.5 h-3.5 text-amber-400" />
+            <span>Мій день</span>
+          </button>
           <button
             onClick={() => onSelectTab('catalog')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${

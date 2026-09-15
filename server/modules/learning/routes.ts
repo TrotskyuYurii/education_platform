@@ -145,6 +145,38 @@ progressV2Router.get('/assignments', async (req: Request, res: Response) => {
   }
 });
 
+// 9.1 Current user: get My Day aggregated summary (Крок 9. Головна сторінка «Мій день»)
+progressV2Router.get('/my-day', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const assignments = await ProgressService.getUserAssignments(user._id);
+    const progress = await ProgressService.getUserProgress(user._id);
+
+    const pendingCount = assignments.filter((a: any) => a.status !== 'completed').length;
+    const overdueCount = assignments.filter((a: any) => a.status === 'overdue' || (a.status !== 'completed' && (a.daysRemaining || 0) < 0)).length;
+    const completedCount = assignments.filter((a: any) => a.status === 'completed').length;
+
+    res.json({
+      assignments,
+      summary: {
+        totalAssignments: assignments.length,
+        pendingAssignments: pendingCount,
+        overdueAssignments: overdueCount,
+        completedAssignments: completedCount,
+        isSigned: !!progress?.employeeInfo?.isSigned,
+        bestScore: progress?.bestScore || 0,
+        readCount: progress?.readSectionIds?.length || 0,
+        certificatesCount: progress?.certificates?.length || 0
+      }
+    });
+  } catch (err: any) {
+    console.error('Failed to get My Day summary', err);
+    res.status(500).json({ error: 'Помилка отримання зведення Мій день' });
+  }
+});
+
 // 10. Admin / Manager: get assignments report (with RBAC scoping)
 progressV2Router.get('/admin/assignments', requirePermission('learning.assignment.view'), async (req: Request, res: Response) => {
   try {

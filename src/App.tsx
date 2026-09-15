@@ -10,6 +10,7 @@ import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
 import { AboutApp } from './components/AboutApp';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
+import { MyDay } from './components/MyDay';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
@@ -29,15 +30,15 @@ export default function App() {
 }
 
 function MainApp() {
-  const { user, logout } = useAuth();
+  const { user, logout, canManage, primaryRoleLabel } = useAuth();
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
-      if (saved && ['catalog', 'manual', 'quiz', 'cases', 'signoff', 'profile', 'management', 'about'].includes(saved)) {
+      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'signoff', 'profile', 'management', 'about', 'dashboard'].includes(saved)) {
         return saved;
       }
     } catch {}
-    return 'catalog';
+    return 'myday';
   });
 
   useEffect(() => {
@@ -412,6 +413,48 @@ function MainApp() {
       />
 
       <main className="grow">
+        {currentTab === 'myday' && (
+          <MyDay
+            user={user}
+            progress={{
+              ...progress,
+              readSectionIds: validReadSectionIds
+            }}
+            sections={sections}
+            courses={courses}
+            cases={cases}
+            spaces={spaces}
+            onOpenCourse={handleOpenCourse}
+            onOpenInstruction={(secId, courseId) => {
+              if (courseId) setActiveCourseId(courseId);
+              setSelectedSectionId(secId);
+              setCurrentTab('manual');
+            }}
+            onStartQuiz={(type, id) => handleStartQuiz(type, id)}
+            onStartCases={(casesToRun) => {
+              const toRun = casesToRun || cases.filter(c => c.isActive !== false);
+              setActiveCasesToRun(toRun);
+              setCaseSimulatorMode('list');
+              setCurrentTab('cases');
+            }}
+            onNavigateToTab={(tab) => {
+              if (tab === 'quiz') {
+                setActiveQuizSectionId(undefined);
+                setActiveQuizCourseId(undefined);
+              }
+              if (tab === 'cases') {
+                setActiveCasesToRun(cases.filter(c => c.isActive !== false));
+                setCaseSimulatorMode('list');
+              }
+              setCurrentTab(tab);
+            }}
+            onOpenSearch={() => setIsSearchOpen(true)}
+            onDismissNotification={dismissNotification}
+            primaryRoleLabel={primaryRoleLabel}
+            canManage={canManage}
+          />
+        )}
+
         {currentTab === 'catalog' && (
           <CourseCatalog
             certificates={progress.certificates || []}

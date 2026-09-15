@@ -13,6 +13,7 @@ export interface User {
   isAdmin?: boolean;
   departments: string[];
   departmentId?: string;
+  departmentName?: string;
   positionId?: string;
   managerId?: string;
   allowedCourseIds?: string[];

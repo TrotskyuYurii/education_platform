@@ -366,9 +366,6 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
             <h2 className="text-xl font-extrabold text-slate-900">
               Рушій обов'язкових призначень та дедлайнів
             </h2>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-              Крок 7
-            </span>
           </div>
           <p className="text-sm text-slate-500">
             Керування обов'язковими курсами, контроль строків виконання, своєчасні нагадування та аналіз дотримання дедлайнів.

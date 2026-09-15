@@ -238,6 +238,18 @@ apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
     const { getUserEffectivePermissions } = await import('./modules/core/permissions.js');
     const userPerms = await getUserEffectivePermissions(req.user);
     
+    let departmentName = '';
+    if (req.user.departmentId) {
+      try {
+        const dep = await Department.findById(req.user.departmentId);
+        if (dep?.name) departmentName = dep.name;
+      } catch {}
+    }
+    if (!departmentName && Array.isArray(req.user.departments) && req.user.departments.length > 0) {
+      const found = req.user.departments.find((d: string) => d && d !== 'Всі підрозділи') || req.user.departments[0];
+      if (found && !/^[0-9a-fA-F]{24}$/.test(found)) departmentName = found;
+    }
+
     res.json({ 
       user: { 
         id: req.user._id, 
@@ -250,6 +262,7 @@ apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
         isAdmin: userPerms.isAdmin,
         departments: req.user.departments, 
         departmentId: req.user.departmentId,
+        departmentName,
         positionId: req.user.positionId,
         managerId: req.user.managerId,
         allowedInstructionIds: req.user.allowedInstructionIds,
