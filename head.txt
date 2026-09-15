@@ -1,0 +1,250 @@
+import { OrganizationSettings } from './Admin/OrganizationSettings';
+import React, { useState, useRef } from 'react';
+import { InstructionSection, QuizQuestion } from '../types';
+import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+import { MarkdownEditor } from './MarkdownEditor';
+import { 
+  Download, 
+  Upload, 
+  FileText, 
+  HelpCircle, 
+  Settings2, 
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  FileDown,
+  List,
+  Trash2,
+  Users,
+  Copy,
+  Check,
+  Sparkles,
+  BookOpen,
+  Edit2,
+  Briefcase,
+  ChevronDown,
+  Building2,
+  X,
+  Eye,
+  EyeOff,
+  Search
+} from 'lucide-react';
+
+interface TestManagementProps {
+  sections: InstructionSection[];
+  questions: QuizQuestion[];
+  courses: any[];
+  cases: any[];
+  onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
+  onReset: () => void;
+  isSetupMode?: boolean;
+  onRefresh?: () => Promise<void>;
+}
+
+type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'organization';
+
+export const TestManagement: React.FC<TestManagementProps> = ({
+  sections,
+  questions,
+  courses,
+  cases,
+  onImport,
+  onReset,
+  isSetupMode,
+  onRefresh
+}) => {
+  const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
+  const [showExportPanel, setShowExportPanel] = useState<boolean>(false);
+  const [exportSuccess, setExportSuccess] = useState<boolean>(false);
+
+  const [activeTab, setActiveTab] = useState<MgmtTab>(() => {
+    if (isSetupMode) return 'users';
+    try {
+      const saved = localStorage.getItem('viatec_mgmt_tab') as MgmtTab;
+      if (saved === 'import' || saved === 'export') {
+        return 'list';
+      }
+      if (saved && ['list', 'courses', 'cases', 'help', 'users', 'organization'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'list';
+  });
+
+  React.useEffect(() => {
+    if (!isSetupMode) {
+      try {
+        localStorage.setItem('viatec_mgmt_tab', activeTab);
+      } catch {}
+    }
+  }, [activeTab, isSetupMode]);
+
+  React.useEffect(() => {
+    if (activeTab === 'import') {
+      setActiveTab('list');
+      setShowImportPanel(true);
+    } else if (activeTab === 'export') {
+      setActiveTab('list');
+      setShowExportPanel(true);
+    }
+  }, [activeTab]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const aiFileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
+
+  const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
+  const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
+  const [exportMenuInstId, setExportMenuInstId] = useState<string | null>(null);
+
+  const handleSaveMarkdown = async (md: string) => {
+    try {
+      const { sections: newSections, questions: newQuestions } = parseMarkdown(md);
+      if (newSections.length === 0) {
+        alert('Помилка: не знайдено жодної інструкції в Markdown.');
+        return;
+      }
+      const newSection = newSections[0];
+      // Keep the original ID
+      newSection.id = editingMarkdownInstId!;
+      
+      const res = await fetch(`/api/admin/instructions/${editingMarkdownInstId}/full`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedUser.email,
+          departments: selectedUser.departments,
+          departmentId: selectedUser.departmentId,
+          allowedInstructionIds: selectedUser.allowedInstructionIds,
+          role: selectedUser.role,
+          roleKeys: selectedUser.roleKeys || ['employee'],
+          managerId: selectedUser.managerId,
+          authMethod: selectedUser.authMethod,
+          password: selectedUser.newPassword || undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error);
+        return;
+      }
+      setSelectedUser(null);
+      fetchUsers();
+    } catch (err) {
+      alert('Помилка оновлення користувача');
+    }
+  };
+
+  const handleCreateDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetch('/api/admin/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newDepartment })
+      });
+      setNewDepartment('');
+      fetchDepartments();
+    } catch (err) {}
+  };
+
+  const handleDeleteDepartment = async (id: string) => {
+    setIsDeletingDep(true);
+    try {
+      const res = await fetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingDepId(null);
+        fetchDepartments();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Не вдалося видалити підрозділ');
+      }
+    } catch (err) {
+      console.error('Failed to delete department:', err);
+      alert('Помилка при видаленні підрозділу');
+    } finally {
+      setIsDeletingDep(false);
+    }
+  };
+
+  const groupedCourses = React.useMemo(() => {
+    // Return sections since we are listing instructions
+    return sections.map(sec => {
+      const qCount = questions.filter(q => q.sectionId === sec.id).length;
+      return {
+        id: sec.id,
+        title: sec.title,
+        department: sec.department || 'Загальний',
+        isActive: sec.isActive !== undefined ? sec.isActive : true,
+        questionCount: qCount
+      };
+    });
+  }, [sections, questions]);
+
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([TEMPLATE_MD], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'template_quiz_instructions.md';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(AI_PROMPT_GUIDE);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 3000);
+    } catch (err) {
+      const textArea = document.createElement('textarea');
+      textArea.value = AI_PROMPT_GUIDE;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 3000);
+    }
+  };
+
+  const handleDownloadPrompt = () => {
+    const blob = new Blob([AI_PROMPT_GUIDE], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'ai_prompt_instruction_format.txt';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportInstMD = (instId: string, title: string) => {
+    const sec = sections.find(s => s.id === instId);
+    if (!sec) return;
+    const secQs = questions.filter(q => q.sectionId === instId);
+    const md = exportToMarkdown(title, [sec], secQs);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title.replace(/[\/\\]/g, '_')}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportInstPDF = (instId: string) => {
+    const sec = sections.find(s => s.id === instId);
+    if (!sec) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Будь ласка, дозвольте спливаючі вікна для цього сайту, щоб згенерувати PDF.');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>

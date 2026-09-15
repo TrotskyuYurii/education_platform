@@ -12,18 +12,54 @@ const userSchema = new mongoose.Schema({
   },
   passwordHash: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  roleKeys: { type: [String], default: ['employee'] },
   departments: { type: [String], default: ['Всі підрозділи'] },
   allowedInstructionIds: { type: [String], default: [] }, // Changed from allowedCourseIds
   authMethod: { type: String, enum: ['password', 'otp'], default: 'password' },
   requireEmailCode: { type: Boolean, default: true },
   authCode: { type: String, default: null },
   authCodeExpires: { type: Date, default: null },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  fullName: { type: String },
+  avatarUrl: { type: String },
+  phone: { type: String },
+  positionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Position' },
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
+    hireDate: { type: Date },
+  isActive: { type: Boolean, default: true },
+  customFields: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} }
 });
 
 const departmentSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
-  createdAt: { type: Date, default: Date.now }
+  code: { type: String },
+  parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  headUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isActive: { type: Boolean, default: true },
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const positionSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  grade: { type: String },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const locationSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  city: { type: String },
+  country: { type: String },
+  timezone: { type: String },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 const courseSchema = new mongoose.Schema({
@@ -103,6 +139,19 @@ const questionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+
+const roleSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  title: { type: String, required: true },
+  description: { type: String },
+  permissions: [{
+    permission: { type: String, required: true },
+    scope: { type: String, enum: ['self', 'team', 'department', 'all'], required: true }
+  }],
+  isSystem: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const progressSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   readSectionIds: [String],
@@ -143,5 +192,9 @@ export const Section = mongoose.models.Section || mongoose.model('Section', sect
 export const Question = mongoose.models.Question || mongoose.model('Question', questionSchema);
 export const Progress = mongoose.models.Progress || mongoose.model('Progress', progressSchema);
 export const Department = mongoose.models.Department || mongoose.model('Department', departmentSchema);
+export const Position = mongoose.models.Position || mongoose.model('Position', positionSchema);
+export const Location = mongoose.models.Location || mongoose.model('Location', locationSchema);
 export const Course = mongoose.models.Course || mongoose.model('Course', courseSchema);
 export const Case = mongoose.models.Case || mongoose.model('Case', caseSchema);
+
+export const Role = mongoose.models.Role || mongoose.model('Role', roleSchema);

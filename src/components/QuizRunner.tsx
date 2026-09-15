@@ -427,7 +427,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
             {/* Options List */}
             <div className="mt-6 space-y-3">
-              {currentQ.options.map((option, optIdx) => {
+              {(currentQ.options || []).map((option, optIdx) => {
                 const isSelected = currentSelectedOption === optIdx;
                 const isCorrectOpt = currentQ.correctIndex === optIdx;
 

@@ -270,7 +270,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                   Стоп-правила (Заборонено!)
                 </h4>
                 <ul className="space-y-2 text-rose-900 text-sm">
-                  {activeSection.stopRules.map((rule, idx) => (
+                  {(activeSection.stopRules || []).map((rule, idx) => (
                     <li key={idx} className="flex items-start gap-2.5">
                       <span className="text-rose-600 font-bold mt-0.5">✕</span>
                       <span className="font-medium leading-relaxed">{rule}</span>
@@ -288,7 +288,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                   Що система робить автоматично
                 </h4>
                 <ul className="space-y-2 text-emerald-900 text-sm">
-                  {activeSection.systemAutomaticActions.map((act, i) => (
+                  {(activeSection.systemAutomaticActions || []).map((act, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="text-emerald-600 font-bold mt-0.5">✓</span>
                       <span className="font-medium leading-relaxed">{act}</span>

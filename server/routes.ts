@@ -11,7 +11,9 @@ import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 
 const upload = multer({ dest: 'uploads/' });
 
+import { orgRouter } from './modules/org/routes.js';
 export const apiRouter = Router();
+
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key';
 
@@ -32,12 +34,18 @@ const requireAuth = async (req: any, res: any, next: any) => {
   }
 };
 
-const requireAdmin = (req: any, res: any, next: any) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
-  }
-  next();
-};
+
+import { requirePermission } from './modules/core/permissions.js';
+import { Role } from './models.js';
+import { rolesRouter } from './modules/roles/routes.js';
+
+// Temporarily map old requireAdmin to new permission system for backward compatibility
+const requireAdmin = requirePermission('admin.access');
+
+// --- Mount V2 Routers ---
+apiRouter.use('/v2/org', requireAuth, orgRouter);
+apiRouter.use('/v2/roles', requireAuth, rolesRouter);
+apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
 apiRouter.post('/auth/login', async (req, res) => {
@@ -212,29 +220,61 @@ apiRouter.post('/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-apiRouter.get('/auth/me', requireAuth, (req: any, res) => {
-  res.json({ 
-    user: { 
-      id: req.user._id, 
-      email: req.user.email,
-      username: req.user.username || req.user.email, 
-      role: req.user.role, 
-      departments: req.user.departments, 
-      allowedInstructionIds: req.user.allowedInstructionIds,
-      requireEmailCode: req.user.requireEmailCode 
-    } 
-  });
+apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
+  try {
+    const { getUserEffectivePermissions } = await import('./modules/core/permissions.js');
+    const userPerms = await getUserEffectivePermissions(req.user);
+    
+    res.json({ 
+      user: { 
+        id: req.user._id, 
+        email: req.user.email,
+        username: req.user.username || req.user.email, 
+        fullName: req.user.fullName || '',
+        role: req.user.role, 
+        roleKeys: userPerms.roleKeys,
+        permissions: userPerms.permissions,
+        isAdmin: userPerms.isAdmin,
+        departments: req.user.departments, 
+        departmentId: req.user.departmentId,
+        positionId: req.user.positionId,
+        managerId: req.user.managerId,
+        allowedInstructionIds: req.user.allowedInstructionIds,
+        requireEmailCode: req.user.requireEmailCode 
+      } 
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Помилка отримання профілю' });
+  }
 });
 
 // --- ADMIN ROUTES ---
-apiRouter.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
-  const users = await User.find().select('-passwordHash -authCode');
-  res.json({ users });
+
+apiRouter.get('/admin/users', requireAuth, requirePermission('users.profile.view'), async (req, res) => {
+  try {
+    const { scopeFilter } = await import('./modules/core/permissions.js');
+    const filter = await scopeFilter((req as any).user, 'users.profile.view');
+    
+    // If _id is null, it means no access
+    if (filter._id === null) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const users = await User.find(filter)
+      .select('-passwordHash -authCode')
+      .populate('departmentId', 'name')
+      .populate('positionId', 'title grade')
+      .populate('managerId', 'fullName email username')
+      .sort({ createdAt: -1 });
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: 'Помилка сервера' });
+  }
 });
 
-apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.edit'), async (req, res) => {
   try {
-    const { departments, allowedInstructionIds, role, email, password, authMethod } = req.body;
+    const { departments, departmentId, positionId, managerId, allowedInstructionIds, role, roleKeys, fullName, email, password, authMethod } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
@@ -249,10 +289,37 @@ apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
       email: normalizedEmail,
       username: normalizedEmail
     };
-    if (departments !== undefined) updateData.departments = departments;
+    if (fullName !== undefined) updateData.fullName = fullName.trim();
     if (allowedInstructionIds !== undefined) updateData.allowedInstructionIds = allowedInstructionIds;
-    if (role !== undefined) updateData.role = role;
     if (authMethod !== undefined) updateData.authMethod = authMethod;
+
+    if (roleKeys !== undefined && Array.isArray(roleKeys)) {
+      updateData.roleKeys = roleKeys.length > 0 ? roleKeys : ['employee'];
+      updateData.role = updateData.roleKeys.includes('admin') ? 'admin' : (role || 'user');
+    } else if (role !== undefined) {
+      updateData.role = role;
+      if (role === 'admin') {
+        updateData.roleKeys = ['admin'];
+      }
+    }
+
+    if (departmentId !== undefined) {
+      updateData.departmentId = departmentId || null;
+      if (departmentId) {
+        const dep = await Department.findById(departmentId);
+        if (dep) updateData.departments = [dep.name];
+      }
+    } else if (departments !== undefined) {
+      updateData.departments = departments;
+      if (departments.length > 0) {
+        const dep = await Department.findOne({ name: departments[0] });
+        if (dep) updateData.departmentId = dep._id;
+      }
+    }
+
+    if (positionId !== undefined) updateData.positionId = positionId || null;
+    if (managerId !== undefined) updateData.managerId = managerId || null;
+
     if (password && password.trim()) {
       updateData.passwordHash = await bcrypt.hash(password, 10);
     }
@@ -260,7 +327,12 @@ apiRouter.put('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
       { _id: req.params.id } as any, 
       updateData, 
       { new: true } as any
-    ).select('-passwordHash -authCode');
+    )
+      .select('-passwordHash -authCode')
+      .populate('departmentId', 'name')
+      .populate('positionId', 'title grade')
+      .populate('managerId', 'fullName email username');
+
     res.json({ user: updated });
   } catch (err) {
     res.status(500).json({ error: 'Не вдалося оновити дані користувача' });
@@ -295,9 +367,9 @@ apiRouter.delete('/admin/departments/:id', requireAuth, requireAdmin, async (req
   }
 });
 
-apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edit'), async (req, res) => {
   try {
-    const { email, password, role, departments, allowedInstructionIds, authMethod } = req.body;
+    const { email, password, role, roleKeys, fullName, departmentId, departments, positionId, managerId, allowedInstructionIds, authMethod } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
@@ -312,12 +384,35 @@ apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Користувач з таким email вже існує' });
 
     const passwordHash = await bcrypt.hash(password, 10);
+
+    let resolvedRoleKeys: string[] = Array.isArray(roleKeys) && roleKeys.length > 0 ? roleKeys : ['employee'];
+    if (role === 'admin' && !resolvedRoleKeys.includes('admin')) {
+      resolvedRoleKeys.push('admin');
+    }
+    const resolvedRole = resolvedRoleKeys.includes('admin') ? 'admin' : (role || 'user');
+
+    let resolvedDeptNames: string[] = ['Всі підрозділи'];
+    let resolvedDeptId = departmentId || null;
+    if (resolvedDeptId) {
+      const dep = await Department.findById(resolvedDeptId);
+      if (dep) resolvedDeptNames = [dep.name];
+    } else if (departments && Array.isArray(departments) && departments.length > 0) {
+      resolvedDeptNames = departments;
+      const dep = await Department.findOne({ name: departments[0] });
+      if (dep) resolvedDeptId = dep._id;
+    }
+
     const newUser = await User.create({ 
       username: normalizedEmail, 
       email: normalizedEmail, 
+      fullName: fullName?.trim() || '',
       passwordHash, 
-      role: role || 'user',
-      departments: departments || ['Всі підрозділи'],
+      role: resolvedRole,
+      roleKeys: resolvedRoleKeys,
+      departmentId: resolvedDeptId,
+      departments: resolvedDeptNames,
+      positionId: positionId || null,
+      managerId: managerId || null,
       allowedInstructionIds: allowedInstructionIds || [],
       authMethod: authMethod || 'password'
     } as any);
@@ -336,7 +431,10 @@ apiRouter.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         id: newUser._id, 
         email: newUser.email,
         username: newUser.username, 
+        fullName: newUser.fullName,
         role: newUser.role,
+        roleKeys: newUser.roleKeys,
+        departments: newUser.departments,
         authMethod: newUser.authMethod 
       } 
     });
@@ -414,10 +512,10 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     }
 
     // Now wait for the file to be processed
-    let fileState = await ai.files.get({ name: fileResult.name });
+    let fileState = await ai.files.get({ name: fileResult.name! });
     while (fileState.state === 'PROCESSING') {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      fileState = await ai.files.get({ name: fileResult.name });
+      fileState = await ai.files.get({ name: fileResult.name! });
     }
     
     if (fileState.state === 'FAILED') {
@@ -515,7 +613,7 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     
     // Optional: Clean up the file from Gemini storage
     try {
-      await ai.files.delete({ name: fileResult.name });
+      await ai.files.delete({ name: fileResult.name! });
     } catch (e) {
       console.error('Failed to delete file from Gemini', e);
     }
@@ -872,14 +970,20 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
   }
 });
 
-// Admin: Get summary of all users and their progress stats
-apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, res) => {
+// Admin/Manager/HR: Get summary of users and progress stats according to scope
+apiRouter.get('/admin/users-progress', requireAuth, requirePermission('analytics.report.view'), async (req, res) => {
   try {
+    const { scopeFilter } = await import('./modules/core/permissions.js');
+    const userFilter = await scopeFilter((req as any).user, 'analytics.report.view');
+    if (userFilter._id === null) {
+      return res.json({ users: [] });
+    }
+
     const currentSections = await Section.find({} as any, { id: 1 } as any);
     const validSectionIds = new Set(currentSections.map(s => s.id));
     const totalSectionsCount = currentSections.length;
 
-    const users = await User.find().select('-passwordHash -authCode').sort({ createdAt: -1 });
+    const users = await User.find(userFilter).select('-passwordHash -authCode').sort({ createdAt: -1 });
     const userIds = users.map(u => u._id);
     const progressList = await Progress.find({ userId: { $in: userIds } } as any);
     const progressMap = new Map();
@@ -902,7 +1006,9 @@ apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, re
         id: u._id.toString(),
         email: u.email || u.username,
         username: u.username,
+        fullName: u.fullName,
         role: u.role,
+        roleKeys: u.roleKeys || [],
         departments: u.departments || [],
         allowedInstructionIds: u.allowedInstructionIds || [],
         createdAt: u.createdAt,
@@ -926,8 +1032,8 @@ apiRouter.get('/admin/users-progress', requireAuth, requireAdmin, async (req, re
 });
 
 
-// Admin: Delete a user's certificate
-apiRouter.delete('/admin/progress/:userId/certificate/:courseId', requireAuth, requireAdmin, async (req, res) => {
+// Delete/Revoke a user's certificate
+apiRouter.delete('/admin/progress/:userId/certificate/:courseId', requireAuth, requirePermission('certificate.revoke'), async (req, res) => {
   try {
     const { userId, courseId } = req.params;
     let progress = await Progress.findOne({ userId } as any);

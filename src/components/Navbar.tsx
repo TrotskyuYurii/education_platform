@@ -22,7 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   bestScore,
   isSigned,
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, canManage, primaryRoleLabel } = useAuth();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const clampedReadCount = Math.max(0, Math.min(readCount, totalSections));
@@ -149,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Про додаток</span>
             </button>
 
-            {user?.role === 'admin' && (
+            {canManage && (
               <button
                 id="tab-btn-management"
                 onClick={() => onSelectTab('management')}
@@ -158,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                     : 'text-purple-700 bg-purple-50/70 border-purple-200 hover:bg-purple-100'
                 }`}
-                title="Адміністрування: імпорт та керування навчальними матеріалами"
+                title="Адміністрування: матеріали, користувачі, оргструктура та ролі"
               >
                 <Settings2 className="w-4 h-4" />
                 <span>Адміністрування</span>
@@ -234,9 +234,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5 mt-2">
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        user?.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                        user?.role === 'admin' || user?.isAdmin || user?.roleKeys?.includes('admin') ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                       }`}>
-                        {user?.role === 'admin' ? 'Адміністратор' : 'Співробітник'}
+                        {primaryRoleLabel || (user?.role === 'admin' ? 'Адміністратор' : 'Співробітник')}
                       </span>
                       {isSigned ? (
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
@@ -359,7 +359,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             Про додаток
           </button>
-          {user?.role === 'admin' && (
+          {canManage && (
             <button
               onClick={() => onSelectTab('management')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${

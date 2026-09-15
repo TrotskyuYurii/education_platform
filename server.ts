@@ -4,6 +4,8 @@ import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
 import { connectDB } from './server/db.js';
 import { apiRouter } from './server/routes.js';
+import { errorHandler } from './server/modules/core/errors.js';
+import { FeatureFlag } from './server/modules/core/models.js';
 
 async function startServer() {
   const app = express();
@@ -22,12 +24,32 @@ async function startServer() {
     res.json({ status: 'ok', dbConnected: isDbConnected });
   });
 
+  // Feature flags endpoint
+  app.get('/api/core/features', async (req, res) => {
+    try {
+      if (!isDbConnected) {
+        return res.json({ flags: {} });
+      }
+      const flags = await FeatureFlag.find({});
+      const flagsMap = flags.reduce((acc: any, flag) => {
+        acc[flag.key] = flag.enabled;
+        return acc;
+      }, {});
+      res.json({ flags: flagsMap });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch features' });
+    }
+  });
+
   app.use('/api', (req, res, next) => {
     if (!isDbConnected) {
       return res.status(503).json({ error: 'Database not configured. Please set MONGODB_URI.' });
     }
     next();
   }, apiRouter);
+
+  // Global Error Handler for API
+  app.use('/api', errorHandler);
 
   // Vite Integration
   if (process.env.NODE_ENV !== 'production') {

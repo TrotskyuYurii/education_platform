@@ -1,5 +1,32 @@
 export type RoleFilter = 'all' | 'cashier' | 'manager' | 'accountant';
 
+export type PermissionScope = 'self' | 'team' | 'department' | 'all';
+
+export interface PermissionItem {
+  permission: string;
+  scope: PermissionScope;
+}
+
+export interface Role {
+  _id?: string;
+  key: string;
+  title: string;
+  description?: string;
+  permissions: PermissionItem[];
+  isSystem?: boolean;
+  userCount?: number;
+  createdAt?: string;
+}
+
+export interface PermissionDefinition {
+  code: string;
+  name: string;
+  category: 'system' | 'users' | 'knowledge' | 'learning' | 'analytics' | 'certificates';
+  categoryLabel: string;
+  description: string;
+  allowedScopes: PermissionScope[];
+}
+
 export interface Course {
   id: string;
   title: string;

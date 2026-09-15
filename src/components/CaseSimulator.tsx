@@ -162,7 +162,7 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
           </h4>
 
           <div className="space-y-3">
-            {currentCase.options.map((opt) => {
+            {(currentCase.options || []).map((opt) => {
               const isSelected = selectedOptionId === opt.id;
 
               let style = 'border-slate-200 hover:border-blue-400 bg-white text-slate-800';

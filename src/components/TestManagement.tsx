@@ -1,3 +1,5 @@
+import { OrganizationSettings } from './Admin/OrganizationSettings';
+import { RoleSettings } from './Admin/RoleSettings';
 import React, { useState, useRef } from 'react';
 import { InstructionSection, QuizQuestion } from '../types';
 import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
@@ -23,6 +25,7 @@ import {
   Briefcase,
   ChevronDown,
   Building2,
+  ShieldCheck,
   X,
   Eye,
   EyeOff,
@@ -40,7 +43,7 @@ interface TestManagementProps {
   onRefresh?: () => Promise<void>;
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'departments';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
@@ -52,7 +55,80 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   isSetupMode,
   onRefresh
 }) => {
-  const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
+  
+  
+  const [newCourse, setNewCourse] = useState<any>({ title: '', department: '', instructionIds: [] });
+  const [editingCourse, setEditingCourse] = useState<any>(null);
+  const [createCourseInstFilter, setCreateCourseInstFilter] = useState('');
+        const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [isDeletingCourse, setIsDeletingCourse] = useState(false);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+
+  const handleDeleteCourse = async (id: string) => { setIsDeletingCourse(true); try { await fetch('/api/admin/courses/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingCourse(false); setDeletingCourseId(null); } };
+  
+
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [editingCourseDep, setEditingCourseDep] = useState<string>('');
+  const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
+  const [deletingInstId, setDeletingInstId] = useState<string | null>(null);
+  const [isDeletingInst, setIsDeletingInst] = useState(false);
+  const [newDepartment, setNewDepartment] = useState('');
+  const [isDeletingDep, setIsDeletingDep] = useState(false);
+  const [deletingDepId, setDeletingDepId] = useState<string | null>(null);
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('/api/admin/users');
+      const data = await res.json();
+      if (res.ok) setUsers(data.users);
+    } catch (err) {}
+  };
+  const fetchDepartments = async () => {
+    try {
+      const res = await fetch('/api/admin/departments');
+      const data = await res.json();
+      if (res.ok) setDepartments(data.departments);
+    } catch (err) {}
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch('/api/admin/roles');
+      const data = await res.json();
+      if (res.ok) setRoles(data.roles || []);
+    } catch (err) {}
+  };
+
+  React.useEffect(() => {
+    fetchDepartments();
+    fetchRoles();
+    fetchUsers();
+  }, []);
+  const handleDeleteInstruction = async (id: string) => { setIsDeletingInst(true); try { await fetch('/api/admin/instructions/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingInst(false); setDeletingInstId(null); } };
+
+
+      
+  const [createCourseInstSearch, setCreateCourseInstSearch] = useState('');
+  const [editCourseInstFilter, setEditCourseInstFilter] = useState('');
+  const [editCourseInstSearch, setEditCourseInstSearch] = useState('');
+const [users, setUsers] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [roles, setRoles] = useState<any[]>([]);
+  const [newUser, setNewUser] = useState<any>({ email: '', username: '', password: '', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
+  const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
+  const [editingCase, setEditingCase] = useState<any>(null);
+   // dummy if missing
+  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
+  const [isDeletingCase, setIsDeletingCase] = useState(false);
+
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [helpSubTab, setHelpSubTab] = useState('formatting');
+
+const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const [showExportPanel, setShowExportPanel] = useState<boolean>(false);
   const [exportSuccess, setExportSuccess] = useState<boolean>(false);
 
@@ -63,7 +139,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'help', 'users', 'departments'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'help', 'users', 'organization'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -114,186 +190,19 @@ export const TestManagement: React.FC<TestManagementProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: newSection, questions: newQuestions })
       });
-      
-      if (res.ok) {
-        setEditingMarkdownInstId(null);
-        setEditingMarkdownContent('');
-        if (onRefresh) await onRefresh();
-      } else {
-        alert('Помилка сервера при збереженні інструкції.');
-      }
-    } catch (err) {
-      alert('Помилка при збереженні Markdown. Перевірте синтаксис.');
-      console.error(err);
-    }
-  };
-
-  const [newUser, setNewUser] = useState({ 
-    email: '', 
-    password: '', 
-    authMethod: 'password', 
-    role: isSetupMode ? 'admin' : 'user' 
-  });
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showEditPassword, setShowEditPassword] = useState(false);
-  const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
-  
-  const [users, setUsers] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [newDepartment, setNewDepartment] = useState('');
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [helpSubTab, setHelpSubTab] = useState<'prompt' | 'spec' | 'template'>('prompt');
-  
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
-  const [editingCourseDep, setEditingCourseDep] = useState<string>('');
-  const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
-  const [newCourse, setNewCourse] = useState({ title: '', department: '', instructionIds: [] as string[], caseIds: [] as string[], useCases: false, hasCertificate: false, certificateValidityYears: 1 });
-  const [editingCourse, setEditingCourse] = useState<{ id: string, title: string, department: string, instructionIds: string[], caseIds?: string[], useCases?: boolean, hasCertificate?: boolean, certificateValidityYears?: number, isActive?: boolean } | null>(null);
-  const [createCourseInstFilter, setCreateCourseInstFilter] = useState<string>('all');
-  const [createCourseInstSearch, setCreateCourseInstSearch] = useState<string>('');
-  const [editCourseInstFilter, setEditCourseInstFilter] = useState<string>('all');
-  const [editCourseInstSearch, setEditCourseInstSearch] = useState<string>('');
-
-  const [newCase, setNewCase] = useState({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
-  const [editingCase, setEditingCase] = useState<any | null>(null);
-  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
-  const [isDeletingCase, setIsDeletingCase] = useState<boolean>(false);
-  const [deletingInstId, setDeletingInstId] = useState<string | null>(null);
-  const [isDeletingInst, setIsDeletingInst] = useState<boolean>(false);
-  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
-  const [isDeletingCourse, setIsDeletingCourse] = useState<boolean>(false);
-  const [deletingDepId, setDeletingDepId] = useState<string | null>(null);
-  const [isDeletingDep, setIsDeletingDep] = useState<boolean>(false);
-
-  const handleDeleteCase = async (c: any) => {
-    const caseId = c.id || c._id;
-    if (!caseId) return;
-    setIsDeletingCase(true);
-    try {
-      const res = await fetch(`/api/admin/cases/${caseId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setDeletingCaseId(null);
-        if (onRefresh) await onRefresh();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Не вдалося видалити кейс');
-      }
-    } catch (err) {
-      console.error('Failed to delete case:', err);
-      alert('Помилка при видаленні кейсу');
-    } finally {
-      setIsDeletingCase(false);
-    }
-  };
-
-  const handleDeleteInstruction = async (inst: any) => {
-    const instId = inst.id || inst._id;
-    if (!instId) return;
-    setIsDeletingInst(true);
-    try {
-      const res = await fetch(`/api/admin/instructions/${instId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setDeletingInstId(null);
-        if (onRefresh) await onRefresh();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Не вдалося видалити інструкцію');
-      }
-    } catch (err) {
-      console.error('Failed to delete instruction:', err);
-      alert('Помилка при видаленні інструкції');
-    } finally {
-      setIsDeletingInst(false);
-    }
-  };
-
-  const handleDeleteCourse = async (course: any) => {
-    const courseId = course.id || course._id;
-    if (!courseId) return;
-    setIsDeletingCourse(true);
-    try {
-      const res = await fetch(`/api/admin/courses/${courseId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setDeletingCourseId(null);
-        if (onRefresh) await onRefresh();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Не вдалося видалити курс');
-      }
-    } catch (err) {
-      console.error('Failed to delete course:', err);
-      alert('Помилка при видаленні курсу');
-    } finally {
-      setIsDeletingCourse(false);
-    }
-  };
-
-  React.useEffect(() => {
-    if (activeTab === 'users') fetchUsers();
-    if (['departments', 'users', 'list', 'courses'].includes(activeTab)) fetchDepartments();
-  }, [activeTab]);
-
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch('/api/admin/users');
       const data = await res.json();
-      if (res.ok) setUsers(data.users);
-    } catch (err) {}
-  };
-
-  const fetchDepartments = async () => {
-    try {
-      const res = await fetch('/api/admin/departments');
-      const data = await res.json();
-      if (res.ok) setDepartments(data.departments);
-    } catch (err) {}
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUserMsg(null);
-
-    const cleanEmail = newUser.email.trim().toLowerCase();
-    if (!cleanEmail.endsWith('@viatec.ua')) {
-      setUserMsg({ type: 'error', text: 'Email має бути виключно в домені @viatec.ua' });
-      return;
-    }
-
-    if (!newUser.password) {
-      setUserMsg({ type: 'error', text: 'Пароль є обов\'язковим полем' });
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          password: newUser.password,
-          role: newUser.role,
-          authMethod: newUser.authMethod
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
-      
-      const createdRole = newUser.role;
-      setNewUser({ email: '', password: '', authMethod: 'password', role: 'user' } as any);
+      if (!res.ok) {
+        alert(data.error);
+        return;
+      }
+      setSelectedUser(null);
       fetchUsers();
-      
-      if (isSetupMode && createdRole === 'admin') {
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      }
-    } catch (err: any) {
-      setUserMsg({ type: 'error', text: err.message });
+    } catch (err) {
+      alert('Помилка оновлення користувача');
     }
   };
 
+  
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
@@ -302,10 +211,14 @@ export const TestManagement: React.FC<TestManagementProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          fullName: selectedUser.fullName,
           email: selectedUser.email,
           departments: selectedUser.departments,
+          departmentId: selectedUser.departmentId,
           allowedInstructionIds: selectedUser.allowedInstructionIds,
           role: selectedUser.role,
+          roleKeys: selectedUser.roleKeys || ['employee'],
+          managerId: selectedUser.managerId,
           authMethod: selectedUser.authMethod,
           password: selectedUser.newPassword || undefined
         })
@@ -322,6 +235,50 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     }
   };
 
+  
+  
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserMsg(null);
+    const cleanEmail = newUser.email.trim().toLowerCase();
+    
+    if (!cleanEmail.endsWith('@viatec.ua')) {
+      setUserMsg({ type: 'error', text: 'Email має бути виключно в домені @viatec.ua' });
+      return;
+    }
+
+    if (!newUser.password && newUser.authMethod !== 'otp') {
+      setUserMsg({ type: 'error', text: 'Пароль є обов\'язковим полем' });
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          fullName: newUser.fullName,
+          email: cleanEmail, 
+          username: newUser.username, 
+          password: newUser.password || 'TemporaryPassword123!', 
+          authMethod: newUser.authMethod || 'password',
+          role: newUser.role, 
+          roleKeys: newUser.roleKeys || ['employee'], 
+          departmentId: newUser.departmentId, 
+          managerId: newUser.managerId 
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
+      setNewUser({ fullName: '', email: '', username: '', password: '', authMethod: 'password', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
+      fetchUsers();
+    } catch (err: any) {
+      setUserMsg({ type: 'error', text: err.message });
+    }
+  };
+  const handleDeleteCase = async (id: string) => { setIsDeletingCase(true); try { await fetch('/api/admin/cases/' + id, { method: 'DELETE' }); } catch(e){} finally { setIsDeletingCase(false); setDeletingCaseId(null); } };
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -737,15 +694,27 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   </button>
 
                   <button
-                    onClick={() => setActiveTab('departments')}
+                    onClick={() => setActiveTab('roles')}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                      activeTab === 'departments' 
+                      activeTab === 'roles' 
+                        ? 'bg-purple-100 text-purple-800 shadow-xs' 
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Ролі та права</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('organization')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'organization' 
                         ? 'bg-purple-100 text-purple-800 shadow-xs' 
                         : 'text-slate-600 hover:bg-slate-200/60'
                     }`}
                   >
                     <Settings2 className="w-4 h-4" />
-                    <span>Підрозділи</span>
+                    <span>Організація</span>
                   </button>
                 </div>
               </div>
@@ -1192,7 +1161,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                   <button
                                     type="button"
                                     disabled={isDeletingInst}
-                                    onClick={() => handleDeleteInstruction(inst)}
+                                    onClick={() => handleDeleteInstruction(inst.id)}
                                     className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                                   >
                                     {isDeletingInst ? '...' : 'Так'}
@@ -1331,7 +1300,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 onChange={e => {
                                   const ids = newCourse.instructionIds;
                                   if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, sec.id] });
-                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter(i => i !== sec.id) });
+                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter((i: any) => i !== sec.id) });
                                 }}
                                 className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
@@ -1404,13 +1373,13 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           <input
                             type="text"
                             placeholder="Назва курсу"
-                            value={editingCourse.title}
-                            onChange={e => setEditingCourse({ ...editingCourse, title: e.target.value })}
+                            value={editingCourse?.title}
+                            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, title: e.target.value })}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
                           />
                           <select
-                            value={editingCourse.department}
-                            onChange={e => setEditingCourse({ ...editingCourse, department: e.target.value })}
+                            value={editingCourse?.department}
+                            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, department: e.target.value })}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
                           >
                             <option value="">Оберіть підрозділ...</option>
@@ -1423,8 +1392,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             <input
                               type="checkbox"
                               id={`edit-cert-${course.id}`}
-                              checked={editingCourse.hasCertificate}
-                              onChange={e => setEditingCourse({ ...editingCourse, hasCertificate: e.target.checked })}
+                              checked={editingCourse?.hasCertificate}
+                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, hasCertificate: e.target.checked })}
                               className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                             />
                             <label htmlFor={`edit-cert-${course.id}`} className="text-sm text-slate-700">
@@ -1432,15 +1401,15 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             </label>
                           </div>
                           
-                          {editingCourse.hasCertificate && (
+                          {editingCourse?.hasCertificate && (
                             <div className="flex items-center gap-2 ml-6">
                               <label className="text-sm text-slate-600">Термін дії (років):</label>
                               <input
                                 type="number"
                                 min="1"
                                 max="10"
-                                value={editingCourse.certificateValidityYears}
-                                onChange={e => setEditingCourse({ ...editingCourse, certificateValidityYears: parseInt(e.target.value) || 1 })}
+                                value={editingCourse?.certificateValidityYears}
+                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, certificateValidityYears: parseInt(e.target.value) || 1 })}
                                 className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
                               />
                             </div>
@@ -1450,8 +1419,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             <input
                               type="checkbox"
                               id={`edit-course-active-${course.id}`}
-                              checked={editingCourse.isActive}
-                              onChange={e => setEditingCourse({ ...editingCourse, isActive: e.target.checked })}
+                              checked={editingCourse?.isActive}
+                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked })}
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
                             <label htmlFor={`edit-course-active-${course.id}`} className="text-sm font-bold text-slate-700">
@@ -1462,7 +1431,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                             <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
-                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse.instructionIds.length} обрано)</div>
+                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds.length} обрано)</div>
                                 <select
                                   value={editCourseInstFilter}
                                   onChange={e => setEditCourseInstFilter(e.target.value)}
@@ -1490,7 +1459,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 .filter(sec => editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
                                 .filter(sec => sec.title.toLowerCase().includes(editCourseInstSearch.toLowerCase()))
                                 .map(sec => {
-                                  const isSelected = editingCourse.instructionIds.includes(sec.id);
+                                  const isSelected = editingCourse?.instructionIds.includes(sec.id);
                                   return (
                                     <label 
                                       key={sec.id} 
@@ -1504,9 +1473,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                         type="checkbox"
                                         checked={isSelected}
                                         onChange={e => {
-                                          const ids = editingCourse.instructionIds;
-                                          if (e.target.checked) setEditingCourse({ ...editingCourse, instructionIds: [...ids, sec.id] });
-                                          else setEditingCourse({ ...editingCourse, instructionIds: ids.filter(i => i !== sec.id) });
+                                          const ids = editingCourse?.instructionIds || [];
+                                          if (e.target.checked) setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: [...ids, sec.id] });
+                                          else setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: ids.filter((i: any) => i !== sec.id) });
                                         }}
                                         className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                       />
@@ -1530,8 +1499,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             <input
                               type="checkbox"
                               id={`edit-course-use-cases-${course.id}`}
-                              checked={editingCourse.useCases || false}
-                              onChange={e => setEditingCourse({ ...editingCourse, useCases: e.target.checked })}
+                              checked={editingCourse?.useCases || false}
+                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: e.target.checked })}
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
                             <label htmlFor={`edit-course-use-cases-${course.id}`} className="text-sm text-slate-700">
@@ -1541,9 +1510,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           <div className="flex gap-2">
                             <button
                               onClick={async () => {
-                                if (!editingCourse.title || !editingCourse.department) return alert('Заповніть назву та підрозділ');
+                                if (!editingCourse?.title || !editingCourse?.department) return alert('Заповніть назву та підрозділ');
                                 try {
-                                  const res = await fetch(`/api/admin/courses/${editingCourse.id}`, {
+                                  const res = await fetch(`/api/admin/courses/${editingCourse?.id}`, {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(editingCourse)
@@ -1616,7 +1585,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                                 <button
                                   type="button"
                                   disabled={isDeletingCourse}
-                                  onClick={() => handleDeleteCourse(course)}
+                                  onClick={() => handleDeleteCourse(course.id)}
                                   className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                                 >
                                   {isDeletingCourse ? '...' : 'Так'}
@@ -1666,8 +1635,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Назва кейсу</label>
                     <input
                       type="text"
-                      value={editingCase ? editingCase.title : newCase.title}
-                      onChange={e => editingCase ? setEditingCase({ ...editingCase, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
+                      value={editingCase ? editingCase?.title : newCase.title}
+                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
                       placeholder="Напр. Розгніваний клієнт на касі"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
@@ -1675,8 +1644,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Прив'язка до інструкції</label>
                     <select
-                      value={editingCase ? editingCase.sectionId || '' : newCase.sectionId || ''}
-                      onChange={e => editingCase ? setEditingCase({ ...editingCase, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
+                      value={editingCase ? editingCase?.sectionId || '' : newCase.sectionId || ''}
+                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
                     >
                       <option value="">-- Оберіть інструкцію --</option>
@@ -1688,8 +1657,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Сценарій (опис ситуації)</label>
                     <textarea
-                      value={editingCase ? editingCase.scenario : newCase.scenario}
-                      onChange={e => editingCase ? setEditingCase({ ...editingCase, scenario: e.target.value }) : setNewCase({ ...newCase, scenario: e.target.value })}
+                      value={editingCase ? editingCase?.scenario : newCase.scenario}
+                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, scenario: e.target.value }) : setNewCase({ ...newCase, scenario: e.target.value })}
                       placeholder="Опишіть ситуацію детально..."
                       rows={4}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg resize-none"
@@ -1698,7 +1667,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                   
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">Варіанти відповідей (виберіть правильний)</label>
-                    {(editingCase ? editingCase.options : newCase.options).map((opt: any, idx: number) => (
+                    {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((opt: any, idx: number) => (
                       <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
                         <div className="flex gap-2 items-center">
                           <input 
@@ -1706,11 +1675,11 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             name={`correct-option-${editingCase ? 'edit' : 'new'}`}
                             checked={opt.isCorrect}
                             onChange={() => {
-                              const updatedOptions = (editingCase ? editingCase.options : newCase.options).map((o: any, i: number) => ({
+                              const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((o: any, i: number) => ({
                                 ...o,
                                 isCorrect: i === idx
                               }));
-                              if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                              if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
                               else setNewCase({ ...newCase, options: updatedOptions });
                             }}
                             className="w-4 h-4 text-blue-600 focus:ring-blue-500"
@@ -1719,19 +1688,19 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             type="text"
                             value={opt.text}
                             onChange={e => {
-                              const updatedOptions = [...(editingCase ? editingCase.options : newCase.options)];
+                              const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
                               updatedOptions[idx] = { ...updatedOptions[idx], text: e.target.value };
-                              if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                              if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
                               else setNewCase({ ...newCase, options: updatedOptions });
                             }}
                             placeholder={`Варіант ${idx + 1}`}
                             className="flex-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
                           />
-                          {(editingCase ? editingCase.options : newCase.options).length > 1 && (
+                          {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).length > 1 && (
                             <button
                               onClick={() => {
-                                const updatedOptions = (editingCase ? editingCase.options : newCase.options).filter((_: any, i: number) => i !== idx);
-                                if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                                const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).filter((_: any, i: number) => i !== idx);
+                                if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
                                 else setNewCase({ ...newCase, options: updatedOptions });
                               }}
                               className="p-1.5 text-rose-500 hover:bg-rose-100 rounded"
@@ -1744,9 +1713,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           type="text"
                           value={opt.feedback || ''}
                           onChange={e => {
-                            const updatedOptions = [...(editingCase ? editingCase.options : newCase.options)];
+                            const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
                             updatedOptions[idx] = { ...updatedOptions[idx], feedback: e.target.value };
-                            if (editingCase) setEditingCase({ ...editingCase, options: updatedOptions });
+                            if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
                             else setNewCase({ ...newCase, options: updatedOptions });
                           }}
                           placeholder="Зворотній зв'язок для цього варіанту (напр. 'Неправильно, тому що...')"
@@ -1758,8 +1727,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     <button
                       onClick={() => {
                         const newOpt = { id: `opt-${Date.now()}`, text: '', isCorrect: false, feedback: '' };
-                        if (editingCase) setEditingCase({ ...editingCase, options: [...editingCase.options, newOpt] });
-                        else setNewCase({ ...newCase, options: [...newCase.options, newOpt] });
+                        if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: [...editingCase?.options, newOpt] });
+                        else setNewCase({ ...newCase, options: [...(newCase.options || []), newOpt] });
                       }}
                       className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                     >
@@ -1771,8 +1740,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                     <input
                       type="checkbox"
                       id="case-active"
-                      checked={editingCase ? editingCase.isActive !== false : newCase.isActive}
-                      onChange={e => editingCase ? setEditingCase({...editingCase, isActive: e.target.checked}) : setNewCase({...newCase, isActive: e.target.checked})}
+                      checked={editingCase ? editingCase?.isActive !== false : newCase.isActive}
+                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked}) : setNewCase({...newCase, isActive: e.target.checked})}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <label htmlFor="case-active" className="text-sm font-medium text-slate-700">Активний кейс</label>
@@ -1796,7 +1765,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         }
                         try {
                           const method = editingCase ? 'PUT' : 'POST';
-                          const url = editingCase ? `/api/admin/cases/${editingCase.id}` : '/api/admin/cases';
+                          const url = editingCase ? `/api/admin/cases/${editingCase?.id}` : '/api/admin/cases';
                           const res = await fetch(url, {
                             method,
                             headers: { 'Content-Type': 'application/json' },
@@ -1862,7 +1831,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                             <button 
                               type="button"
                               disabled={isDeletingCase}
-                              onClick={() => handleDeleteCase(c)} 
+                              onClick={() => handleDeleteCase(c.id)} 
                               className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                             >
                               {isDeletingCase ? '...' : 'Так'}
@@ -2120,15 +2089,38 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         onClick={() => setSelectedUser(u)}
                         className={`p-3.5 rounded-xl border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50/70 shadow-xs' : 'border-slate-200 bg-white hover:border-purple-300'}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold text-slate-900 text-sm">{u.email || u.username}</div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'}`}>
-                            {u.role === 'admin' ? 'Адміністратор' : 'Користувач'}
-                          </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-slate-900 text-sm">
+                              {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(u.roleKeys && u.roleKeys.length > 0 ? u.roleKeys : [u.role || 'employee']).map((rk: string) => {
+                                const matchedRole = roles.find(r => r.key === rk);
+                                const isAdm = rk === 'admin';
+                                return (
+                                  <span 
+                                    key={rk} 
+                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                                      isAdm 
+                                        ? 'bg-purple-100 text-purple-800 border border-purple-200' 
+                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                    }`}
+                                  >
+                                    {matchedRole?.title || rk}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                        <div className="mt-2 flex items-center justify-between gap-2 text-xs border-t border-slate-100 pt-2">
                           <span className="text-slate-500">
-                            Підрозділів: {u.departments?.length || 0}
+                            {u.departmentId ? (
+                              <span>Відділ: <strong className="text-slate-700">{departments.find(d => d._id === u.departmentId || d.id === u.departmentId)?.name || 'Призначено'}</strong></span>
+                            ) : (
+                              <span>Підрозділів: {u.departments?.length || 0}</span>
+                            )}
                           </span>
                           {u.authMethod === 'otp' ? (
                             <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
@@ -2158,6 +2150,17 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       </div>
                       
                       <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">ПІБ співробітника</label>
+                        <input
+                          type="text"
+                          value={selectedUser.fullName || ''}
+                          onChange={e => setSelectedUser({...selectedUser, fullName: e.target.value})}
+                          placeholder="напр. Іваненко Петро Васильович"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Email (@viatec.ua) *</label>
                         <input
                           type="email"
@@ -2166,6 +2169,74 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                           onChange={e => setSelectedUser({...selectedUser, email: e.target.value})}
                           className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
+                      </div>
+
+                      {/* Role selection (RBAC) */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[150px] overflow-y-auto">
+                          {roles.map(r => {
+                            const currentRoles: string[] = selectedUser.roleKeys || [selectedUser.role || 'employee'];
+                            const isChecked = currentRoles.includes(r.key);
+                            return (
+                              <label key={r.key} className="flex items-center gap-2 p-1 rounded hover:bg-slate-50 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={e => {
+                                    let next: string[];
+                                    if (e.target.checked) {
+                                      next = [...currentRoles, r.key];
+                                    } else {
+                                      next = currentRoles.filter(k => k !== r.key);
+                                      if (next.length === 0) next = ['employee'];
+                                    }
+                                    const nextRole = next.includes('admin') ? 'admin' : 'user';
+                                    setSelectedUser({ ...selectedUser, roleKeys: next, role: nextRole });
+                                  }}
+                                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                />
+                                <div>
+                                  <span className="font-medium text-slate-800">{r.title}</span>
+                                  <span className="text-[10px] text-slate-400 ml-1 font-mono">({r.key})</span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Primary Department and Manager */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Основний підрозділ</label>
+                          <select
+                            value={selectedUser.departmentId || ''}
+                            onChange={e => setSelectedUser({...selectedUser, departmentId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Не обрано</option>
+                            {departments.map(d => (
+                              <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Керівник (Manager)</label>
+                          <select
+                            value={selectedUser.managerId || ''}
+                            onChange={e => setSelectedUser({...selectedUser, managerId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Без керівника</option>
+                            {users.filter(u => u._id !== selectedUser._id).map(u => (
+                              <option key={u._id} value={u._id}>
+                                {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="p-3 bg-white rounded-xl border border-slate-200">
@@ -2275,6 +2346,18 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                       )}
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          ПІБ співробітника
+                        </label>
+                        <input
+                          type="text"
+                          value={newUser.fullName || ''}
+                          onChange={e => setNewUser({...newUser, fullName: e.target.value})}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          placeholder="напр. Іваненко Петро Васильович"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Корпоративний Email (@viatec.ua) *
                         </label>
                         <input
@@ -2329,18 +2412,72 @@ export const TestManagement: React.FC<TestManagementProps> = ({
                         </select>
                       </div>
 
+                      {/* Role selection (RBAC) */}
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Роль</label>
-                        <select
-                          value={newUser.role}
-                          onChange={e => setNewUser({...newUser, role: e.target.value})}
-                          disabled={isSetupMode}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
-                        >
-                          <option value="user">Користувач</option>
-                          <option value="admin">Адміністратор</option>
-                        </select>
-                        {isSetupMode && <p className="text-xs text-rose-500 mt-1">В режимі налаштування необхідно створити адміністратора.</p>}
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[140px] overflow-y-auto">
+                          {roles.map(r => {
+                            const currentRoles: string[] = newUser.roleKeys || [newUser.role || 'employee'];
+                            const isChecked = currentRoles.includes(r.key);
+                            return (
+                              <label key={r.key} className="flex items-center gap-2 p-1 rounded hover:bg-slate-50 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={e => {
+                                    let next: string[];
+                                    if (e.target.checked) {
+                                      next = [...currentRoles, r.key];
+                                    } else {
+                                      next = currentRoles.filter(k => k !== r.key);
+                                      if (next.length === 0) next = ['employee'];
+                                    }
+                                    const nextRole = next.includes('admin') ? 'admin' : 'user';
+                                    setNewUser({ ...newUser, roleKeys: next, role: nextRole });
+                                  }}
+                                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                />
+                                <div>
+                                  <span className="font-medium text-slate-800">{r.title}</span>
+                                  <span className="text-[10px] text-slate-400 ml-1 font-mono">({r.key})</span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Primary Department and Manager */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Основний підрозділ</label>
+                          <select
+                            value={newUser.departmentId || ''}
+                            onChange={e => setNewUser({...newUser, departmentId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Не обрано</option>
+                            {departments.map(d => (
+                              <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Керівник (Manager)</label>
+                          <select
+                            value={newUser.managerId || ''}
+                            onChange={e => setNewUser({...newUser, managerId: e.target.value || undefined})}
+                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">Без керівника</option>
+                            {users.map(u => (
+                              <option key={u._id} value={u._id}>
+                                {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-semibold text-xs transition">
                         Створити користувача
@@ -2352,72 +2489,11 @@ export const TestManagement: React.FC<TestManagementProps> = ({
             </div>
           )}
 
+          {/* TAB: ROLES & PERMISSIONS */}
+          {activeTab === 'roles' && <RoleSettings />}
+
           {/* TAB: DEPARTMENTS */}
-          {activeTab === 'departments' && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-bold text-slate-900">Список підрозділів</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Створюйте підрозділи для структурування інструкцій та доступу користувачів.
-                </p>
-              </div>
-
-              <div className="max-w-md space-y-4">
-                <form onSubmit={handleCreateDepartment} className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Назва нового підрозділу"
-                    value={newDepartment}
-                    onChange={e => setNewDepartment(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                  <button type="submit" className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition">
-                    Додати
-                  </button>
-                </form>
-
-                <div className="space-y-2">
-                  {departments.map(d => (
-                    <div key={d._id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <span className="font-medium text-slate-800">{d.name}</span>
-                      {d.name !== 'Всі підрозділи' && (
-                        deletingDepId === d._id ? (
-                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                            <button
-                              type="button"
-                              disabled={isDeletingDep}
-                              onClick={() => handleDeleteDepartment(d._id)}
-                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                            >
-                              {isDeletingDep ? '...' : 'Так'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isDeletingDep}
-                              onClick={() => setDeletingDepId(null)}
-                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                            >
-                              Ні
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => setDeletingDepId(d._id)}
-                            className="text-slate-400 hover:text-rose-500 transition p-1"
-                            title="Видалити"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'organization' && <OrganizationSettings />}
 
         </div>
       </div>

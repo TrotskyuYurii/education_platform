@@ -141,6 +141,20 @@ export const AboutApp: React.FC = () => {
                 </div>
               </div>
               <div>
+                <h3 className="font-bold text-slate-900 mb-1">Гнучка рольова модель (RBAC) та права</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Платформа містить повноцінну систему керування ролями та дозволами. В панелі адміністрування доступна спеціальна вкладка «Ролі та права» для налаштування прав: перегляд та редагування матеріалів, аналітики, користувачів та оргструктури. Права підтримують 4 рівні видимості (скоупи): лише власні дані (self), підлеглі/команда (team), підрозділ (department) або вся компанія (all). Користувачам можна одночасно призначати декілька ролей (наприклад, Керівник + Контент-менеджер), прив'язувати їх до відділів і призначати безпосереднього керівника.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 bg-slate-50 rounded-xl border border-slate-100 flex gap-4">
+              <div className="mt-1">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
                 <h3 className="font-bold text-slate-900 mb-1">Корпоративна безпека та Email 2FA</h3>
                 <p className="text-sm text-slate-600 leading-relaxed">
                   Вхід здійснюється виключно за корпоративною поштою в домені @viatec.ua та паролем. Додатково діє захист через 8-значний одноразовий код підтвердження, що надсилається на пошту співробітника та діє 5 хвилин.
