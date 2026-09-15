@@ -43,7 +43,7 @@ async function startServer() {
 
   app.use('/api', (req, res, next) => {
     if (!isDbConnected) {
-      return res.status(503).json({ error: 'Database not configured. Please set MONGODB_URI.' });
+      return res.status(503).json({ error: 'Відсутній зв\'язок з базою даних. Спробуйте пізніше.' });
     }
     next();
   }, apiRouter);
