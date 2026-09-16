@@ -2,6 +2,7 @@ import { OrganizationSettings } from './Admin/OrganizationSettings';
 import { RoleSettings } from './Admin/RoleSettings';
 import { KnowledgeSettings } from './Admin/KnowledgeSettings';
 import { AssignmentSettings } from './Admin/AssignmentSettings';
+import { OnboardingManagement } from './Onboarding';
 import { NotificationTemplates } from './Admin/NotificationTemplates';
 import { AnalyticsReports } from './Analytics/AnalyticsReports';
 import { useAuth } from '../context/AuthContext';
@@ -40,7 +41,8 @@ import {
   CalendarClock,
   Bell,
   BarChart3,
-  Paperclip
+  Paperclip,
+  Rocket
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -53,9 +55,11 @@ interface TestManagementProps {
   onReset: () => void;
   isSetupMode?: boolean;
   onRefresh?: () => Promise<void>;
+  /** Відкрити маршрут конкретного онбордінгу на вкладці «Онбординг». */
+  onOpenOnboardingAssignment?: (assignmentId: string) => void;
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
@@ -66,7 +70,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   onImport,
   onReset,
   isSetupMode,
-  onRefresh
+  onRefresh,
+  onOpenOnboardingAssignment
 }) => {
   const { hasPermission } = useAuth();
 
@@ -241,7 +246,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -864,6 +869,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     }`}>
                       {assignmentsCount !== null ? assignmentsCount : '—'}
                     </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('onboarding')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'onboarding'
+                        ? 'bg-purple-100 text-purple-800 shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <Rocket className="w-4 h-4 text-purple-600" />
+                    <span>Онбординг</span>
                   </button>
 
                   <button
@@ -2989,6 +3006,15 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
             <div className="flex-1 p-6 overflow-y-auto">
               <AssignmentSettings courses={courses} sections={sections} />
             </div>
+          )}
+
+          {activeTab === 'onboarding' && (
+            <OnboardingManagement
+              sections={sections}
+              courses={courses}
+              cases={cases}
+              onOpenAssignment={onOpenOnboardingAssignment}
+            />
           )}
 
         </div>

@@ -90,6 +90,9 @@ export const getUserEffectivePermissions = async (user: any) => {
         'knowledge.article.publish': 'all',
         'learning.assignment.view': 'all',
         'learning.assignment.create': 'all',
+        'onboarding.template.manage': 'all',
+        'onboarding.assignment.create': 'all',
+        'onboarding.assignment.view': 'all',
         'analytics.report.view': 'all',
         'certificate.revoke': 'all'
       }

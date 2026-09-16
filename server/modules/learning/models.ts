@@ -79,7 +79,12 @@ const learningNotificationSchema = new mongoose.Schema({
     enum: [
       'certificate_revoked', 'certificate_expiring', 'certificate_issued',
       'assignment_new', 'assignment_reminder', 'assignment_overdue',
-      'course_completed', 'acknowledgement_confirmed', 'general'
+      'course_completed', 'acknowledgement_confirmed',
+      'onboarding_assigned', 'onboarding_buddy_assigned', 'onboarding_step_unlocked',
+      'onboarding_step_task', 'onboarding_step_due', 'onboarding_overdue',
+      'onboarding_overdue_manager', 'onboarding_completed', 'onboarding_completed_manager',
+      'onboarding_survey_request',
+      'general'
     ],
     default: 'general'
   },

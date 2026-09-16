@@ -15,7 +15,17 @@ export const NOTIFICATION_TYPES = [
   'certificate_issued',
   'certificate_expiring',
   'certificate_revoked',
-  'acknowledgement_confirmed'
+  'acknowledgement_confirmed',
+  'onboarding_assigned',
+  'onboarding_buddy_assigned',
+  'onboarding_step_unlocked',
+  'onboarding_step_task',
+  'onboarding_step_due',
+  'onboarding_overdue',
+  'onboarding_overdue_manager',
+  'onboarding_completed',
+  'onboarding_completed_manager',
+  'onboarding_survey_request'
 ] as const;
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
 

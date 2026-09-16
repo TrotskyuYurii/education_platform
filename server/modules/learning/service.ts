@@ -10,6 +10,7 @@ import {
   LearningAssignment
 } from './models.js';
 import { NotificationService } from '../notifications/service.js';
+import { OnboardingService } from '../onboarding/service.js';
 
 // Minimum quiz score required before an employee is allowed to sign the compliance
 // acknowledgment sheet (matches the qualification threshold shown throughout the UI).
@@ -443,6 +444,7 @@ export class ProgressService {
 
     if (!wasSignedBefore && ack.isSigned) {
       await NotificationService.send({ userId: userObjectId, type: 'acknowledgement_confirmed' });
+      await OnboardingService.syncFromAcknowledgement(userObjectId);
     }
 
     await this.syncToLegacy(userObjectId);
@@ -666,6 +668,10 @@ export class ProgressService {
           }
         }
       );
+
+      // Онбординг використовує ті самі матеріали — крок «прочитати інструкцію»
+      // має закритись тим самим читанням, а не окремою відміткою.
+      await OnboardingService.syncFromLearning(userId, targetType, targetId, score);
     } catch (err) {
       console.error('Failed to sync assignment completion:', err);
     }

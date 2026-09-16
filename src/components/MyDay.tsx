@@ -23,7 +23,10 @@ import {
   FileCheck,
   Zap,
   GraduationCap,
-  Building2
+  Building2,
+  Rocket,
+  Lock,
+  Users as UsersIcon
 } from 'lucide-react';
 import { InstructionSection, Course, UserProgress, KnowledgeSpace, LearningAssignment } from '../types';
 import { User } from '../context/AuthContext';
@@ -68,6 +71,9 @@ export const MyDay: React.FC<MyDayProps> = ({
   // Assignments state
   const [assignments, setAssignments] = useState<LearningAssignment[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState(true);
+  // Онбординг новачка та задачі, де користувач — наставник/відповідальний.
+  const [onboardings, setOnboardings] = useState<any[]>([]);
+  const [onboardingTasks, setOnboardingTasks] = useState<any[]>([]);
 
   // Quote of the day (initial index is based on day of year for consistency)
   const initialQuoteIndex = useMemo(() => {
@@ -109,9 +115,37 @@ export const MyDay: React.FC<MyDayProps> = ({
     }
   };
 
+  const fetchOnboarding = async () => {
+    try {
+      const [myRes, tasksRes] = await Promise.all([
+        fetch('/api/v2/onboarding/my'),
+        fetch('/api/v2/onboarding/my/tasks')
+      ]);
+      if (myRes.ok) setOnboardings((await myRes.json()).onboardings || []);
+      if (tasksRes.ok) setOnboardingTasks((await tasksRes.json()).tasks || []);
+    } catch (err) {
+      console.error('Failed to fetch onboarding for My Day', err);
+    }
+  };
+
   useEffect(() => {
     fetchMyAssignments();
+    fetchOnboarding();
   }, []);
+
+  // Показуємо лише те, що ще в роботі — завершений онбординг не має
+  // займати місце на головній.
+  const activeOnboarding = useMemo(
+    () => onboardings.find((o: any) => o.status !== 'completed' && o.status !== 'cancelled') || null,
+    [onboardings]
+  );
+
+  const onboardingNextSteps = useMemo(() => {
+    if (!activeOnboarding) return [];
+    return (activeOnboarding.steps || [])
+      .filter((step: any) => step.isMine && (step.status === 'available' || step.status === 'in_progress'))
+      .slice(0, 3);
+  }, [activeOnboarding]);
 
   // Time-of-day greeting
   const greeting = useMemo(() => {
@@ -586,6 +620,132 @@ export const MyDay: React.FC<MyDayProps> = ({
         {/* Left 2 Columns: Priority Assignments & Continue Learning */}
         <div className="lg:col-span-2 space-y-8">
           
+          {/* Section: Onboarding journey for new hires */}
+          {activeOnboarding && (
+            <section id="myday-onboarding-section" className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-3xl border border-blue-200 p-6 sm:p-7">
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white border border-blue-200 flex items-center justify-center text-blue-600">
+                    <Rocket className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Ваш онбординг</h2>
+                    <p className="text-xs text-slate-600">
+                      {activeOnboarding.templateName} - крок {activeOnboarding.completedSteps} з {activeOnboarding.totalSteps}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-blue-600">{activeOnboarding.progressPercent}%</div>
+                  <div className="w-24 h-1.5 bg-white rounded-full mt-1.5 overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                      style={{ width: `${activeOnboarding.progressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {onboardingNextSteps.length > 0 ? (
+                <div className="space-y-2.5">
+                  {onboardingNextSteps.map((step: any) => (
+                    <div
+                      key={step.nodeId}
+                      className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border ${
+                        step.isOverdue ? 'border-rose-200' : 'border-blue-100'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-slate-900 truncate">{step.title}</h4>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                          {step.dueDate && (
+                            <span className={step.isOverdue ? 'text-rose-600 font-semibold' : ''}>
+                              до {new Date(step.dueDate).toLocaleDateString('uk-UA')}
+                            </span>
+                          )}
+                          {step.estimatedMinutes > 0 && <span>~{step.estimatedMinutes} хв</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => onNavigateToTab('onboarding')}
+                        className="shrink-0 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        <span>Перейти</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-white border border-blue-100 text-xs text-slate-500">
+                  <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>
+                    Поточні кроки закрито. Наступні відкриються, щойно відповідальні завершать свою частину.
+                  </span>
+                </div>
+              )}
+
+              <button
+                onClick={() => onNavigateToTab('onboarding')}
+                className="mt-4 text-xs font-semibold text-blue-700 hover:text-blue-900 transition flex items-center gap-1"
+              >
+                <span>Відкрити весь маршрут</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </section>
+          )}
+
+          {/* Section: Onboarding steps this user owns for colleagues */}
+          {onboardingTasks.length > 0 && (
+            <section id="myday-onboarding-tasks-section" className="bg-white rounded-3xl border border-purple-200 p-6 sm:p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
+                  <UsersIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <span>Онбординг колег</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                      {onboardingTasks.length}
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Кроки, за які ви відповідаєте як наставник або керівник
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {onboardingTasks.slice(0, 3).map((task: any) => (
+                  <div
+                    key={`${task.assignmentId}-${task.nodeId}`}
+                    className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${
+                      task.isOverdue ? 'bg-rose-50/50 border-rose-200' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-bold text-slate-900 truncate">{task.title}</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Для <strong className="text-slate-700">{task.employeeName}</strong>
+                        {task.dueDate && (
+                          <span className={task.isOverdue ? 'text-rose-600 font-semibold' : ''}>
+                            {' - до '}{new Date(task.dueDate).toLocaleDateString('uk-UA')}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => onNavigateToTab('onboarding')}
+                      className="shrink-0 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition"
+                    >
+                      Відкрити
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Section: Priority Assignments from Manager */}
           <section id="myday-assignments-section" className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-xs">
             <div className="flex items-center justify-between gap-4 mb-6">

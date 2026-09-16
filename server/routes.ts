@@ -50,6 +50,8 @@ import { knowledgeRouter } from './modules/knowledge/routes.js';
 import { KnowledgeService } from './modules/knowledge/service.js';
 import { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.js';
 import { searchRouter } from './modules/search/routes.js';
+import { onboardingRouter } from './modules/onboarding/routes.js';
+import { OnboardingService } from './modules/onboarding/service.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
 const requireAdmin = requirePermission('admin.access');
@@ -65,6 +67,7 @@ apiRouter.use('/v2/analytics', requireAuth, analyticsRouter);
 apiRouter.use('/progress-v2', requireAuth, progressV2Router);
 apiRouter.use('/v2/knowledge', requireAuth, knowledgeRouter);
 apiRouter.use('/search', requireAuth, searchRouter);
+apiRouter.use('/v2/onboarding', requireAuth, onboardingRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -433,7 +436,7 @@ apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.
 
 apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edit'), async (req, res) => {
   try {
-    const { email, password, role, roleKeys, fullName, departmentId, departments, positionId, managerId, allowedInstructionIds, authMethod } = req.body;
+    const { email, password, role, roleKeys, fullName, departmentId, departments, positionId, managerId, locationId, hireDate, allowedInstructionIds, authMethod } = req.body;
     if (!email || !email.toLowerCase().endsWith('@viatec.ua')) {
       return res.status(400).json({ error: 'Email є обов\'язковим і має бути в домені @viatec.ua' });
     }
@@ -477,6 +480,8 @@ apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edi
       departments: resolvedDeptNames,
       positionId: positionId || null,
       managerId: managerId || null,
+      locationId: locationId || null,
+      hireDate: hireDate ? new Date(hireDate) : undefined,
       allowedInstructionIds: allowedInstructionIds || [],
       authMethod: authMethod || 'password'
     } as any);
@@ -489,8 +494,15 @@ apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edi
       console.log('🔒 Security: Removed default admin user because a custom admin was created.');
     }
 
+    // Автозапуск онбордінгу: якщо під посаду/підрозділ новачка є активне
+    // правило, він одразу отримує свій маршрут адаптації без окремої дії HR.
+    const autoOnboarding = await OnboardingService.applyAutoRulesForUser(newUser, (req as any).user);
+
     res.json({ 
       success: true, 
+      autoOnboarding: autoOnboarding
+        ? { templateName: autoOnboarding.templateName, dueDate: autoOnboarding.dueDate }
+        : null,
       user: { 
         id: newUser._id, 
         email: newUser.email,

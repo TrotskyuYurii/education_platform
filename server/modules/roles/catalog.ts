@@ -3,7 +3,7 @@ export type PermissionScope = 'self' | 'team' | 'department' | 'all';
 export interface PermissionDefinition {
   code: string;
   name: string;
-  category: 'system' | 'users' | 'knowledge' | 'learning' | 'analytics' | 'certificates';
+  category: 'system' | 'users' | 'knowledge' | 'learning' | 'onboarding' | 'analytics' | 'certificates';
   categoryLabel: string;
   description: string;
   allowedScopes: PermissionScope[];
@@ -73,6 +73,30 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
     categoryLabel: 'Навчання та тестування',
     description: 'Призначення обов’язкових курсів та регламентів для вивчення співробітниками',
     allowedScopes: ['team', 'department', 'all']
+  },
+  {
+    code: 'onboarding.template.manage',
+    name: 'Створення та редагування онбордінгів',
+    category: 'onboarding',
+    categoryLabel: 'Онбординг співробітників',
+    description: 'Побудова схем онбордінгу у візуальному редакторі, публікація шаблонів та правила автозапуску',
+    allowedScopes: ['department', 'all']
+  },
+  {
+    code: 'onboarding.assignment.create',
+    name: 'Призначення онбордінгу',
+    category: 'onboarding',
+    categoryLabel: 'Онбординг співробітників',
+    description: 'Постановка онбордінгу співробітнику, відділу або посаді, призначення наставника та строків',
+    allowedScopes: ['team', 'department', 'all']
+  },
+  {
+    code: 'onboarding.assignment.view',
+    name: 'Перегляд проходження онбордінгу',
+    category: 'onboarding',
+    categoryLabel: 'Онбординг співробітників',
+    description: 'Доступ до статусів адаптації новачків, звіту по етапах та результатів опитувань-фідбеку',
+    allowedScopes: ['self', 'team', 'department', 'all']
   },
   {
     code: 'analytics.report.view',

@@ -12,6 +12,7 @@ import { AboutApp } from './components/AboutApp';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { MyDay } from './components/MyDay';
 import { PeopleDirectory } from './components/People';
+import { MyOnboarding } from './components/Onboarding';
 import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { useAuth } from './context/AuthContext';
@@ -37,7 +38,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
-      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'people', 'signoff', 'management', 'about', 'dashboard'].includes(saved)) {
+      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'onboarding', 'people', 'signoff', 'management', 'about', 'dashboard'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -83,6 +84,10 @@ function MainApp() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [analyticsFocusUserId, setAnalyticsFocusUserId] = useState<string | null>(null);
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
+  // Коли керівник/HR відкриває маршрут конкретного співробітника зі звіту,
+  // вкладка «Онбординг» показує його проходження замість власного.
+  const [onboardingFocusId, setOnboardingFocusId] = useState<string | null>(null);
+  const [onboardingPendingCount, setOnboardingPendingCount] = useState(0);
 
   // Global hotkey Ctrl+K / Cmd+K
   useEffect(() => {
@@ -184,12 +189,41 @@ function MainApp() {
     }
   };
 
+  // Лічильник для бейджа вкладки «Онбординг»: власні відкриті кроки плюс кроки,
+  // де користувач — відповідальний за чужий онбординг.
+  const fetchOnboardingPending = async () => {
+    try {
+      const [myRes, tasksRes] = await Promise.all([
+        fetch('/api/v2/onboarding/my'),
+        fetch('/api/v2/onboarding/my/tasks')
+      ]);
+      let count = 0;
+      if (myRes.ok) {
+        const data = await myRes.json();
+        for (const onboarding of data.onboardings || []) {
+          count += (onboarding.steps || []).filter(
+            (step: any) => step.isMine && (step.status === 'available' || step.status === 'in_progress')
+          ).length;
+        }
+      }
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        count += (data.tasks || []).length;
+      }
+      setOnboardingPendingCount(count);
+    } catch (err) {
+      console.error('Failed to fetch onboarding pending count', err);
+    }
+  };
+
   useEffect(() => {
     Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
+    fetchOnboardingPending();
 
     // Periodically sync progress/notifications so revocations or updates appear live
     const interval = setInterval(() => {
       fetchProgress();
+      fetchOnboardingPending();
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -435,12 +469,16 @@ function MainApp() {
             setActiveCasesToRun(cases.filter(c => c.isActive !== false));
             setCaseSimulatorMode('list');
           }
+          // Перехід по вкладці завжди означає «мій онбординг», а не чужий,
+          // який могли відкрити зі звіту адміністрування.
+          if (tab === 'onboarding') setOnboardingFocusId(null);
           setCurrentTab(tab);
         }}
         readCount={validReadSectionIds.length}
         totalSections={sections.length}
         bestScore={progress.bestScore > 0 ? progress.bestScore : null}
         isSigned={progress.employeeInfo.isSigned}
+        onboardingPendingCount={onboardingPendingCount}
       />
 
       <main className="grow">
@@ -573,6 +611,28 @@ function MainApp() {
           />
         )}
 
+        {currentTab === 'onboarding' && (
+          <MyOnboarding
+            focusAssignmentId={onboardingFocusId}
+            canManageSteps={canManage}
+            cases={cases}
+            onOpenInstruction={(secId, courseId) => {
+              if (courseId) setActiveCourseId(courseId);
+              setSelectedSectionId(secId);
+              setCurrentTab('manual');
+            }}
+            onOpenCourse={handleOpenCourse}
+            onStartQuiz={handleStartQuiz}
+            onStartCases={(casesToRun) => {
+              const toRun = casesToRun || cases.filter(c => c.isActive !== false);
+              setActiveCasesToRun(toRun);
+              setCaseSimulatorMode(casesToRun ? 'run' : 'list');
+              setCurrentTab('cases');
+            }}
+            onNavigateToSignoff={() => setCurrentTab('signoff')}
+          />
+        )}
+
         {currentTab === 'people' && (
           <PeopleDirectory
             onViewAnalytics={(userId) => {
@@ -603,6 +663,10 @@ function MainApp() {
             cases={cases}
             spaces={spaces}
             onRefresh={fetchContent}
+            onOpenOnboardingAssignment={(assignmentId) => {
+              setOnboardingFocusId(assignmentId);
+              setCurrentTab('onboarding');
+            }}
             onImport={async (newSections, newQuestions, replace) => {
               try {
                 await fetch('/api/admin/import', {

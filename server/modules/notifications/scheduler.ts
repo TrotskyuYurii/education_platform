@@ -3,6 +3,7 @@ import { CertificateRecord, LearningAssignment } from '../learning/models.js';
 import { sendEmail } from '../../email.js';
 import { NotificationOutbox, UserNotificationSettings, SchedulerRun } from './models.js';
 import { NotificationService } from './service.js';
+import { OnboardingService } from '../onboarding/service.js';
 
 const JOB_NAME = 'daily-notifications';
 const CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -143,11 +144,24 @@ async function flushDigestEmails() {
   }
 }
 
+// Збій онбордінгового блоку не має заблокувати розсилку дайджесту,
+// тому він ізольований власним try/catch.
+async function runOnboardingJobSafely() {
+  try {
+    await OnboardingService.runDailyJob();
+  } catch (err) {
+    console.error('Onboarding daily job failed:', err);
+  }
+}
+
 export async function runDailyNotificationJob() {
   console.log('🔔 Running daily notification job...');
   await notifyExpiringCertificates();
   await notifyUpcomingDeadlines();
   await notifyOverdueAssignments();
+  // Онбординг має власні дедлайни (дедлайни кроків, прострочення, опитування
+  // на 7/30/90 день) — вони їдуть тим самим щоденним прогоном.
+  await runOnboardingJobSafely();
   await flushDigestEmails();
   console.log('🔔 Daily notification job completed.');
 }

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users, Bell } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users, Bell, Rocket } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
-export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'people' | 'signoff' | 'management' | 'dashboard' | 'about';
+export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'onboarding' | 'people' | 'signoff' | 'management' | 'dashboard' | 'about';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -14,6 +14,8 @@ interface NavbarProps {
   totalSections: number;
   bestScore: number | null;
   isSigned: boolean;
+  /** Скільки кроків онбордінгу чекають на дію користувача (свої + як відповідальний). */
+  onboardingPendingCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -25,6 +27,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   totalSections,
   bestScore,
   isSigned,
+  onboardingPendingCount = 0,
 }) => {
   const { user, logout, canManage, primaryRoleLabel } = useAuth();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -151,6 +154,27 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Briefcase className="w-4 h-4" />
               <span>Кейси</span>
+            </button>
+
+            <button
+              id="tab-btn-onboarding"
+              onClick={() => onSelectTab('onboarding')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                currentTab === 'onboarding'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Ваш маршрут адаптації та задачі з онбордінгу колег"
+            >
+              <Rocket className="w-4 h-4" />
+              <span>Онбординг</span>
+              {onboardingPendingCount > 0 && (
+                <span className={`text-xs px-1.5 py-0.2 rounded-full ${
+                  currentTab === 'onboarding' ? 'bg-blue-500 text-white' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {onboardingPendingCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -434,6 +458,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Кейси
+          </button>
+          <button
+            id="mobile-tab-btn-onboarding"
+            onClick={() => onSelectTab('onboarding')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
+              currentTab === 'onboarding' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            <Rocket className="w-3.5 h-3.5" />
+            Онбординг{onboardingPendingCount > 0 ? ` (${onboardingPendingCount})` : ''}
           </button>
           <button
             id="mobile-tab-btn-people"
