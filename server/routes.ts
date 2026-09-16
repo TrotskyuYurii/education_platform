@@ -10,6 +10,7 @@ import mammoth from 'mammoth';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
+import { savePendingUpload, finalizePendingUpload, getFileAbsolutePath, fileExists } from './services/fileStorage.js';
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -513,9 +514,30 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
       await Section.deleteMany({});
       await Question.deleteMany({});
     }
-    
-    if (sections?.length) await Section.insertMany(sections);
+
+    // sourceFileToken/sourceFileName/sourceMimeType aren't Section schema fields —
+    // pull them off before insertMany, then finalize the pending upload afterwards
+    // once we know the section actually exists.
+    const pendingFileFinalizations: Array<{ sectionId: string; token: string; fileName: string; mimeType: string }> = [];
+    const cleanSections = (sections || []).map((s: any) => {
+      const { sourceFileToken, sourceFileName, sourceMimeType, ...rest } = s;
+      if (sourceFileToken) {
+        pendingFileFinalizations.push({ sectionId: s.id, token: sourceFileToken, fileName: sourceFileName, mimeType: sourceMimeType });
+      }
+      return rest;
+    });
+
+    if (cleanSections.length) await Section.insertMany(cleanSections);
     if (questions?.length) await Question.insertMany(questions);
+
+    for (const pending of pendingFileFinalizations) {
+      try {
+        const sourceFile = finalizePendingUpload(pending.token, pending.sectionId, 1, pending.fileName, pending.mimeType);
+        await Section.updateOne({ id: pending.sectionId } as any, { $set: { sourceFile } } as any);
+      } catch (fileErr) {
+        console.error('Failed to finalize source file for section', pending.sectionId, fileErr);
+      }
+    }
 
     // After import, ensure users' progress does not reference deleted or non-existent instructions
     const allCurrentSections = await Section.find({} as any, { id: 1 } as any);
@@ -524,10 +546,77 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
       {},
       { $pull: { readSectionIds: { $nin: currentValidIds } } } as any
     );
-    
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to import data' });
+  }
+});
+
+apiRouter.post('/admin/upload-source-file', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const { token } = savePendingUpload(req.file.path);
+    res.json({
+      success: true,
+      sourceFileToken: token,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype
+    });
+  } catch (err) {
+    console.error('Failed to store source file', err);
+    res.status(500).json({ error: 'Не вдалося зберегти файл' });
+  }
+});
+
+// Access-check helper shared by the source-file download routes below
+function userCanAccessSection(user: any, section: any): boolean {
+  if (!section?.isActive) return false;
+  if (user?.role === 'admin') return true;
+
+  const allowed: string[] = user?.allowedInstructionIds || [];
+  if (allowed.length > 0) return allowed.includes(section.id);
+
+  const deps: string[] = user?.departments || [];
+  if (deps.includes('Всі підрозділи')) return true;
+  return deps.includes(section.department);
+}
+
+apiRouter.get('/sections/:id/source-file', requireAuth, async (req: any, res) => {
+  try {
+    const section = await Section.findOne({ id: req.params.id } as any);
+    if (!section || !userCanAccessSection(req.user, section)) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    const sourceFile = (section as any).sourceFile;
+    if (!sourceFile?.storagePath || !fileExists(sourceFile.storagePath)) {
+      return res.status(404).json({ error: 'Оригінальний файл не знайдено' });
+    }
+    res.download(getFileAbsolutePath(sourceFile.storagePath), sourceFile.fileName || 'original');
+  } catch (err) {
+    console.error('Failed to download section source file', err);
+    res.status(500).json({ error: 'Не вдалося завантажити файл' });
+  }
+});
+
+apiRouter.get('/sections/:id/source-file.md', requireAuth, async (req: any, res) => {
+  try {
+    const section = await Section.findOne({ id: req.params.id } as any);
+    if (!section || !userCanAccessSection(req.user, section)) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    const rawMarkdown = (section as any).rawMarkdown;
+    if (!rawMarkdown) {
+      return res.status(404).json({ error: 'Markdown-файл не знайдено' });
+    }
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${section.id}.md"`);
+    res.send(rawMarkdown);
+  } catch (err) {
+    console.error('Failed to download section markdown', err);
+    res.status(500).json({ error: 'Не вдалося завантажити файл' });
   }
 });
 
@@ -551,6 +640,7 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     const isLegacyDoc = mimeType === 'application/msword';
 
     let documentBlock: any;
+    let readSucceeded = false;
     try {
       if (isLegacyDoc) {
         return res.status(400).json({ error: 'Формат .doc не підтримується. Будь ласка, збережіть файл як .docx або .pdf.' });
@@ -573,15 +663,27 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
         const extractedText = fs.readFileSync(req.file.path, 'utf-8');
         documentBlock = { type: 'text', text: extractedText };
       }
+      readSucceeded = true;
     } catch (extractErr: any) {
       console.error('Failed to read/extract uploaded document', extractErr);
       return res.status(500).json({ error: 'Не вдалося обробити файл. Перевірте формат документа (.pdf, .txt, .docx).' });
     } finally {
-      // Clean up the local temp file once its contents have been read
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (e) {
-        console.error('Failed to clean up temp file', e);
+      if (readSucceeded) {
+        // Keep the original file in durable "pending" storage so it can be attached to
+        // the Section once the user actually imports it (instead of discarding it).
+        try {
+          const { token } = savePendingUpload(req.file.path);
+          (req as any).sourceFileToken = token;
+        } catch (e) {
+          console.error('Failed to persist source file', e);
+        }
+      } else {
+        // Rejected/unreadable upload — nothing worth keeping
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {
+          console.error('Failed to clean up temp file', e);
+        }
       }
     }
 
@@ -675,7 +777,13 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
       .map((block) => block.text)
       .join('\n');
 
-    res.json({ success: true, markdown: markdownText });
+    res.json({
+      success: true,
+      markdown: markdownText,
+      sourceFileToken: (req as any).sourceFileToken,
+      sourceFileName: req.file.originalname,
+      sourceMimeType: req.file.mimetype
+    });
   } catch (err: any) {
     console.error('Failed to generate instruction via AI', err);
     let errMsg = 'Помилка при генерації через AI';

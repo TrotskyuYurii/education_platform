@@ -43,6 +43,15 @@ const instructionVersionSchema = new mongoose.Schema({
   stopRules: { type: [String], default: [] },
   steps: { type: [mongoose.Schema.Types.Mixed], default: [] },
   tableData: { type: mongoose.Schema.Types.Mixed, default: null },
+  sourceFile: {
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    uploadedAt: Date
+  },
+  rawMarkdown: { type: String, default: '' },
   changeSummary: { type: String, default: '' }, // What was changed in this revision
   authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   authorName: { type: String, default: 'Адміністратор' },

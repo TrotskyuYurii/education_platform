@@ -39,7 +39,8 @@ import {
   GitBranch,
   CalendarClock,
   Bell,
-  BarChart3
+  BarChart3,
+  Paperclip
 } from 'lucide-react';
 
 interface TestManagementProps {
@@ -267,9 +268,11 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
-  
+  const pdfAttachInputRef = useRef<HTMLInputElement>(null);
+
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
+  const [attachedSourcePdf, setAttachedSourcePdf] = useState<File | null>(null);
 
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
@@ -593,18 +596,27 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
     URL.revokeObjectURL(url);
   };
 
+  const uploadSourceFile = async (file: File): Promise<{ sourceFileToken: string; sourceFileName: string; sourceMimeType: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/admin/upload-source-file', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Не вдалося завантажити оригінал документа');
+    return { sourceFileToken: data.sourceFileToken, sourceFileName: data.fileName, sourceMimeType: data.mimeType };
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, replace: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setImportStatus(null);
     const reader = new FileReader();
-    
-    reader.onload = (event) => {
+
+    reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
         const result = parseMarkdown(text);
-        
+
         if (result.sections.length === 0) {
           setImportStatus({
             type: 'error',
@@ -613,11 +625,28 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           return;
         }
 
+        result.sections[0].rawMarkdown = text;
+
+        if (attachedSourcePdf) {
+          try {
+            const uploaded = await uploadSourceFile(attachedSourcePdf);
+            Object.assign(result.sections[0], uploaded);
+          } catch (uploadErr: any) {
+            setImportStatus({
+              type: 'error',
+              message: uploadErr.message || 'Не вдалося прикріпити оригінал PDF.'
+            });
+            return;
+          }
+        }
+
         onImport(result.sections, result.questions, replace);
         setImportStatus({
           type: 'success',
           message: `Успішно імпортовано: інструкція та ${result.questions.length} питань.`
         });
+        setAttachedSourcePdf(null);
+        if (pdfAttachInputRef.current) pdfAttachInputRef.current.value = '';
       } catch (err) {
         setImportStatus({
           type: 'error',
@@ -656,7 +685,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         body: formData
       });
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error || 'AI processing failed');
 
       const result = parseMarkdown(data.markdown);
@@ -667,6 +696,15 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         });
         setIsGeneratingAi(false);
         return;
+      }
+
+      // Keep the original uploaded file (PDF/DOCX/TXT) and the full raw AI-generated
+      // Markdown (with stop-lists/quiz questions) attached to the section being imported.
+      result.sections[0].rawMarkdown = data.markdown;
+      if (data.sourceFileToken) {
+        result.sections[0].sourceFileToken = data.sourceFileToken;
+        result.sections[0].sourceFileName = data.sourceFileName;
+        result.sections[0].sourceMimeType = data.sourceMimeType;
       }
 
       onImport(result.sections, result.questions, false);
@@ -1063,12 +1101,32 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         Завантажте заздалегідь підготовлений Markdown файл.
                       </p>
 
-                      <input 
-                        type="file" 
+                      <input
+                        type="file"
                         accept=".md,text/markdown"
-                        className="hidden" 
+                        className="hidden"
                         ref={fileInputRef}
                       />
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        ref={pdfAttachInputRef}
+                        onChange={(e) => setAttachedSourcePdf(e.target.files?.[0] || null)}
+                      />
+
+                      <button
+                        onClick={() => pdfAttachInputRef.current?.click()}
+                        className={`mb-3 px-3 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1.5 ${
+                          attachedSourcePdf
+                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                        }`}
+                        title="Прикріпити оригінал документа у форматі PDF (опційно)"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        {attachedSourcePdf ? attachedSourcePdf.name : 'Прикріпити оригінал (PDF, опційно)'}
+                      </button>
 
                       <div className="flex flex-col gap-2 w-full max-w-[200px]">
                         <button

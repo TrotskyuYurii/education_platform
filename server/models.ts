@@ -126,6 +126,15 @@ const sectionSchema = new mongoose.Schema({
   },
   stopRules: [String],
   systemAutomaticActions: [String],
+  sourceFile: {
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    uploadedAt: Date
+  },
+  rawMarkdown: { type: String, default: '' },
   spaceId: { type: String, default: 'space-general' },
   version: { type: String, default: '1.0' },
   versionNumber: { type: Number, default: 1 },

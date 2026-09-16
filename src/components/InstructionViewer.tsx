@@ -243,6 +243,18 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                 <GitBranch className="w-3 h-3" />
                 v{activeSection.version || '1.0'}
               </span>
+              {activeSection.sourceFile && (
+                <a
+                  href={`/api/sections/${activeSection.id}/source-file`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold uppercase tracking-wider hover:bg-rose-100 transition"
+                  title={activeSection.sourceFile.fileName}
+                >
+                  <FileSpreadsheet className="w-3 h-3" />
+                  Оригінал документа
+                </a>
+              )}
               {activeSection.status && (
                 <span className={`inline-flex px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
                   activeSection.status === 'draft' ? 'bg-amber-50 text-amber-700 border-amber-200' :

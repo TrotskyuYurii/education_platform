@@ -29,7 +29,8 @@ import {
   TrendingUp,
   CreditCard,
   ShieldCheck,
-  Users
+  Users,
+  Download
 } from 'lucide-react';
 import { KnowledgeSpace, InstructionSection, InstructionVersion, DocumentStatus, KnowledgeMetrics } from '../../types';
 
@@ -923,6 +924,33 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
                       <div className="font-semibold text-slate-800 line-clamp-2 mb-1.5">
                         {ver.changeSummary || 'Оновлення регламенту'}
                       </div>
+
+                      {(ver.sourceFile || ver.rawMarkdown) && selectedSectionForVersions && (
+                        <div className="flex items-center gap-2 mb-1.5">
+                          {ver.sourceFile && (
+                            <a
+                              href={`/api/v2/knowledge/sections/${selectedSectionForVersions.id}/versions/${ver.versionNumber}/source-file`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded hover:bg-rose-100 transition"
+                            >
+                              <Download className="w-3 h-3" /> PDF
+                            </a>
+                          )}
+                          {ver.rawMarkdown && (
+                            <a
+                              href={`/api/v2/knowledge/sections/${selectedSectionForVersions.id}/versions/${ver.versionNumber}/source-file.md`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded hover:bg-blue-100 transition"
+                            >
+                              <FileText className="w-3 h-3" /> MD
+                            </a>
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-100">
                         <span>{ver.authorName || 'Адміністратор'}</span>

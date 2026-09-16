@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { KnowledgeSpace, InstructionVersion } from './models.js';
 import { Section, Course, User } from '../../models.js';
+import { finalizePendingUpload } from '../../services/fileStorage.js';
 
 export interface CreateSpaceDTO {
   id?: string;
@@ -147,6 +148,8 @@ export class KnowledgeService {
           stopRules: sec.stopRules || [],
           steps: sec.steps || [],
           tableData: sec.tableData || null,
+          sourceFile: sec.sourceFile || undefined,
+          rawMarkdown: sec.rawMarkdown || '',
           changeSummary: 'Початкова редакція регламенту (v1.0)',
           authorName: 'Система / Методист',
           createdAt: sec.createdAt || new Date()
@@ -345,8 +348,11 @@ export class KnowledgeService {
     const newStatus = options.status || sectionUpdate.status || section.status || 'published';
     const changeSummary = options.changeSummary || sectionUpdate.changeLog || `Оновлення редакції до v${nextVersionStr}`;
 
+    // Source file / raw markdown are handled separately from the generic field spread below
+    const { sourceFileToken, sourceFileName, sourceMimeType, rawMarkdown, ...restUpdate } = sectionUpdate || {};
+
     // Apply updates to section
-    Object.assign(section, sectionUpdate, {
+    Object.assign(section, restUpdate, {
       version: nextVersionStr,
       versionNumber: nextVerNum,
       status: newStatus,
@@ -354,6 +360,16 @@ export class KnowledgeService {
       lastReviewedAt: new Date(),
       reviewedBy: user?._id || undefined
     });
+
+    if (sourceFileToken) {
+      // A new original file was uploaded for this revision
+      section.sourceFile = finalizePendingUpload(sourceFileToken, sectionId, nextVerNum, sourceFileName, sourceMimeType);
+    }
+    // If no new file was uploaded, section.sourceFile simply carries over from the previous revision
+
+    if (rawMarkdown !== undefined) {
+      section.rawMarkdown = rawMarkdown;
+    }
 
     await section.save();
 
@@ -373,6 +389,8 @@ export class KnowledgeService {
       stopRules: section.stopRules || [],
       steps: section.steps || [],
       tableData: section.tableData || null,
+      sourceFile: section.sourceFile || undefined,
+      rawMarkdown: section.rawMarkdown || '',
       changeSummary,
       authorId: user?._id,
       authorName: user?.fullName || user?.username || 'Адміністратор',
@@ -415,6 +433,8 @@ export class KnowledgeService {
     section.stopRules = historical.stopRules;
     section.steps = historical.steps;
     section.tableData = historical.tableData;
+    section.sourceFile = historical.sourceFile || section.sourceFile;
+    section.rawMarkdown = historical.rawMarkdown !== undefined ? historical.rawMarkdown : section.rawMarkdown;
     section.version = nextVerStr;
     section.versionNumber = nextVerNum;
     section.status = historical.status || 'published';
@@ -439,6 +459,8 @@ export class KnowledgeService {
       stopRules: section.stopRules,
       steps: section.steps,
       tableData: section.tableData,
+      sourceFile: section.sourceFile || undefined,
+      rawMarkdown: section.rawMarkdown || '',
       changeSummary: `Відкат (rollback) до параметрів версії v${historical.version}`,
       authorId: user?._id,
       authorName: user?.fullName || user?.username || 'Адміністратор',
@@ -451,6 +473,15 @@ export class KnowledgeService {
       restoredFromVersion: historical.version,
       newVersionRecord: rollbackSnapshot
     };
+  }
+
+  /**
+   * Get the stored original-file metadata for a specific historical revision
+   */
+  static async getVersionSourceFile(sectionId: string, versionNumber: number) {
+    const historical = await InstructionVersion.findOne({ sectionId, versionNumber });
+    if (!historical) throw new Error('Ревізію не знайдено');
+    return historical;
   }
 
   /**

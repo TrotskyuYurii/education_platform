@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { KnowledgeService } from './service.js';
 import { requirePermission } from '../core/permissions.js';
+import { getFileAbsolutePath, fileExists } from '../../services/fileStorage.js';
 
 export const knowledgeRouter = Router();
 
@@ -145,6 +146,50 @@ knowledgeRouter.post('/sections/:id/revert', ensureUser, requirePermission('know
   } catch (err: any) {
     console.error('Failed to restore version', err);
     res.status(500).json({ error: err.message || 'Не вдалося відновити версію' });
+  }
+});
+
+/**
+ * 9b. Download the original source file (PDF/DOCX) attached to a specific historical revision
+ */
+knowledgeRouter.get('/sections/:id/versions/:versionNumber/source-file', ensureUser, async (req, res) => {
+  try {
+    const sectionId = String(req.params.id);
+    const versionNumber = Number(req.params.versionNumber);
+    const version = await KnowledgeService.getVersionSourceFile(sectionId, versionNumber);
+    const sourceFile = (version as any).sourceFile;
+
+    if (!sourceFile?.storagePath || !fileExists(sourceFile.storagePath)) {
+      return res.status(404).json({ error: 'Оригінальний файл для цієї версії не знайдено' });
+    }
+
+    res.download(getFileAbsolutePath(sourceFile.storagePath), sourceFile.fileName || 'original');
+  } catch (err: any) {
+    console.error('Failed to download version source file', err);
+    res.status(404).json({ error: err.message || 'Файл не знайдено' });
+  }
+});
+
+/**
+ * 9c. Download the full raw Markdown (with quiz/stop-lists) for a specific historical revision
+ */
+knowledgeRouter.get('/sections/:id/versions/:versionNumber/source-file.md', ensureUser, async (req, res) => {
+  try {
+    const sectionId = String(req.params.id);
+    const versionNumber = Number(req.params.versionNumber);
+    const version = await KnowledgeService.getVersionSourceFile(sectionId, versionNumber);
+    const rawMarkdown = (version as any).rawMarkdown;
+
+    if (!rawMarkdown) {
+      return res.status(404).json({ error: 'Markdown-файл для цієї версії не знайдено' });
+    }
+
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${sectionId}-v${versionNumber}.md"`);
+    res.send(rawMarkdown);
+  } catch (err: any) {
+    console.error('Failed to download version markdown', err);
+    res.status(404).json({ error: err.message || 'Файл не знайдено' });
   }
 });
 

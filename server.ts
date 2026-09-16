@@ -8,6 +8,7 @@ import { apiRouter } from './server/routes.js';
 import { errorHandler } from './server/modules/core/errors.js';
 import { FeatureFlag } from './server/modules/core/models.js';
 import { startNotificationScheduler } from './server/modules/notifications/scheduler.js';
+import { cleanupStalePendingUploads } from './server/services/fileStorage.js';
 
 async function startServer() {
   const app = express();
@@ -23,6 +24,10 @@ async function startServer() {
   if (isDbConnected) {
     startNotificationScheduler();
   }
+
+  // Periodically remove abandoned pending uploads (files uploaded but never imported)
+  cleanupStalePendingUploads();
+  setInterval(cleanupStalePendingUploads, 60 * 60 * 1000);
 
   // API Routes
   app.get('/api/health', (req, res) => {

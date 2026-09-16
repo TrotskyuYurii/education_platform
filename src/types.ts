@@ -4,6 +4,13 @@ export type PermissionScope = 'self' | 'team' | 'department' | 'all';
 
 export type DocumentStatus = 'draft' | 'in_review' | 'published' | 'archived';
 
+export interface SourceFileMeta {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
 export interface KnowledgeSpace {
   _id?: string;
   id: string;
@@ -41,6 +48,8 @@ export interface InstructionVersion {
   stopRules?: string[];
   steps?: any[];
   tableData?: any;
+  sourceFile?: SourceFileMeta;
+  rawMarkdown?: string;
   changeSummary?: string;
   authorId?: string;
   authorName?: string;
@@ -135,6 +144,12 @@ export interface InstructionSection {
   };
   stopRules?: string[];
   systemAutomaticActions?: string[];
+  sourceFile?: SourceFileMeta;
+  rawMarkdown?: string;
+  /** Transient, only used when importing a freshly-uploaded document (see TestManagement upload flow) */
+  sourceFileToken?: string;
+  sourceFileName?: string;
+  sourceMimeType?: string;
   spaceId?: string;
   version?: string;
   versionNumber?: number;
