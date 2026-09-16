@@ -1181,12 +1181,17 @@ apiRouter.get('/progress', requireAuth, async (req: any, res) => {
 apiRouter.post('/progress', requireAuth, async (req: any, res) => {
   try {
     const { readSectionIds, testScore, employeeInfo } = req.body;
-    
+
     if (readSectionIds && Array.isArray(readSectionIds)) {
       await ProgressService.saveReadSections(req.user._id, readSectionIds);
     }
     if (employeeInfo) {
-      await ProgressService.saveAcknowledgment(req.user._id, employeeInfo);
+      try {
+        await ProgressService.saveAcknowledgment(req.user._id, employeeInfo);
+      } catch (ackErr: any) {
+        // Validation failure (e.g. quiz not yet passed) — surface the real reason to the client
+        return res.status(400).json({ error: ackErr.message || 'Не вдалося зберегти підпис' });
+      }
     }
     if (testScore) {
       await ProgressService.recordAttempt(req.user._id, testScore);

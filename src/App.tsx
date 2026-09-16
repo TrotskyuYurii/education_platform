@@ -66,6 +66,7 @@ function MainApp() {
       department: '',
       signedDate: '',
       isSigned: false,
+      signatureHash: '',
     },
     quizHistory: [],
     certificates: [],
@@ -328,12 +329,23 @@ function MainApp() {
     });
   };
 
-  const handleSaveProfile = (profile: UserProgress['employeeInfo']) => {
+  const handleSaveProfile = async (profile: UserProgress['employeeInfo']): Promise<void> => {
+    const res = await fetch('/api/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeInfo: profile })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Не вдалося зберегти підпис. Спробуйте ще раз.');
+    }
+    // Trust the server's view of employeeInfo (it computes the real signatureHash
+    // and enforces the qualification-test requirement) rather than echoing back
+    // what the client optimistically sent.
     setProgress((prev) => ({
       ...prev,
-      employeeInfo: profile,
+      employeeInfo: data.progress?.employeeInfo || profile,
     }));
-    saveProgressToDb(undefined, undefined, profile);
   };
 
   if (!dataLoaded) {

@@ -204,6 +204,7 @@ export interface UserProgress {
     department: string;
     signedDate: string;
     isSigned: boolean;
+    signatureHash?: string;
   };
   quizHistory: Array<{
     date: string;

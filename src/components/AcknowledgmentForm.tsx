@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { UserProgress } from '../types';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
-import { 
-  CheckCircle2, 
-  Award, 
-  Printer, 
-  FileCheck, 
-  UserCheck, 
-  Building2, 
-  Calendar, 
-  Briefcase 
+import {
+  CheckCircle2,
+  Award,
+  Printer,
+  FileCheck,
+  UserCheck,
+  Building2,
+  Calendar,
+  Briefcase,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 
 interface AcknowledgmentFormProps {
   progress: UserProgress;
-  onSaveProfile: (profile: UserProgress['employeeInfo']) => void;
+  onSaveProfile: (profile: UserProgress['employeeInfo']) => Promise<void>;
   onNavigateToQuiz: () => void;
 }
 
@@ -24,16 +26,18 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
   onNavigateToQuiz,
 }) => {
   const [fullName, setFullName] = useState(progress.employeeInfo.fullName || '');
-  const [position, setPosition] = useState(progress.employeeInfo.position || 'Касир торгівельного залу');
-  const [department, setDepartment] = useState(progress.employeeInfo.department || 'Магазин № 1 (м. Київ)');
+  const [position, setPosition] = useState(progress.employeeInfo.position || '');
+  const [department, setDepartment] = useState(progress.employeeInfo.department || '');
   const [isSavedLocally, setIsSavedLocally] = useState(progress.employeeInfo.isSigned);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const bestScore = progress.bestScore;
   const isPassed = bestScore !== null && bestScore >= 80;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim()) return;
+    if (!fullName.trim() || !isPassed || isSaving) return;
 
     const todayStr = new Date().toLocaleDateString('uk-UA', {
       day: '2-digit',
@@ -41,14 +45,22 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
       year: 'numeric'
     });
 
-    onSaveProfile({
-      fullName,
-      position,
-      department,
-      signedDate: todayStr,
-      isSigned: true,
-    });
-    setIsSavedLocally(true);
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      await onSaveProfile({
+        fullName,
+        position,
+        department,
+        signedDate: todayStr,
+        isSigned: true,
+      });
+      setIsSavedLocally(true);
+    } catch (err: any) {
+      setSaveError(err?.message || 'Не вдалося зберегти підпис. Спробуйте ще раз.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handlePrint = () => {
@@ -230,9 +242,11 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
                   <p className="text-xs text-emerald-800">
                     Співробітник: {fullName} · {position}
                   </p>
-                  <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
-                    Електронний відбиток: SHA-{(fullName.length * 9471).toString(16).toUpperCase()} · Дата: {progress.employeeInfo.signedDate || 'Сьогодні'}
-                  </p>
+                  {progress.employeeInfo.signatureHash && (
+                    <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                      Електронний відбиток: {progress.employeeInfo.signatureHash.slice(0, 16).toUpperCase()} · Дата: {progress.employeeInfo.signedDate || 'Сьогодні'}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -244,16 +258,38 @@ export const AcknowledgmentForm: React.FC<AcknowledgmentFormProps> = ({
                 Змінити дані
               </button>
             </div>
-          ) : (
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          ) : !isPassed ? (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row items-center justify-between gap-3 print:hidden">
+              <div className="flex items-center gap-2 text-xs font-semibold">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Підпис буде доступний після успішного складання атестаційного тесту (мінімум 80%).</span>
+              </div>
               <button
-                type="submit"
-                id="btn-sign-regulation"
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-2"
+                type="button"
+                onClick={onNavigateToQuiz}
+                className="shrink-0 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Підтвердити ознайомлення (Підписати лист)</span>
+                Пройти тест
               </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {saveError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                  {saveError}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="submit"
+                  id="btn-sign-regulation"
+                  disabled={isSaving}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-2"
+                >
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>{isSaving ? 'Збереження...' : 'Підтвердити ознайомлення (Підписати лист)'}</span>
+                </button>
+              </div>
             </div>
           )}
 

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import { User, Section, Course, Progress } from '../../models.js';
 import {
   ReadingProgress,
@@ -9,6 +10,10 @@ import {
   LearningAssignment
 } from './models.js';
 import { NotificationService } from '../notifications/service.js';
+
+// Minimum quiz score required before an employee is allowed to sign the compliance
+// acknowledgment sheet (matches the qualification threshold shown throughout the UI).
+const ACKNOWLEDGMENT_PASS_THRESHOLD = 80;
 
 export class ProgressService {
   /**
@@ -224,13 +229,15 @@ export class ProgressService {
           position: ack.position,
           department: ack.department,
           signedDate: ack.signedDate,
-          isSigned: ack.isSigned
+          isSigned: ack.isSigned,
+          signatureHash: ack.signatureHash || ''
         } : {
           fullName: '',
           position: '',
           department: '',
           signedDate: '',
-          isSigned: false
+          isSigned: false,
+          signatureHash: ''
         },
         quizHistory: attemptsList,
         testScores: attemptsList,
@@ -384,17 +391,50 @@ export class ProgressService {
   static async saveAcknowledgment(userId: string | mongoose.Types.ObjectId, employeeInfo: any) {
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
-    const wasSignedBefore = Boolean((await Acknowledgment.findOne({ userId: userObjectId }))?.isSigned);
+    const existing = await Acknowledgment.findOne({ userId: userObjectId });
+    const wasSignedBefore = Boolean(existing?.isSigned);
+
+    const fullName = employeeInfo.fullName || '';
+    const position = employeeInfo.position || '';
+    const department = employeeInfo.department || '';
+    const signedDate = employeeInfo.signedDate || '';
+    const wantsToSign = !!employeeInfo.isSigned;
+
+    if (wantsToSign && !fullName.trim()) {
+      throw new Error('Вкажіть ПІБ перед підписанням листа ознайомлення.');
+    }
+
+    if (wantsToSign) {
+      // A compliance signature is only valid once the employee has actually passed
+      // the qualification quiz — enforce this server-side, not just in the UI.
+      const attempts = await QuizAttempt.find({ userId: userObjectId });
+      const bestScore = attempts.length > 0 ? Math.max(...attempts.map(a => a.percentage || 0)) : 0;
+      if (bestScore < ACKNOWLEDGMENT_PASS_THRESHOLD) {
+        throw new Error(
+          `Підпис недоступний: спочатку потрібно скласти атестаційний тест (мінімум ${ACKNOWLEDGMENT_PASS_THRESHOLD}%). Поточний найкращий результат: ${bestScore}%.`
+        );
+      }
+    }
+
+    // A real, verifiable signature fingerprint (not shown/derived on the client) —
+    // ties the signer, their declared identity and the moment of signing together.
+    const signatureHash = wantsToSign
+      ? crypto
+          .createHash('sha256')
+          .update(`${userObjectId.toString()}|${fullName}|${position}|${department}|${signedDate}`)
+          .digest('hex')
+      : existing?.signatureHash;
 
     const ack = await Acknowledgment.findOneAndUpdate(
       { userId: userObjectId },
       {
         $set: {
-          fullName: employeeInfo.fullName || '',
-          position: employeeInfo.position || '',
-          department: employeeInfo.department || '',
-          signedDate: employeeInfo.signedDate || '',
-          isSigned: !!employeeInfo.isSigned,
+          fullName,
+          position,
+          department,
+          signedDate,
+          isSigned: wantsToSign,
+          signatureHash,
           updatedAt: new Date()
         }
       },
