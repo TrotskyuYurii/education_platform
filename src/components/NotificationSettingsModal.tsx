@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Bell, Lock, Save, Loader2 } from 'lucide-react';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface NotificationTypeInfo {
   type: string;
@@ -17,6 +18,8 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, onClose);
 
   useEffect(() => {
     fetch('/api/v2/notifications/settings')
@@ -59,14 +62,18 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-xs" onClick={onClose}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notif-settings-title"
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-bold text-slate-900 flex items-center gap-2">
+          <h3 id="notif-settings-title" className="font-bold text-slate-900 flex items-center gap-2">
             <Bell className="w-5 h-5 text-blue-600" /> Сповіщення на email
           </h3>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
+          <button onClick={onClose} aria-label="Закрити" className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
             <X className="w-4.5 h-4.5" />
           </button>
         </div>
@@ -112,7 +119,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           )}
 
           {saveMessage && (
-            <div className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+            <div role="status" aria-live="polite" className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               {saveMessage}
             </div>
           )}

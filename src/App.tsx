@@ -377,7 +377,12 @@ function MainApp() {
       
       {/* Global Notifications */}
       {progress.notifications && progress.notifications.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full">
+        <div
+          className="fixed bottom-6 right-6 left-6 sm:left-auto z-50 flex flex-col gap-3 max-w-sm ml-auto"
+          role="region"
+          aria-live="polite"
+          aria-label="Сповіщення"
+        >
           {progress.notifications.filter(n => !n.read).map(notif => {
             // isCritical is undefined for notifications created before Крок 11 — treat those as critical too, matching the old behavior.
             const isCritical = notif.isCritical !== false;
@@ -395,6 +400,7 @@ function MainApp() {
                   onClick={() => dismissNotification(notif.id)}
                   className={`${palette.close} transition p-1`}
                   title="Закрити"
+                  aria-label="Закрити сповіщення"
                 >
                   ×
                 </button>

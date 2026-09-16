@@ -49,6 +49,10 @@ const certificateRecordSchema = new mongoose.Schema({
 });
 
 certificateRecordSchema.index({ userId: 1, courseId: 1, status: 1 });
+// Крок 14: covers the scheduler's expiring-certificate scan (notifications/scheduler.ts)
+// and the analytics "expiring soon" facet (analytics/service.ts) — both query
+// {status:'active', expiresAt: <range>}.
+certificateRecordSchema.index({ status: 1, expiresAt: 1 });
 
 // 4. Electronic Signoff / Acknowledgment of corporate regulations
 const acknowledgmentSchema = new mongoose.Schema({

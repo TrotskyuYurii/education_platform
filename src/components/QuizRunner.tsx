@@ -480,12 +480,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               </div>
             )}
 
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
+            <h3 id="quiz-question-text" className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
               {currentQ.question}
             </h3>
 
             {/* Options List */}
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 space-y-3" role="radiogroup" aria-labelledby="quiz-question-text">
               {(currentQ.options || []).map((option, optIdx) => {
                 const isSelected = currentSelectedOption === optIdx;
                 const isCorrectOpt = currentQ.correctIndex === optIdx;
@@ -508,6 +508,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 return (
                   <button
                     key={optIdx}
+                    role="radio"
+                    aria-checked={isSelected}
+                    aria-label={option}
                     onClick={() => handleSelectOption(optIdx)}
                     disabled={!examMode && isCurrentAnswered}
                     className={`w-full text-left p-4 rounded-xl border transition flex items-start gap-3.5 ${btnStyles}`}

@@ -101,7 +101,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
   }
 
   const renderSidebar = () => (
-    <div className="flex flex-col h-full bg-slate-50 border-r border-slate-200">
+    <nav aria-label="Зміст курсу" className="flex flex-col h-full bg-slate-50 border-r border-slate-200">
       <div className="p-4 sm:p-5 border-b border-slate-200 bg-white sticky top-0 z-10">
         <button onClick={onBackToCatalog} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition mb-4 uppercase tracking-wider">
           <ArrowLeft className="w-3.5 h-3.5" /> До каталогу
@@ -195,7 +195,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           )}
         </div>
       )}
-    </div>
+    </nav>
   );
 
   return (

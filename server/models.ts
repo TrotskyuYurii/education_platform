@@ -24,8 +24,8 @@ const userSchema = new mongoose.Schema({
   avatarUrl: { type: String },
   phone: { type: String },
   positionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Position' },
-  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-  managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', index: true },
+  managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
     hireDate: { type: Date },
   isActive: { type: Boolean, default: true },
@@ -169,7 +169,7 @@ const roleSchema = new mongoose.Schema({
 });
 
 const progressSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   readSectionIds: [String],
   testScores: [{
     sectionId: String,

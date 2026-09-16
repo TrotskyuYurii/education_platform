@@ -297,7 +297,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       />
 
       {/* Modal Dialog Card */}
-      <div 
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Глобальний пошук"
         className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-150"
         onKeyDown={handleKeyDown}
       >
@@ -322,6 +325,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
               }}
               className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition"
               title="Очистити поле"
+              aria-label="Очистити поле пошуку"
             >
               <X className="w-4 h-4" />
             </button>

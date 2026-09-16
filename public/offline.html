@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Немає з'єднання — ВІАТЕК</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        text-align: center;
+        padding: 24px;
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+        background: #2563eb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.35);
+      }
+      h1 { font-size: 18px; margin: 0 0 8px; font-weight: 800; }
+      p { font-size: 14px; color: #64748b; margin: 0 0 20px; max-width: 320px; }
+      button {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover { background: #1d4ed8; }
+    </style>
+  </head>
+  <body>
+    <div class="icon">
+      <img src="/icon.svg" alt="" width="32" height="32" />
+    </div>
+    <h1>ТОВ «ВІАТЕК» — немає з'єднання</h1>
+    <p>Схоже, ваш пристрій зараз офлайн. Перевірте інтернет-з'єднання і спробуйте ще раз.</p>
+    <button onclick="location.reload()">Спробувати знову</button>
+  </body>
+</html>

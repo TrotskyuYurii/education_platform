@@ -2,8 +2,32 @@ import { Router, Request, Response } from 'express';
 import { ProgressService } from './service.js';
 import { requirePermission, scopeFilter, isUserInScope } from '../core/permissions.js';
 import { User } from '../../models.js';
+import { LearningAssignment } from './models.js';
 
 export const progressV2Router = Router();
+
+// SECURITY: requirePermission('learning.assignment.create'/'certificate.revoke') only confirms
+// the caller holds the permission at SOME scope (self/team/department/all) — it has no idea
+// which record :id/:userId refers to. Without this helper a manager/HR granted a narrower scope
+// could mutate/revoke any user's data by guessing/reusing an id from outside their scope.
+async function assertAssignmentInScope(req: Request, res: Response, assignmentId: string, permission: string) {
+  const assignment = await LearningAssignment.findById(assignmentId);
+  if (!assignment) {
+    res.status(404).json({ error: 'Призначення не знайдено' });
+    return null;
+  }
+  const target = await User.findById(assignment.userId).select('_id departmentId managerId');
+  if (!target) {
+    res.status(404).json({ error: 'Користувача не знайдено' });
+    return null;
+  }
+  const allowed = await isUserInScope((req as any).user, target, permission);
+  if (!allowed) {
+    res.status(403).json({ error: 'Немає доступу до цього призначення' });
+    return null;
+  }
+  return assignment;
+}
 
 // 1. Current user: get structured progress summary
 progressV2Router.get('/summary', async (req: Request, res: Response) => {
@@ -128,6 +152,12 @@ progressV2Router.delete('/admin/certificates/:userId/:courseId', requirePermissi
     const { userId, courseId } = req.params;
     const { reason } = req.body || {};
 
+    const target = await User.findById(userId).select('_id departmentId managerId');
+    if (!target) return res.status(404).json({ error: 'Користувача не знайдено' });
+    if (!(await isUserInScope(currentUser, target, 'certificate.revoke'))) {
+      return res.status(403).json({ error: 'Немає доступу до сертифіката цього користувача' });
+    }
+
     const result = await ProgressService.revokeCertificate(String(userId), String(courseId), currentUser._id, reason);
     res.json(result);
   } catch (err: any) {
@@ -239,8 +269,9 @@ progressV2Router.post('/admin/assignments', requirePermission('learning.assignme
 progressV2Router.patch('/admin/assignments/:id', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { dueDate, priority, notes, status } = req.body;
+    if (!(await assertAssignmentInScope(req, res, String(id), 'learning.assignment.create'))) return;
 
+    const { dueDate, priority, notes, status } = req.body;
     const updated = await ProgressService.updateAssignment(String(id), { dueDate, priority, notes, status });
     res.json({ success: true, assignment: updated });
   } catch (err: any) {
@@ -254,6 +285,7 @@ progressV2Router.post('/admin/assignments/:id/remind', requirePermission('learni
   try {
     const currentUser = (req as any).user;
     const { id } = req.params;
+    if (!(await assertAssignmentInScope(req, res, String(id), 'learning.assignment.create'))) return;
 
     const result = await ProgressService.remindAssignment(String(id), currentUser.fullName || currentUser.username);
     res.json(result);
@@ -267,6 +299,8 @@ progressV2Router.post('/admin/assignments/:id/remind', requirePermission('learni
 progressV2Router.delete('/admin/assignments/:id', requirePermission('learning.assignment.create'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (!(await assertAssignmentInScope(req, res, String(id), 'learning.assignment.create'))) return;
+
     const result = await ProgressService.deleteAssignment(String(id));
     res.json(result);
   } catch (err: any) {

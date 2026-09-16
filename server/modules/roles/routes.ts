@@ -44,20 +44,27 @@ rolesRouter.get('/permissions', requirePermission('roles.manage'), (req, res) =>
 rolesRouter.get('/roles', requirePermission('roles.manage'), async (req, res, next) => {
   try {
     const roles = await Role.find({}).sort({ isSystem: -1, title: 1 });
-    
-    // Count users for each role
-    const users = await User.find({}).select('role roleKeys');
-    const userCountByRole: Record<string, number> = {};
 
-    users.forEach((u: any) => {
-      const keys: string[] = (u.roleKeys && u.roleKeys.length > 0) 
-        ? u.roleKeys 
-        : (u.role === 'admin' ? ['admin'] : ['employee']);
-      
-      keys.forEach((k: string) => {
-        userCountByRole[k] = (userCountByRole[k] || 0) + 1;
-      });
-    });
+    // Крок 14: count via aggregation instead of loading every User document into
+    // memory just to tally roleKeys in JS — same fallback logic as before
+    // (empty roleKeys → ['admin'] or ['employee']), just computed in Mongo.
+    const counts = await User.aggregate([
+      {
+        $project: {
+          keys: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$roleKeys', []] } }, 0] },
+              '$roleKeys',
+              { $cond: [{ $eq: ['$role', 'admin'] }, ['admin'], ['employee']] }
+            ]
+          }
+        }
+      },
+      { $unwind: '$keys' },
+      { $group: { _id: '$keys', count: { $sum: 1 } } }
+    ]);
+    const userCountByRole: Record<string, number> = {};
+    counts.forEach((c: any) => { userCountByRole[c._id] = c.count; });
 
     const enrichedRoles = roles.map((r: any) => ({
       ...r.toObject(),

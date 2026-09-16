@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Mail, Phone, Building2, MapPin, UserRound, Calendar, BarChart3, Save, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { PeopleProfile, OrgDictionaryItem } from './types';
 
 interface EmployeeCardProps {
@@ -33,6 +34,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   const isSelf = viewer?.id === userId;
   const isAdmin = Boolean(viewer?.role === 'admin' || viewer?.roleKeys?.includes('admin'));
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, onClose);
 
   const fetchProfile = async () => {
     setIsLoading(true);
@@ -124,6 +128,10 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-xs" onClick={onClose}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="employee-card-title"
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
@@ -148,11 +156,11 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-bold text-slate-900 truncate">{profile.fullName || profile.email}</h3>
+                  <h3 id="employee-card-title" className="font-bold text-slate-900 truncate">{profile.fullName || profile.email}</h3>
                   <p className="text-sm text-slate-500 truncate">{profile.position?.title || 'Посада не вказана'}</p>
                 </div>
               </div>
-              <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0">
+              <button onClick={onClose} aria-label="Закрити" className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0">
                 <X className="w-4.5 h-4.5" />
               </button>
             </div>
@@ -218,8 +226,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 <form onSubmit={handleSaveSelf} className="pt-3 border-t border-slate-100 space-y-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Мої контакти</h4>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Телефон</label>
+                    <label htmlFor="ec-phone" className="block text-xs font-semibold text-slate-700 mb-1">Телефон</label>
                     <input
+                      id="ec-phone"
                       type="text"
                       value={selfForm.phone}
                       onChange={e => setSelfForm({ ...selfForm, phone: e.target.value })}
@@ -228,8 +237,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Посилання на фото</label>
+                    <label htmlFor="ec-avatar" className="block text-xs font-semibold text-slate-700 mb-1">Посилання на фото</label>
                     <input
+                      id="ec-avatar"
                       type="text"
                       value={selfForm.avatarUrl}
                       onChange={e => setSelfForm({ ...selfForm, avatarUrl: e.target.value })}
@@ -253,8 +263,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Кадрові дані (HR/адмін)</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Посада</label>
+                      <label htmlFor="ec-position" className="block text-xs font-semibold text-slate-700 mb-1">Посада</label>
                       <select
+                        id="ec-position"
                         value={orgForm.positionId}
                         onChange={e => setOrgForm({ ...orgForm, positionId: e.target.value })}
                         className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -264,8 +275,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Підрозділ</label>
+                      <label htmlFor="ec-department" className="block text-xs font-semibold text-slate-700 mb-1">Підрозділ</label>
                       <select
+                        id="ec-department"
                         value={orgForm.departmentId}
                         onChange={e => setOrgForm({ ...orgForm, departmentId: e.target.value })}
                         className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -275,8 +287,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Локація</label>
+                      <label htmlFor="ec-location" className="block text-xs font-semibold text-slate-700 mb-1">Локація</label>
                       <select
+                        id="ec-location"
                         value={orgForm.locationId}
                         onChange={e => setOrgForm({ ...orgForm, locationId: e.target.value })}
                         className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -286,8 +299,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Дата найму</label>
+                      <label htmlFor="ec-hire-date" className="block text-xs font-semibold text-slate-700 mb-1">Дата найму</label>
                       <input
+                        id="ec-hire-date"
                         type="date"
                         value={orgForm.hireDate}
                         onChange={e => setOrgForm({ ...orgForm, hireDate: e.target.value })}

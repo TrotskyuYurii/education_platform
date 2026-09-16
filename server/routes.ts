@@ -8,6 +8,7 @@ import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
+import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -67,7 +68,7 @@ apiRouter.use('/v2/search', requireAuth, searchRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
-apiRouter.post('/auth/login', async (req, res) => {
+apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
   try {
     const { email, username, password } = req.body;
     const loginIdentifier = (email || username || '').toLowerCase().trim();
@@ -149,7 +150,7 @@ apiRouter.post('/auth/login', async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/verify-code', async (req, res) => {
+apiRouter.post('/auth/verify-code', verifyCodeRateLimiter, async (req, res) => {
   try {
     const { email, code } = req.body;
     if (!email || !code) {
@@ -203,7 +204,7 @@ apiRouter.post('/auth/verify-code', async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/resend-code', async (req, res) => {
+apiRouter.post('/auth/resend-code', resendCodeRateLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email обов\'язковий' });
@@ -297,13 +298,24 @@ apiRouter.get('/admin/users', requireAuth, requirePermission('users.profile.view
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const users = await User.find(filter)
-      .select('-passwordHash -authCode')
-      .populate('departmentId', 'name')
-      .populate('positionId', 'title grade')
-      .populate('managerId', 'fullName email username')
-      .sort({ createdAt: -1 });
-    res.json({ users });
+    // Крок 14: pagination is opt-in via ?limit=&skip= so existing callers that rely on
+    // getting everyone (e.g. manager-picker dropdowns) keep working unchanged; a generous
+    // default cap still guards against an unbounded scan on a very large user base.
+    const limit = req.query.limit ? Math.min(parseInt(String(req.query.limit), 10) || 1000, 1000) : 1000;
+    const skip = req.query.skip ? parseInt(String(req.query.skip), 10) || 0 : 0;
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('-passwordHash -authCode')
+        .populate('departmentId', 'name')
+        .populate('positionId', 'title grade')
+        .populate('managerId', 'fullName email username')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments(filter)
+    ]);
+    res.json({ users, total });
   } catch (err) {
     res.status(500).json({ error: 'Помилка сервера' });
   }
@@ -1123,6 +1135,14 @@ apiRouter.get('/admin/users-progress', requireAuth, requirePermission('analytics
 apiRouter.delete('/admin/progress/:userId/certificate/:courseId', requireAuth, requirePermission('certificate.revoke'), async (req, res) => {
   try {
     const { userId, courseId } = req.params;
+
+    const { isUserInScope } = await import('./modules/core/permissions.js');
+    const target = await User.findById(userId).select('_id departmentId managerId');
+    if (!target) return res.status(404).json({ error: 'Користувача не знайдено' });
+    if (!(await isUserInScope((req as any).user, target, 'certificate.revoke'))) {
+      return res.status(403).json({ error: 'Немає доступу до сертифіката цього користувача' });
+    }
+
     await ProgressService.revokeCertificate(String(userId), String(courseId), (req as any).user._id);
     const progress = await ProgressService.getUserProgress(String(userId));
     res.json({ success: true, progress });

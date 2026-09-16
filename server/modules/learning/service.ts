@@ -494,7 +494,7 @@ export class ProgressService {
   /**
    * Analytics summary report for a list of users (scoped)
    */
-  static async getUsersProgressReport(userFilter: any) {
+  static async getUsersProgressReport(userFilter: any, limit: number = 1000, skip: number = 0) {
     const currentSections = await Section.find({} as any, { id: 1 } as any);
     const validSectionIds = new Set(currentSections.map(s => s.id));
     const totalSectionsCount = currentSections.length;
@@ -503,7 +503,9 @@ export class ProgressService {
       .select('-passwordHash -authCode')
       .populate('departmentId', 'name')
       .populate('managerId', 'fullName email username')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     const userIds = users.map(u => u._id);
 
@@ -786,7 +788,9 @@ export class ProgressService {
     const userMap = new Map(targetUsers.map(u => [u._id.toString(), u]));
     const targetUserIds = targetUsers.map(u => u._id);
 
-    const assignments = await LearningAssignment.find({ userId: { $in: targetUserIds } }).sort({ dueDate: 1, createdAt: -1 });
+    // Крок 14: generous safety cap — assignments scale with users × courses, the
+    // single most likely list in the app to exceed a few thousand rows.
+    const assignments = await LearningAssignment.find({ userId: { $in: targetUserIds } }).sort({ dueDate: 1, createdAt: -1 }).limit(5000);
     const now = new Date();
 
     let total = assignments.length;
