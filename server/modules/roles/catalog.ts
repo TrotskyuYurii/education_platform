@@ -51,35 +51,11 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
     allowedScopes: ['all']
   },
   {
-    code: 'knowledge.article.view',
-    name: 'Перегляд регламентів та інструкцій',
-    category: 'knowledge',
-    categoryLabel: 'База знань та регламенти',
-    description: 'Доступ до каталогу регламентів, пошуку, стоп-правил та покрокових інструкцій',
-    allowedScopes: ['all']
-  },
-  {
     code: 'knowledge.article.publish',
     name: 'Публікація та редагування матеріалів',
     category: 'knowledge',
     categoryLabel: 'База знань та регламенти',
     description: 'Створення, редагування, імпорт/експорт Markdown та публікація навчальних матеріалів',
-    allowedScopes: ['department', 'all']
-  },
-  {
-    code: 'knowledge.space.manage',
-    name: 'Керування просторами бази знань',
-    category: 'knowledge',
-    categoryLabel: 'База знань та регламенти',
-    description: 'Створення, редагування, групування та налаштування тематичних просторів (робочих областей) бази знань',
-    allowedScopes: ['all']
-  },
-  {
-    code: 'knowledge.version.manage',
-    name: 'Керування версіями та статусами регламентів',
-    category: 'knowledge',
-    categoryLabel: 'База знань та регламенти',
-    description: 'Створення нових ревізій регламентів, відновлення попередніх версій, зміна життєвого циклу (чернетка, рецензія, публікація, архів)',
     allowedScopes: ['department', 'all']
   },
   {

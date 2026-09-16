@@ -37,7 +37,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
-      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'people', 'signoff', 'profile', 'management', 'about', 'dashboard'].includes(saved)) {
+      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'people', 'signoff', 'management', 'about', 'dashboard'].includes(saved)) {
         return saved;
       }
     } catch {}

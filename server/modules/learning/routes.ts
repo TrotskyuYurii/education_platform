@@ -108,23 +108,6 @@ progressV2Router.post('/notifications/:id/read', async (req: Request, res: Respo
   }
 });
 
-// 6. Admin / Manager: Get users analytics report scoped by permissions
-progressV2Router.get('/admin/users-report', requirePermission('analytics.report.view'), async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const userFilter = await scopeFilter(user, 'analytics.report.view');
-    if (userFilter._id === null) {
-      return res.json({ users: [] });
-    }
-
-    const users = await ProgressService.getUsersProgressReport(userFilter);
-    res.json({ users });
-  } catch (err: any) {
-    console.error('Failed to get users progress report', err);
-    res.status(500).json({ error: 'Помилка отримання аналітичного звіту' });
-  }
-});
-
 // 7. Admin / Manager: Get specific user progress
 progressV2Router.get('/admin/user/:userId', requirePermission('analytics.report.view'), async (req: Request, res: Response) => {
   try {

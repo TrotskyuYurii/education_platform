@@ -141,9 +141,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   };
   const fetchDepartments = async () => {
     try {
-      const res = await fetch('/api/admin/departments');
+      const res = await fetch('/api/v2/org/departments');
       const data = await res.json();
-      if (res.ok) setDepartments(data.departments);
+      if (res.ok) setDepartments(Array.isArray(data) ? data : []);
     } catch (err) {}
   };
   const fetchPositions = async () => {
@@ -408,7 +408,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch('/api/admin/departments', {
+      await fetch('/api/v2/org/departments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newDepartment })
@@ -421,7 +421,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const handleDeleteDepartment = async (id: string) => {
     setIsDeletingDep(true);
     try {
-      const res = await fetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v2/org/departments/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setDeletingDepId(null);
         fetchDepartments();

@@ -111,14 +111,14 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
     try {
       const [res, deptRes] = await Promise.all([
         fetch('/api/admin/users'),
-        fetch('/api/admin/departments').catch(() => null)
+        fetch('/api/v2/org/departments').catch(() => null)
       ]);
       const depts = new Set<string>();
 
       if (deptRes && deptRes.ok) {
-        const deptData = await deptRes.json().catch(() => ({}));
-        if (Array.isArray(deptData.departments)) {
-          deptData.departments.forEach((d: any) => {
+        const deptData = await deptRes.json().catch(() => []);
+        if (Array.isArray(deptData)) {
+          deptData.forEach((d: any) => {
             const name = typeof d === 'string' ? d : d?.name;
             if (name && typeof name === 'string' && name.trim()) {
               depts.add(name.trim());

@@ -53,18 +53,16 @@ import { searchRouter } from './modules/search/routes.js';
 const requireAdmin = requirePermission('admin.access');
 
 // --- Mount V2 Routers ---
+// Крок 15 (узгодженість): each router used to be reachable under 2-3 different
+// prefixes (accretion from earlier steps renaming things without cleanup) — kept
+// only the prefix the frontend actually calls for each one; the rest were dead.
 apiRouter.use('/v2/org', requireAuth, orgRouter);
 apiRouter.use('/v2/people', requireAuth, peopleRouter);
 apiRouter.use('/v2/notifications', requireAuth, notificationsRouter);
 apiRouter.use('/v2/analytics', requireAuth, analyticsRouter);
-apiRouter.use('/v2/roles', requireAuth, rolesRouter);
-apiRouter.use('/v2/progress', requireAuth, progressV2Router);
 apiRouter.use('/progress-v2', requireAuth, progressV2Router);
-apiRouter.use('/assignments', requireAuth, progressV2Router);
 apiRouter.use('/v2/knowledge', requireAuth, knowledgeRouter);
-apiRouter.use('/knowledge', requireAuth, knowledgeRouter);
 apiRouter.use('/search', requireAuth, searchRouter);
-apiRouter.use('/v2/search', requireAuth, searchRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -372,17 +370,26 @@ apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.
       }
     }
 
+    // Крок 15 (узгодженість): departmentId (Крок 1 dictionary ref) and the legacy
+    // departments[] string array must always be updated together — leaving one
+    // stale (e.g. clearing departmentId without touching departments) makes RBAC
+    // scoping (which trusts departmentId) and course visibility in GET /api/content
+    // (which trusts departments[]) disagree about the same user.
     if (departmentId !== undefined) {
       updateData.departmentId = departmentId || null;
       if (departmentId) {
         const dep = await Department.findById(departmentId);
-        if (dep) updateData.departments = [dep.name];
+        updateData.departments = dep ? [dep.name] : [];
+      } else {
+        updateData.departments = ['Всі підрозділи'];
       }
     } else if (departments !== undefined) {
       updateData.departments = departments;
       if (departments.length > 0) {
         const dep = await Department.findOne({ name: departments[0] });
-        if (dep) updateData.departmentId = dep._id;
+        updateData.departmentId = dep ? dep._id : null;
+      } else {
+        updateData.departmentId = null;
       }
     }
 
@@ -418,33 +425,9 @@ apiRouter.put('/admin/users/:id', requireAuth, requirePermission('users.profile.
   }
 });
 
-apiRouter.get('/admin/departments', requireAuth, requireAdmin, async (req, res) => {
-  const deps = await Department.find();
-  res.json({ departments: deps });
-});
-
-apiRouter.post('/admin/departments', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-    const dep = await Department.create({ name } as any);
-    res.json({ department: dep });
-  } catch (err) {
-    res.status(400).json({ error: 'Failed to create department' });
-  }
-});
-
-apiRouter.delete('/admin/departments/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const dep = await Department.findOne({ _id: req.params.id } as any);
-    if (!dep) return res.status(404).json({ error: 'Not found' });
-    if (dep.name === 'Всі підрозділи') return res.status(400).json({ error: 'Cannot delete default department' });
-    await Department.findOneAndDelete({ _id: req.params.id } as any);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed' });
-  }
-});
+// Крок 15: legacy /api/admin/departments (GET/POST/DELETE) removed — it was a
+// second, unvalidated, unaudited code path writing to the same Department
+// collection as /api/v2/org/departments. All frontend consumers now use v2.
 
 apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edit'), async (req, res) => {
   try {
