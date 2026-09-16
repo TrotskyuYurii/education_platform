@@ -178,8 +178,14 @@ knowledgeRouter.get('/sections/:id/versions/:versionNumber/source-file.md', ensu
     const sectionId = String(req.params.id);
     const versionNumber = Number(req.params.versionNumber);
     const version = await KnowledgeService.getVersionSourceFile(sectionId, versionNumber);
-    const rawMarkdown = (version as any).rawMarkdown;
 
+    // Файл на диску (documents/<id>/v<N>/instruction.md) — першоджерело редакції
+    const markdownFile = (version as any).markdownFile;
+    if (markdownFile?.storagePath && fileExists(markdownFile.storagePath)) {
+      return res.download(getFileAbsolutePath(markdownFile.storagePath), `${sectionId}-v${versionNumber}.md`);
+    }
+
+    const rawMarkdown = (version as any).rawMarkdown;
     if (!rawMarkdown) {
       return res.status(404).json({ error: 'Markdown-файл для цієї версії не знайдено' });
     }

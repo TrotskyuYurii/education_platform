@@ -30,7 +30,8 @@ import {
   CreditCard,
   ShieldCheck,
   Users,
-  Download
+  Download,
+  Image as ImageIcon
 } from 'lucide-react';
 import { KnowledgeSpace, InstructionSection, InstructionVersion, DocumentStatus, KnowledgeMetrics } from '../../types';
 
@@ -925,7 +926,7 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
                         {ver.changeSummary || 'Оновлення регламенту'}
                       </div>
 
-                      {(ver.sourceFile || ver.rawMarkdown) && selectedSectionForVersions && (
+                      {(ver.sourceFile || ver.rawMarkdown || (ver.assets && ver.assets.length > 0)) && selectedSectionForVersions && (
                         <div className="flex items-center gap-2 mb-1.5">
                           {ver.sourceFile && (
                             <a
@@ -948,6 +949,14 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
                             >
                               <FileText className="w-3 h-3" /> MD
                             </a>
+                          )}
+                          {ver.assets && ver.assets.length > 0 && (
+                            <span
+                              title="Скріншоти збережені файлами у теці документа"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded"
+                            >
+                              <ImageIcon className="w-3 h-3" /> {ver.assets.length}
+                            </span>
                           )}
                         </div>
                       )}

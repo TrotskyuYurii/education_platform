@@ -51,6 +51,27 @@ const instructionVersionSchema = new mongoose.Schema({
     checksum: String,
     uploadedAt: Date
   },
+  // Файл проаналізованого Markdown цієї редакції (documents/<id>/v<N>/instruction.md)
+  markdownFile: {
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    uploadedAt: Date
+  },
+  // Скріншоти, на які посилається Markdown цієї редакції
+  assets: [{
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    width: Number,
+    height: Number,
+    page: Number,
+    source: String
+  }],
   rawMarkdown: { type: String, default: '' },
   changeSummary: { type: String, default: '' }, // What was changed in this revision
   authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

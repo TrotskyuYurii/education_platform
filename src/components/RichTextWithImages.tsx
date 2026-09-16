@@ -11,12 +11,20 @@ interface RichTextWithImagesProps {
   onImageClick?: (url: string, alt: string) => void;
 }
 
-// Ensure base64 urls are clean and well-formed
-const cleanBase64Url = (url: string | undefined): string | null => {
+/**
+ * Приводить посилання на зображення до вигляду, придатного для <img src>.
+ * Штатний формат — файл у теці документа (`/api/sections/<id>/assets/v1/img-001.png`);
+ * Base64 підтримуємо лише для інструкцій, імпортованих до переходу на файлове зберігання.
+ */
+const normalizeImageUrl = (url: string | undefined): string | null => {
   if (!url) return null;
   const trimmed = url.trim();
   if (trimmed.startsWith('data:image/')) return trimmed;
   if (trimmed.startsWith('http')) return trimmed;
+  // Файл документа: абсолютний шлях API або відносний assets/...
+  if (/^\/[^\s]+$/.test(trimmed) || /^(?:\.\/)?assets\/[^\s]+$/i.test(trimmed)) {
+    return trimmed.replace(/^\.\//, '');
+  }
   // If it's a raw base64 string without data prefix, try to guess
   if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 50) {
     // If it starts with /9j/, it's likely JPEG
@@ -40,12 +48,19 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
   // We need to parse out images and text segments so we can render images properly
   const segments: { type: 'text' | 'image', text?: string, imageUrl?: string, alt?: string }[] = [];
   
-  // Advanced regex to catch base64 images inside Markdown or HTML tags
-  // 1. ![alt](data:image/...)
+  // Advanced regex to catch images inside Markdown or HTML tags
+  // 1. ![alt](/api/sections/.../img-001.png | assets/img-001.png | https://... | data:image/...)
   // 2. <img src="url" ... />
   // 3. **Зображення:** url
-  // 4. Standalone data:image/... url
-  const combinedRegex = /(!\[([\s\S]*?)\]\(\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/[^\s)]+)\s*\)|<img\s+[^>]*src=["']\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/[^"']+)["'][^>]*>|\*\*Зображення:\*\*\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/\S+)|(data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=\s]{40,}))/gi;
+  // 4. Standalone data:image/... url (успадковані інструкції з Base64)
+  const IMAGE_URL = 'data:image\\/[^;]+;base64,[\\s\\S]*?|https?:\\/\\/[^\\s)"\']+|[./A-Za-z0-9_-][^\\s)"\']*\\.(?:png|jpe?g|webp|gif|svg|bmp)';
+  const combinedRegex = new RegExp(
+    `(!\\[([\\s\\S]*?)\\]\\(\\s*(${IMAGE_URL})\\s*\\)` +
+    `|<img\\s+[^>]*src=["']\\s*(${IMAGE_URL})["'][^>]*>` +
+    `|\\*\\*Зображення:\\*\\*\\s*(${IMAGE_URL})` +
+    `|(data:image\\/(?:png|jpeg|jpg|webp|gif|svg\\+xml);base64,[A-Za-z0-9+/=\\s]{40,}))`,
+    'gi'
+  );
   
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -70,7 +85,7 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
       extractedUrl = match[3] ? match[3].trim() : '';
     } else if (fullMatch.toLowerCase().startsWith('<img')) {
       // HTML <img src="..." alt="..." />
-      const srcMatch = fullMatch.match(/src=["']\s*(data:image\/[^;]+;base64,[\s\S]*?|https?:\/\/[^"']+)["']/i);
+      const srcMatch = fullMatch.match(new RegExp(`src=["']\\s*(${IMAGE_URL})["']`, 'i'));
       extractedUrl = srcMatch ? srcMatch[1].trim() : '';
       const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
       if (altMatch) extractedAlt = altMatch[1].trim();
@@ -83,7 +98,7 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
       extractedAlt = 'Скріншот';
     }
 
-    const cleaned = cleanBase64Url(extractedUrl);
+    const cleaned = normalizeImageUrl(extractedUrl);
     if (cleaned) {
       segments.push({
         type: 'image',

@@ -126,6 +126,7 @@ const sectionSchema = new mongoose.Schema({
   },
   stopRules: [String],
   systemAutomaticActions: [String],
+  // Оригінал документа (PDF/DOCX/TXT), з якого зроблено інструкцію
   sourceFile: {
     fileName: String,
     storagePath: String,
@@ -134,6 +135,27 @@ const sectionSchema = new mongoose.Schema({
     checksum: String,
     uploadedAt: Date
   },
+  // Проаналізований Markdown, збережений файлом поруч з оригіналом
+  markdownFile: {
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    uploadedAt: Date
+  },
+  // Скріншоти документа: зберігаються окремими файлами, Markdown посилається на них
+  assets: [{
+    fileName: String,
+    storagePath: String,
+    mimeType: String,
+    sizeBytes: Number,
+    checksum: String,
+    width: Number,
+    height: Number,
+    page: Number,
+    source: String
+  }],
   rawMarkdown: { type: String, default: '' },
   spaceId: { type: String, default: 'space-general' },
   version: { type: String, default: '1.0' },

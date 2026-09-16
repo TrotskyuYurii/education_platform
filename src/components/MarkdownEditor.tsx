@@ -3,12 +3,16 @@ import { Bold, Italic, List, Heading, Image as ImageIcon, Save, X } from 'lucide
 
 interface MarkdownEditorProps {
   initialValue: string;
+  /** Документ, у теку якого зберігаються завантажені зображення */
+  instructionId?: string;
   onSave: (md: string) => void;
   onCancel: () => void;
 }
 
-export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, onSave, onCancel }) => {
+export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, instructionId, onSave, onCancel }) => {
   const [content, setContent] = useState(initialValue);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -30,21 +34,42 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, on
     }, 0);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Зображення зберігається окремим файлом у теці документа, а в текст потрапляє
+   * лише посилання на нього. Base64 у Markdown більше не вставляємо: він роздуває
+   * документ у базі та не дає працювати з картинками як зі звичайними файлами.
+   */
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      const fileName = file.name.replace(/\.[^/.]+$/, '') || 'Скріншот';
-      // Вставляємо зображення у стандартному форматі Markdown
-      insertText(`\n![${fileName}](${base64})\n`);
-    };
-    reader.readAsDataURL(file);
-    
-    // Скидаємо input
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setUploadError(null);
+
+    if (!instructionId) {
+      setUploadError('Спочатку збережіть інструкцію — зображення зберігаються у її теці.');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const res = await fetch(`/api/admin/instructions/${instructionId}/assets`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Не вдалося зберегти зображення');
+
+      const caption = file.name.replace(/\.[^/.]+$/, '') || 'Скріншот';
+      insertText(`\n![${caption}](${data.url})\n`);
+    } catch (err: any) {
+      setUploadError(err.message || 'Не вдалося зберегти зображення');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -69,13 +94,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, on
             </button>
             <div className="w-px h-6 bg-slate-300 mx-1"></div>
             
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="p-2 text-blue-600 hover:bg-blue-100 rounded transition flex items-center gap-1.5 font-medium text-xs"
-              title="Вставити зображення (буде конвертовано у Base64)"
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="p-2 text-blue-600 hover:bg-blue-100 rounded transition flex items-center gap-1.5 font-medium text-xs disabled:opacity-50"
+              title="Додати зображення (зберігається файлом у теці документа)"
             >
               <ImageIcon className="w-4 h-4" />
-              Додати зображення
+              {isUploading ? 'Завантаження…' : 'Додати зображення'}
             </button>
             <input 
               type="file" 
@@ -103,6 +129,12 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, on
             </button>
           </div>
         </div>
+
+        {uploadError && (
+          <div className="px-4 py-2 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">
+            {uploadError}
+          </div>
+        )}
 
         {/* Editor Area */}
         <div className="flex-1 p-4 bg-slate-100/50">

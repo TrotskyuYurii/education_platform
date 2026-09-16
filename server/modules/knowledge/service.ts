@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { KnowledgeSpace, InstructionVersion } from './models.js';
 import { Section, Course, User } from '../../models.js';
-import { finalizePendingUpload } from '../../services/fileStorage.js';
+import { finalizePendingUpload, copyVersionAssets } from '../../services/fileStorage.js';
+import { normalizeDocumentAssets } from '../../services/documentAssets.js';
 
 export interface CreateSpaceDTO {
   id?: string;
@@ -149,6 +150,8 @@ export class KnowledgeService {
           steps: sec.steps || [],
           tableData: sec.tableData || null,
           sourceFile: sec.sourceFile || undefined,
+          markdownFile: sec.markdownFile || undefined,
+          assets: sec.assets || [],
           rawMarkdown: sec.rawMarkdown || '',
           changeSummary: 'Початкова редакція регламенту (v1.0)',
           authorName: 'Система / Методист',
@@ -348,8 +351,27 @@ export class KnowledgeService {
     const newStatus = options.status || sectionUpdate.status || section.status || 'published';
     const changeSummary = options.changeSummary || sectionUpdate.changeLog || `Оновлення редакції до v${nextVersionStr}`;
 
-    // Source file / raw markdown are handled separately from the generic field spread below
-    const { sourceFileToken, sourceFileName, sourceMimeType, rawMarkdown, ...restUpdate } = sectionUpdate || {};
+    // Source file / raw markdown / images are handled separately from the generic field spread below
+    const { sourceFileToken, sourceFileName, sourceMimeType, assetsToken, rawMarkdown, ...restUpdate } = sectionUpdate || {};
+
+    // Нова редакція успадковує скріншоти попередньої: посилання у її тексті
+    // вказують на v<N>/assets, тож файли мають там бути ще до нормалізації
+    copyVersionAssets(sectionId, currentVersionNumber, nextVerNum);
+
+    let normalizedAssets: any[] = [];
+    let markdownFile: any;
+    try {
+      const normalized = normalizeDocumentAssets(
+        { ...restUpdate, rawMarkdown: rawMarkdown !== undefined ? rawMarkdown : section.rawMarkdown || '' },
+        { sectionId, versionNumber: nextVerNum, pendingAssetsToken: assetsToken }
+      );
+      Object.assign(restUpdate, normalized.fields);
+      normalizedAssets = normalized.assets;
+      markdownFile = normalized.markdownFile;
+      if (normalized.rawMarkdown) section.rawMarkdown = normalized.rawMarkdown;
+    } catch (assetErr) {
+      console.error('Failed to store document images for section', sectionId, assetErr);
+    }
 
     // Apply updates to section
     Object.assign(section, restUpdate, {
@@ -367,9 +389,8 @@ export class KnowledgeService {
     }
     // If no new file was uploaded, section.sourceFile simply carries over from the previous revision
 
-    if (rawMarkdown !== undefined) {
-      section.rawMarkdown = rawMarkdown;
-    }
+    section.assets = normalizedAssets;
+    if (markdownFile) section.markdownFile = markdownFile;
 
     await section.save();
 
@@ -390,6 +411,8 @@ export class KnowledgeService {
       steps: section.steps || [],
       tableData: section.tableData || null,
       sourceFile: section.sourceFile || undefined,
+      markdownFile: section.markdownFile || undefined,
+      assets: section.assets || [],
       rawMarkdown: section.rawMarkdown || '',
       changeSummary,
       authorId: user?._id,
@@ -434,6 +457,10 @@ export class KnowledgeService {
     section.steps = historical.steps;
     section.tableData = historical.tableData;
     section.sourceFile = historical.sourceFile || section.sourceFile;
+    // Посилання у відновленому тексті ведуть на теку тієї редакції (v<N>/assets),
+    // яка нікуди не зникла, — тому переносимо метадані файлів як є
+    section.markdownFile = historical.markdownFile || section.markdownFile;
+    section.assets = historical.assets && historical.assets.length ? historical.assets : section.assets;
     section.rawMarkdown = historical.rawMarkdown !== undefined ? historical.rawMarkdown : section.rawMarkdown;
     section.version = nextVerStr;
     section.versionNumber = nextVerNum;
@@ -460,6 +487,8 @@ export class KnowledgeService {
       steps: section.steps,
       tableData: section.tableData,
       sourceFile: section.sourceFile || undefined,
+      markdownFile: section.markdownFile || undefined,
+      assets: section.assets || [],
       rawMarkdown: section.rawMarkdown || '',
       changeSummary: `Відкат (rollback) до параметрів версії v${historical.version}`,
       authorId: user?._id,

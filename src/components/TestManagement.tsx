@@ -293,7 +293,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       const newSection = newSections[0];
       // Keep the original ID
       newSection.id = editingMarkdownInstId!;
-      
+      // Відредагований текст — це і є .md файл документа: зберігаємо його як першоджерело
+      newSection.rawMarkdown = md;
+
       const res = await fetch(`/api/admin/instructions/${editingMarkdownInstId}/full`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -711,11 +713,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         result.sections[0].sourceFileName = data.sourceFileName;
         result.sections[0].sourceMimeType = data.sourceMimeType;
       }
+      // Скріншоти, витягнуті сервером з PDF: за цим токеном вони переїдуть
+      // у теку документа поруч з оригіналом та .md файлом
+      if (data.assetsToken) {
+        result.sections[0].assetsToken = data.assetsToken;
+      }
 
       onImport(result.sections, result.questions, false);
+      const imagesCount = Array.isArray(data.assets) ? data.assets.length : 0;
       setImportStatus({
         type: 'success',
-        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань.`
+        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань`
+          + (imagesCount > 0 ? `, збережено скріншотів: ${imagesCount}.` : '.')
       });
     } catch (err: any) {
       setImportStatus({
@@ -2420,10 +2429,11 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         3. Додавання зображень
                       </h4>
                       <ul className="text-xs space-y-1.5 text-slate-600">
-                        <li>Зображення можна вставляти у тіло кроку (під <code>#### Крок X</code>) двома способами:</li>
-                        <li>1. Стандартний Markdown-синтаксис:<br/> <code>![Опис](https://посилання-на-скріншот.jpg)</code></li>
-                        <li>2. Або за допомогою спеціального тегу:<br/> <code>**Зображення:** https://посилання-на-скріншот.jpg</code></li>
-                        <li>Підтримуються прямі посилання на зображення або <code>Base64</code> рядки.</li>
+                        <li>Зображення зберігаються <b>окремими файлами</b> у теці інструкції (поруч з оригіналом PDF та .md файлом), а Markdown лише посилається на них.</li>
+                        <li>Формат посилання у тілі кроку (під <code>#### Крок X</code>):<br/> <code>![Опис скріншота](assets/img-001.png)</code></li>
+                        <li>При автоматичному аналізі PDF платформа сама витягує скріншоти у теку <code>assets/</code> та передає їх перелік моделі ШІ.</li>
+                        <li>Готуючи .md вручну, називайте файли послідовно (<code>img-001.png</code>, <code>img-002.png</code>) і прикріплюйте їх разом з оригіналом документа.</li>
+                        <li>Вставки <code>Base64</code> та зовнішні посилання підтримуються для сумісності: під час імпорту система сама перенесе такі зображення у файли.</li>
                       </ul>
                     </div>
 
@@ -3021,8 +3031,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       </div>
       
       {editingMarkdownInstId && (
-        <MarkdownEditor 
+        <MarkdownEditor
           initialValue={editingMarkdownContent}
+          instructionId={editingMarkdownInstId}
           onSave={handleSaveMarkdown}
           onCancel={() => {
             setEditingMarkdownInstId(null);

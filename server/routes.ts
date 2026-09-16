@@ -10,7 +10,22 @@ import mammoth from 'mammoth';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
-import { savePendingUpload, finalizePendingUpload, getFileAbsolutePath, fileExists } from './services/fileStorage.js';
+import {
+  savePendingUpload,
+  finalizePendingUpload,
+  getFileAbsolutePath,
+  fileExists,
+  createPendingAssetsDir,
+  resolveVersionAssetPath,
+  saveVersionAsset,
+  listVersionAssets,
+  copyVersionAssets,
+  deleteDocumentStorage,
+  mimeTypeForAsset
+} from './services/fileStorage.js';
+import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.js';
+import { extractPdfImages } from './services/pdfImages.js';
+import { buildInstructionPrompt } from '../shared/instructionPrompt.js';
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -527,15 +542,34 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
       await Question.deleteMany({});
     }
 
-    // sourceFileToken/sourceFileName/sourceMimeType aren't Section schema fields —
+    // sourceFileToken/sourceFileName/sourceMimeType/assetsToken aren't Section schema fields —
     // pull them off before insertMany, then finalize the pending upload afterwards
     // once we know the section actually exists.
     const pendingFileFinalizations: Array<{ sectionId: string; token: string; fileName: string; mimeType: string }> = [];
     const cleanSections = (sections || []).map((s: any) => {
-      const { sourceFileToken, sourceFileName, sourceMimeType, ...rest } = s;
+      const { sourceFileToken, sourceFileName, sourceMimeType, assetsToken, ...rest } = s;
       if (sourceFileToken) {
         pendingFileFinalizations.push({ sectionId: s.id, token: sourceFileToken, fileName: sourceFileName, mimeType: sourceMimeType });
       }
+
+      // Зображення виносимо у файли ДО запису в БД: інакше мегабайтний base64 осідає
+      // в документі Mongo (і впирається в ліміт 16 МБ), замість того щоб лежати
+      // звичайним файлом у теці документа поруч з оригіналом та instruction.md.
+      try {
+        const normalized = normalizeDocumentAssets(rest, {
+          sectionId: rest.id,
+          versionNumber: rest.versionNumber || 1,
+          pendingAssetsToken: assetsToken
+        });
+        Object.assign(rest, normalized.fields, {
+          rawMarkdown: normalized.rawMarkdown,
+          assets: normalized.assets,
+          markdownFile: normalized.markdownFile
+        });
+      } catch (assetErr) {
+        console.error('Failed to store document images for section', rest.id, assetErr);
+      }
+
       return rest;
     });
 
@@ -619,6 +653,14 @@ apiRouter.get('/sections/:id/source-file.md', requireAuth, async (req: any, res)
     if (!section || !userCanAccessSection(req.user, section)) {
       return res.status(404).json({ error: 'Документ не знайдено' });
     }
+    // Файл на диску — першоджерело (посилання на зображення в ньому відносні,
+    // тож тека документа лишається самодостатньою); поле в БД — запасний варіант
+    // для інструкцій, імпортованих до переходу на файлове зберігання.
+    const markdownFile = (section as any).markdownFile;
+    if (markdownFile?.storagePath && fileExists(markdownFile.storagePath)) {
+      return res.download(getFileAbsolutePath(markdownFile.storagePath), `${section.id}.md`);
+    }
+
     const rawMarkdown = (section as any).rawMarkdown;
     if (!rawMarkdown) {
       return res.status(404).json({ error: 'Markdown-файл не знайдено' });
@@ -629,6 +671,86 @@ apiRouter.get('/sections/:id/source-file.md', requireAuth, async (req: any, res)
   } catch (err) {
     console.error('Failed to download section markdown', err);
     res.status(500).json({ error: 'Не вдалося завантажити файл' });
+  }
+});
+
+/**
+ * Віддає скріншот документа. Саме на цей маршрут вказують посилання на зображення
+ * у контенті інструкції (`/api/sections/<id>/assets/v<N>/img-001.png`), тож доступ
+ * перевіряється так само, як і до самої інструкції.
+ */
+apiRouter.get('/sections/:id/assets/:version/:file', requireAuth, async (req: any, res) => {
+  try {
+    const section = await Section.findOne({ id: req.params.id } as any);
+    if (!section || !userCanAccessSection(req.user, section)) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+
+    // Сегмент версії має вигляд "v3"
+    const versionNumber = Number(String(req.params.version).replace(/^v/i, ''));
+    if (!Number.isFinite(versionNumber) || versionNumber < 1) {
+      return res.status(400).json({ error: 'Некоректна версія документа' });
+    }
+
+    const filePath = resolveVersionAssetPath(section.id, versionNumber, req.params.file);
+    if (!filePath) {
+      return res.status(404).json({ error: 'Зображення не знайдено' });
+    }
+
+    res.setHeader('Content-Type', mimeTypeForAsset(filePath));
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Failed to serve document asset', err);
+    res.status(500).json({ error: 'Не вдалося завантажити зображення' });
+  }
+});
+
+/**
+ * Завантаження зображення в документ з редактора Markdown.
+ * Повертає посилання, яке редактор вставляє у текст — жодного base64.
+ */
+apiRouter.post('/admin/instructions/:id/assets', requireAuth, requireAdmin, upload.single('image'), async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Файл зображення не передано' });
+    }
+    if (!/^image\//.test(req.file.mimetype)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Дозволені лише файли зображень' });
+    }
+
+    const section = await Section.findOne({ id: req.params.id } as any);
+    if (!section) {
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: 'Інструкцію не знайдено' });
+    }
+
+    const versionNumber = section.versionNumber || 1;
+    const buffer = fs.readFileSync(req.file.path);
+    fs.unlinkSync(req.file.path);
+
+    const asset = saveVersionAsset(
+      section.id,
+      versionNumber,
+      req.file.originalname || 'screenshot.png',
+      buffer,
+      req.file.mimetype,
+      'upload'
+    );
+
+    const assets = listVersionAssets(section.id, versionNumber);
+    await Section.updateOne({ id: section.id } as any, { $set: { assets } } as any);
+
+    res.json({
+      success: true,
+      fileName: asset.fileName,
+      url: assetApiUrl(section.id, versionNumber, asset.fileName),
+      sizeBytes: asset.sizeBytes
+    });
+  } catch (err) {
+    console.error('Failed to upload document image', err);
+    res.status(500).json({ error: 'Не вдалося зберегти зображення' });
   }
 });
 
@@ -653,6 +775,10 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
 
     let documentBlock: any;
     let readSucceeded = false;
+    // Скріншоти, витягнуті з оригіналу: зберігаються у файли, модель лише розставляє на них посилання
+    let extractedImages: ReturnType<typeof extractPdfImages> = [];
+    let assetsToken: string | undefined;
+
     try {
       if (isLegacyDoc) {
         return res.status(400).json({ error: 'Формат .doc не підтримується. Будь ласка, збережіть файл як .docx або .pdf.' });
@@ -668,6 +794,20 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
             data: fileBuffer.toString('base64')
           }
         };
+
+        // Модель бачить сторінки PDF, але не вміє повертати сам малюнок, тому
+        // зображення дістаємо самі та тримаємо у тимчасовій теці до імпорту розділу.
+        try {
+          const pending = createPendingAssetsDir();
+          extractedImages = extractPdfImages(req.file.path, pending.dir);
+          if (extractedImages.length > 0) {
+            assetsToken = pending.token;
+          } else {
+            fs.rmSync(pending.dir, { recursive: true, force: true });
+          }
+        } catch (imgErr) {
+          console.error('Failed to extract images from PDF', imgErr);
+        }
       } else if (isDocx) {
         const { value: extractedText } = await mammoth.extractRawText({ path: req.file.path });
         documentBlock = { type: 'text', text: extractedText };
@@ -700,81 +840,17 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     }
 
     // Now generate the markdown
-    const aiPromptGuide = `ВИКОРИСТОВУЙ ЦЕЙ ПРОМПТ ДЛЯ ІНШИХ МОДЕЛЕЙ ШІ (ChatGPT, Claude, Gemini, DeepSeek):
--------------------------------------------------------------------------
-Ти — провідний експерт з корпоративного навчання, регламентів бізнес-процесів та укладання професійних тестів.
-Твоє завдання: перенести додану робочу інструкцію/регламент компанії у цей додаток У ТОМУ САМОМУ ВИГЛЯДІ (повний текст, розділи, таблиці, малюнки/скріншоти), забезпечити співробітнику зручне повноцінне читання та ознайомлення, а в кінці вивести контрольні блоки та тестові питання для квіз-опитування.
-
-Формат результату — єдиний самодостатній файл Markdown (.md) суворо за такою структурою:
-
-# Назва інструкції: [Повна назва інструкції або регламенту]
-**Підзаголовок:** [Коротке роз'яснення для кого і в яких ситуаціях застосовується]
-**Підрозділ:** [Назва підрозділу, наприклад: Відділ роздрібного продажу / Казначейство / Бухгалтерія / Склад]
-**Суть:** [1-2 речення з головною суттю регламенту — що потрібно знати в першу чергу]
-**Роль:** [Одне зі значень: all | cashier | manager | accountant]
-**Першоджерело:** [Номер наказу, регламенту або номер сторінки, наприклад: Стор. 1–4, Регламент №12]
-**Час читання:** [Орієнтовний час вивчення, наприклад: 5 хв]
-
-### ПОВНИЙ ТЕКСТ ІНСТРУКЦІЇ
-[Встав сюди ПОВНИЙ оригінальний текст регламенту без скорочень!
-Зберігай усю початкову структуру, заголовки, параграфи, виноски, примітки та описи.]
-
-### ПОКРОКОВИЙ ПОРЯДОК ДІЙ
-[Якщо регламент містить послідовність операцій, розпиши їх покроково:]
-#### Крок 1: [Коротка назва дії]
-[Детальний опис дій співробітника в інтерфейсі програми чи на робочому місці]
-💡 Підказка: [Корисна порада для прискорення роботи або запобігання помилкам]
-⚠️ Увага: [Попередження про критичні нюанси]
-
-#### Крок 2: [Наступна дія]
-[Опис кроку 2]
-
----
-В КІНЦІ ОСНОВНОЇ ІНСТРУКЦІЇ ОБОВ'ЯЗКОВО СФОРМУЙ 3 АНАЛІТИЧНІ БЛОКИ ТА СИСТЕМНІ ДІЇ:
-
-### ОСНОВНІ ВИСНОВКИ
-- [Ключовий висновок 1 — головне правило, яке працівник повинен запам'ятати]
-- [Ключовий висновок 2]
-- [Ключовий висновок 3]
-
-### КЛЮЧОВІ ПОЛЯ ТА РЕКВІЗИТИ
-- [Обов'язкове поле/реквізит 1: наприклад, «Статус чека — тільки "Пробитий"»]
-- [Обов'язкове поле/реквізит 2: наприклад, «Номер первинного фіскального чека»]
-- [Обов'язкове поле/реквізит 3: наприклад, «Заява покупця з паспортними даними при сумі > 100 грн»]
-
-### СТОП-СПИСКИ
-- [Критична заборона 1: Категорично заборонено видавати готівку, якщо покупка була оплачена карткою!]
-- [Критична заборона 2: Заборонено проводити повернення без заяви покупця при сумі понад 100 грн!]
-- [Критична заборона 3: Дія, яка тягне за собою збій, штраф чи скаргу клієнта]
-
-### АВТОМАТИЧНІ ДІЇ СИСТЕМИ
-- [Дія 1: Що облікова програма (BAS, CRM, ПРРО) проводить автоматично]
-- [Дія 2: Автоматичні бухгалтерські, касові чи складські рухи]
-
-### ТАБЛИЦЯ ВІДПОВІДНОСТЕЙ ТА ВІДПОВІДАЛЬНОСТІ
-| Ситуація / Умова | Дія співробітника | Відповідальна особа | Термін |
-| --- | --- | --- | --- |
-| [Умова 1] | [Дія 1] | [Посада] | [Термін] |
-| [Умова 2] | [Дія 2] | [Посада] | [Термін] |
-
----
-БЛОК ПИТАНЬ ДЛЯ КВІЗ-ОПИТУ (ТЕСТУВАННЯ):
-
-### ПИТАННЯ: [Текст практичного запитання 1 на основі реальної робочої ситуації?]
-**Складність:** [easy | medium | hard]
-**Контекст:** [Реальна робоча ситуація клієнта або інцидент, на якому ґрунтується питання]
-**Першоджерело:** [Пункт регламенту чи сторінка]
-- [ ] [Неправильний варіант відповіді A]
-- [x] [ПРАВИЛЬНИЙ варіант відповіді — позначається строго через [x]]
-- [ ] [Неправильний варіант відповіді B]
-- [ ] [Неправильний варіант відповіді C]
-**Пояснення:** [Детальне обґрунтування, чому ця відповідь правильна з посиланням на регламент і логіку системи]
-
-ВИМОГИ ДО ТЕСТОВИХ ПИТАНЬ:
-1. Склади від 3 до 6 якісних запитань різної складності (easy, medium, hard).
-2. Запитання обов'язково повинні спиратися на текст інструкції, Ключові поля та СТОП-СПИСКИ.
-3. Рівно один варіант відповіді має бути позначений як правильний через [x].
-4. У відповіді виводь виключно готовий текст Markdown без вступних слів, привітань та сторонніх коментарів.`;
+    // Промпт та правила — спільні з адмінкою (shared/instructionPrompt.ts).
+    // Моделі передаємо перелік уже збережених скріншотів, щоб вона розставила
+    // посилання на файли замість вбудованого base64.
+    const aiPromptGuide = buildInstructionPrompt(
+      extractedImages.map(img => ({
+        fileName: img.fileName,
+        page: img.page,
+        width: img.width,
+        height: img.height
+      }))
+    );
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-5',
@@ -794,7 +870,17 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
       markdown: markdownText,
       sourceFileToken: (req as any).sourceFileToken,
       sourceFileName: req.file.originalname,
-      sourceMimeType: req.file.mimetype
+      sourceMimeType: req.file.mimetype,
+      // Токен теки зі скріншотами: фронтенд повертає його при імпорті, і тоді
+      // зображення переїжджають у теку документа поруч з оригіналом та .md
+      assetsToken,
+      assets: extractedImages.map(img => ({
+        fileName: img.fileName,
+        page: img.page,
+        width: img.width,
+        height: img.height,
+        sizeBytes: img.sizeBytes
+      }))
     });
   } catch (err: any) {
     console.error('Failed to generate instruction via AI', err);
@@ -946,7 +1032,14 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
       {},
       { $pull: { readSectionIds: { $in: [secId, instructionId] } } } as any
     );
-    
+
+    // Разом з інструкцією прибираємо її теку: оригінал, instruction.md та скріншоти,
+    // інакше сховище засмічується файлами, на які вже ніщо не посилається
+    if (deletedSection) {
+      await InstructionVersion.deleteMany({ sectionId: secId } as any);
+      deleteDocumentStorage(secId);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting instruction:', err);
@@ -963,19 +1056,43 @@ apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (
     const existingSection = await Section.findOne({ id: instructionId });
     
     let updatePayload = { ...section };
+    const previousVersionNumber = existingSection?.versionNumber || 1;
+    let targetVersionNumber = previousVersionNumber;
+
     if (createRevision && existingSection) {
       const currentVerStr = existingSection.version || '1.0';
       const currentVerNum = existingSection.versionNumber || 1;
       const [maj = '1', min = '0'] = currentVerStr.split('.');
-      let newVersion = incrementType === 'major' 
+      let newVersion = incrementType === 'major'
         ? `${parseInt(maj, 10) + 1}.0`
         : `${maj}.${parseInt(min, 10) + 1}`;
-      
+
       updatePayload.version = newVersion;
       updatePayload.versionNumber = currentVerNum + 1;
       updatePayload.changeLog = changeSummary || `Оновлення редакції до v${newVersion}`;
       updatePayload.lastReviewedAt = new Date();
       updatePayload.reviewedBy = req.user?._id;
+      targetVersionNumber = updatePayload.versionNumber;
+    }
+
+    // Нова редакція успадковує скріншоти попередньої, інакше посилання в її тексті «повиснуть»
+    if (targetVersionNumber !== previousVersionNumber) {
+      copyVersionAssets(instructionId, previousVersionNumber, targetVersionNumber);
+    }
+
+    // Зображення з редактора (як посилання, так і випадковий base64) → файли теки документа
+    try {
+      const normalized = normalizeDocumentAssets(updatePayload, {
+        sectionId: instructionId,
+        versionNumber: targetVersionNumber
+      });
+      Object.assign(updatePayload, normalized.fields, {
+        assets: normalized.assets,
+        ...(normalized.rawMarkdown ? { rawMarkdown: normalized.rawMarkdown } : {}),
+        ...(normalized.markdownFile ? { markdownFile: normalized.markdownFile } : {})
+      });
+    } catch (assetErr) {
+      console.error('Failed to store document images for section', instructionId, assetErr);
     }
 
     // Update section fields fully
@@ -1004,6 +1121,11 @@ apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (
           stopRules: updatedSection.stopRules || [],
           steps: updatedSection.steps || [],
           tableData: updatedSection.tableData || null,
+          // Знімок редакції має містити й файли: оригінал, .md та перелік скріншотів
+          sourceFile: (updatedSection as any).sourceFile || undefined,
+          markdownFile: (updatedSection as any).markdownFile || undefined,
+          assets: (updatedSection as any).assets || [],
+          rawMarkdown: (updatedSection as any).rawMarkdown || '',
           changeSummary: changeSummary || updatedSection.changeLog || 'Оновлення редакції',
           authorId: req.user?._id,
           authorName: req.user?.fullName || req.user?.username || 'Адміністратор',

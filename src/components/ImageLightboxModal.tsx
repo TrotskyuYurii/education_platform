@@ -67,7 +67,9 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
       const cleanTitle = (title || 'screenshot')
         .replace(/[^a-zA-Zа-яА-Я0-9_]/g, '_')
         .slice(0, 40);
-      link.download = `${cleanTitle}.png`;
+      // Зображення тепер зберігаються файлами — беремо розширення з посилання
+      const extension = imageUrl.match(/\.(png|jpe?g|webp|gif|svg|bmp)(?:\?|$)/i)?.[1] || 'png';
+      link.download = `${cleanTitle}.${extension.toLowerCase()}`;
       link.click();
     } catch (e) {
       console.error('Download error:', e);
@@ -77,7 +79,11 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   const handleCopy = async () => {
     try {
       if (navigator.clipboard) {
-        await navigator.clipboard.writeText(imageUrl);
+        // Для файлів копіюємо повне посилання, яким можна поділитися
+        const shareUrl = imageUrl.startsWith('data:') || imageUrl.startsWith('http')
+          ? imageUrl
+          : new URL(imageUrl, window.location.origin).href;
+        await navigator.clipboard.writeText(shareUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
@@ -165,7 +171,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
           <button
             onClick={handleCopy}
             className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl border border-slate-700 transition"
-            title="Скопіювати Base64 / URL"
+            title="Скопіювати посилання на зображення"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
           </button>

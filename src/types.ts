@@ -11,6 +11,17 @@ export interface SourceFileMeta {
   uploadedAt: string;
 }
 
+/** Зображення документа: окремий файл у теці інструкції, на який посилається Markdown */
+export interface DocumentAssetMeta {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  page?: number;
+  source?: string;
+}
+
 export interface KnowledgeSpace {
   _id?: string;
   id: string;
@@ -49,6 +60,8 @@ export interface InstructionVersion {
   steps?: any[];
   tableData?: any;
   sourceFile?: SourceFileMeta;
+  markdownFile?: SourceFileMeta;
+  assets?: DocumentAssetMeta[];
   rawMarkdown?: string;
   changeSummary?: string;
   authorId?: string;
@@ -145,11 +158,17 @@ export interface InstructionSection {
   stopRules?: string[];
   systemAutomaticActions?: string[];
   sourceFile?: SourceFileMeta;
+  /** Проаналізований .md файл, збережений поруч з оригіналом */
+  markdownFile?: SourceFileMeta;
+  /** Скріншоти документа, збережені окремими файлами */
+  assets?: DocumentAssetMeta[];
   rawMarkdown?: string;
   /** Transient, only used when importing a freshly-uploaded document (see TestManagement upload flow) */
   sourceFileToken?: string;
   sourceFileName?: string;
   sourceMimeType?: string;
+  /** Transient: тека зі скріншотами, витягнутими з оригіналу під час аналізу */
+  assetsToken?: string;
   spaceId?: string;
   version?: string;
   versionNumber?: number;
