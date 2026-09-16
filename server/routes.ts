@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
+import mammoth from 'mammoth';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
@@ -536,52 +537,52 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+      fs.unlinkSync(req.file.path);
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server.' });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
-    
-    // Check mime type (we accept text, pdf, word doc generally)
-    // For simplicity, we use Gemini's File API for processing documents natively
+    const anthropic = new Anthropic({ apiKey });
+
     const mimeType = req.file.mimetype;
-    let fileResult;
+    const isPdf = mimeType === 'application/pdf';
+    const isDocx = mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isLegacyDoc = mimeType === 'application/msword';
+
+    let documentBlock: any;
     try {
-      fileResult = await ai.files.upload({
-        file: req.file.path,
-        config: {
-          mimeType: req.file.mimetype,
-          displayName: req.file.originalname
-        }
-      });
-    } catch (uploadErr: any) {
-      console.error('File API upload error', uploadErr);
-      let errMsg = 'Failed to upload document to AI Assistant';
-      if (uploadErr?.message && uploadErr.message.includes('429')) {
-        errMsg = 'Помилка API (429): Недостатньо коштів на балансі Gemini API або перевищено ліміт запитів. Будь ласка, поповніть баланс Google AI Studio.';
-      } else if (uploadErr?.message) {
-        errMsg = uploadErr.message;
+      if (isLegacyDoc) {
+        return res.status(400).json({ error: 'Формат .doc не підтримується. Будь ласка, збережіть файл як .docx або .pdf.' });
       }
-      return res.status(500).json({ error: errMsg });
+
+      if (isPdf) {
+        const fileBuffer = fs.readFileSync(req.file.path);
+        documentBlock = {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: fileBuffer.toString('base64')
+          }
+        };
+      } else if (isDocx) {
+        const { value: extractedText } = await mammoth.extractRawText({ path: req.file.path });
+        documentBlock = { type: 'text', text: extractedText };
+      } else {
+        const extractedText = fs.readFileSync(req.file.path, 'utf-8');
+        documentBlock = { type: 'text', text: extractedText };
+      }
+    } catch (extractErr: any) {
+      console.error('Failed to read/extract uploaded document', extractErr);
+      return res.status(500).json({ error: 'Не вдалося обробити файл. Перевірте формат документа (.pdf, .txt, .docx).' });
     } finally {
-      // Clean up the local temp file after uploading to Gemini
+      // Clean up the local temp file once its contents have been read
       try {
         fs.unlinkSync(req.file.path);
       } catch (e) {
         console.error('Failed to clean up temp file', e);
       }
-    }
-
-    // Now wait for the file to be processed
-    let fileState = await ai.files.get({ name: fileResult.name! });
-    while (fileState.state === 'PROCESSING') {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      fileState = await ai.files.get({ name: fileResult.name! });
-    }
-    
-    if (fileState.state === 'FAILED') {
-      return res.status(500).json({ error: 'AI Assistant failed to process the document format.' });
     }
 
     // Now generate the markdown
@@ -661,31 +662,25 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
 3. Рівно один варіант відповіді має бути позначений як правильний через [x].
 4. У відповіді виводь виключно готовий текст Markdown без вступних слів, привітань та сторонніх коментарів.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: [
-        { role: 'user', parts: [
-          { text: aiPromptGuide },
-          { fileData: { fileUri: fileResult.uri, mimeType: fileResult.mimeType } }
-        ]}
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-5',
+      max_tokens: 16000,
+      messages: [
+        { role: 'user', content: [documentBlock, { type: 'text', text: aiPromptGuide }] }
       ]
     });
 
-    const markdownText = response.text || '';
-    
-    // Optional: Clean up the file from Gemini storage
-    try {
-      await ai.files.delete({ name: fileResult.name! });
-    } catch (e) {
-      console.error('Failed to delete file from Gemini', e);
-    }
+    const markdownText = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
 
     res.json({ success: true, markdown: markdownText });
   } catch (err: any) {
     console.error('Failed to generate instruction via AI', err);
     let errMsg = 'Помилка при генерації через AI';
-    if (err?.message && err.message.includes('429')) {
-      errMsg = 'Помилка API (429): Недостатньо коштів на балансі Gemini API або перевищено ліміт запитів. Будь ласка, поповніть баланс Google AI Studio.';
+    if (err?.status === 429 || (err?.message && err.message.includes('429'))) {
+      errMsg = 'Помилка API (429): Недостатньо коштів на балансі Anthropic API або перевищено ліміт запитів. Будь ласка, поповніть баланс на console.anthropic.com.';
     } else if (err?.message) {
       errMsg = err.message;
     }

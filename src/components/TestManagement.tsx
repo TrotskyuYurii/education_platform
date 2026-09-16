@@ -1103,7 +1103,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
                       <input 
                         type="file" 
-                        accept=".pdf,.txt,.doc,.docx"
+                        accept=".pdf,.txt,.docx"
                         className="hidden" 
                         ref={aiFileInputRef}
                         onChange={handleAiFileUpload}

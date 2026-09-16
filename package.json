@@ -19,7 +19,7 @@
     "migrate:dry": "tsx scripts/migrations/runner.ts --dry-run"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
+    "@anthropic-ai/sdk": "^0.70.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "bcryptjs": "^3.0.3",
@@ -31,6 +31,7 @@
     "html2pdf.js": "^0.14.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
+    "mammoth": "^1.12.3",
     "mongoose": "^9.10.0",
     "motion": "^12.23.24",
     "multer": "^2.3.0",
