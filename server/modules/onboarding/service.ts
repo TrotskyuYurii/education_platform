@@ -116,10 +116,24 @@ export class OnboardingService {
     return template;
   }
 
+  /**
+   * Форма шле «нічого не обрано» як порожній рядок, а ownerUserId у схемі —
+   * ObjectId, який такого значення не приймає. Прибираємо поле, щоб порожній
+   * вибір означав «виконавця не призначено», а не помилку збереження.
+   */
+  static normalizeNodes(nodes: any[]): any[] {
+    if (!Array.isArray(nodes)) return nodes;
+    return nodes.map(n => {
+      const plain = typeof n?.toObject === 'function' ? n.toObject() : { ...n };
+      if (!plain.ownerUserId) delete plain.ownerUserId;
+      return plain;
+    });
+  }
+
   static async createTemplate(data: any, actor: any) {
     const slug = `onb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nodes = Array.isArray(data.nodes) && data.nodes.length > 0
-      ? data.nodes
+      ? this.normalizeNodes(data.nodes)
       : [
           { id: 'start', type: 'start', title: 'Початок', position: { x: 80, y: 200 }, isRequired: false },
           { id: 'finish', type: 'finish', title: 'Онбординг завершено', position: { x: 620, y: 200 }, isRequired: false }
@@ -150,6 +164,7 @@ export class OnboardingService {
   static async updateTemplate(id: string, data: any) {
     const template = await this.getTemplate(id);
 
+    if (data.nodes !== undefined) data.nodes = this.normalizeNodes(data.nodes);
     const nextNodes = data.nodes ?? template.nodes;
     const nextEdges = data.edges ?? template.edges;
 

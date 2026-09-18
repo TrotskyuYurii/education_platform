@@ -92,3 +92,27 @@ describe('OnboardingService.validateGraph', () => {
     expect(OnboardingService.validateGraph(nodes, edges)).toEqual([]);
   });
 });
+
+/**
+ * normalizeNodes — міст між формою редактора (де «не обрано» = порожній рядок)
+ * і схемою Mongoose (де ownerUserId — ObjectId, який порожній рядок не приймає).
+ */
+describe('OnboardingService.normalizeNodes', () => {
+  it('прибирає порожній ownerUserId, щоб Mongoose не падав на Cast to ObjectId', () => {
+    const nodes = OnboardingService.normalizeNodes([node('a', { ownerUserId: '' })]);
+    expect('ownerUserId' in nodes[0]).toBe(false);
+  });
+
+  it('зберігає заповненого виконавця', () => {
+    const id = '507f1f77bcf86cd799439011';
+    const nodes = OnboardingService.normalizeNodes([node('a', { ownerUserId: id })]);
+    expect(nodes[0].ownerUserId).toBe(id);
+  });
+
+  it('не чіпає решту полів кроку', () => {
+    const nodes = OnboardingService.normalizeNodes([
+      node('a', { ownerUserId: '', targetId: 'course-1', dueOffsetDays: 3 })
+    ]);
+    expect(nodes[0]).toMatchObject({ id: 'a', type: 'task', targetId: 'course-1', dueOffsetDays: 3 });
+  });
+});
