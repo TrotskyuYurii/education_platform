@@ -10,6 +10,7 @@ import {
   DEFAULT_STAGES,
   OnboardingStepType
 } from './models.js';
+import { validateOnboardingGraph, AUTO_STEP_TYPES } from '../../../shared/onboardingGraph.js';
 
 type ObjectIdLike = string | mongoose.Types.ObjectId;
 
@@ -31,11 +32,12 @@ const startOfDay = (d: Date): Date => {
   return c;
 };
 
-/** Кроки, які закриваються системою автоматично, а не кліком людини. */
-const AUTO_STEP_TYPES: OnboardingStepType[] = ['start', 'finish'];
+/**
+ * Перелік службових кроків і сама перевірка графа живуть у shared/, бо тими самими
+ * правилами користується редактор схеми — інакше клієнт і сервер розходяться
+ * у відповіді на питання «чи можна це публікувати».
+ */
 
-/** Кроки, що мають посилання на існуючий навчальний матеріал. */
-const LEARNING_STEP_TYPES: OnboardingStepType[] = ['instruction', 'course', 'quiz', 'case'];
 
 export class OnboardingService {
 
@@ -49,66 +51,7 @@ export class OnboardingService {
    * чернетку з проблемами зберегти можна, опублікувати — ні.
    */
   static validateGraph(nodes: any[], edges: any[]): string[] {
-    const issues: string[] = [];
-    const nodeIds = new Set(nodes.map(n => n.id));
-
-    if (nodes.length === 0) {
-      issues.push('Онбординг не містить жодного кроку');
-      return issues;
-    }
-
-    // Лише «Початок» і «Завершення» — формально валідний граф, який при
-    // призначенні одразу закривається як пройдений. Для людини це виглядає
-    // як зламаний онбординг, тому вважаємо це помилкою схеми.
-    if (!nodes.some(n => !AUTO_STEP_TYPES.includes(n.type))) {
-      issues.push('Онбординг складається лише зі службових вузлів — додайте хоча б один крок');
-      return issues;
-    }
-
-    for (const e of edges) {
-      if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) {
-        issues.push(`Зв'язок «${e.source} → ${e.target}» вказує на неіснуючий крок`);
-      }
-      if (e.source === e.target) {
-        issues.push(`Крок «${e.source}» зв'язаний сам із собою`);
-      }
-    }
-
-    for (const n of nodes) {
-      if (!n.title || !String(n.title).trim()) {
-        issues.push('Є крок без назви');
-      }
-      if (LEARNING_STEP_TYPES.includes(n.type) && !n.targetId) {
-        issues.push(`Крок «${n.title}» не прив'язаний до матеріалу`);
-      }
-      if (n.type === 'link' && !n.url) {
-        issues.push(`Крок «${n.title}» не має посилання`);
-      }
-    }
-
-    // Пошук циклів (DFS з трьома кольорами) — інакше кроки ніколи не розблокуються.
-    const adjacency = new Map<string, string[]>();
-    for (const e of edges) {
-      if (!adjacency.has(e.source)) adjacency.set(e.source, []);
-      adjacency.get(e.source)!.push(e.target);
-    }
-    const state = new Map<string, 0 | 1 | 2>();
-    let hasCycle = false;
-    const visit = (id: string) => {
-      if (hasCycle) return;
-      const s = state.get(id) || 0;
-      if (s === 1) { hasCycle = true; return; }
-      if (s === 2) return;
-      state.set(id, 1);
-      for (const next of adjacency.get(id) || []) visit(next);
-      state.set(id, 2);
-    };
-    for (const n of nodes) visit(n.id);
-    if (hasCycle) {
-      issues.push('У схемі є замкнене коло зв\'язків — такі кроки неможливо пройти');
-    }
-
-    return issues;
+    return validateOnboardingGraph(nodes, edges);
   }
 
   static async listTemplates(options: { includeArchived?: boolean } = {}) {

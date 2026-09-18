@@ -41,6 +41,7 @@ import {
   PanelRightOpen
 } from 'lucide-react';
 import { OnboardingNode, OnboardingStepType, OnboardingTemplate, OnboardingStageDef } from './types';
+import { validateOnboardingGraph } from '../../../shared/onboardingGraph';
 import { STEP_TYPE_META, PALETTE_STEP_TYPES, OWNER_ROLE_LABELS, formatOffset } from './constants';
 
 interface FlowEditorProps {
@@ -221,7 +222,6 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [issues, setIssues] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -299,7 +299,6 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
 
         const tpl: OnboardingTemplate = tplData.template;
         setTemplate(tpl);
-        setIssues(tplData.issues || []);
         hydrateNodes(tpl.nodes || [], tpl.stages || []);
         setEdges((tpl.edges || []).map(edgeToFlow));
 
@@ -412,6 +411,21 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
     }))
   }), [nodes, edges]);
 
+  // Ті самі правила, що й на сервері (shared/onboardingGraph.ts), але по живій схемі:
+  // список проблем має оновлюватись одразу після правки, а не після збереження.
+  const graphIssues = useMemo(() => {
+    const payload = collectPayload();
+    const found = validateOnboardingGraph(payload.nodes, payload.edges);
+    // Правило лише редактора: якщо виконавець — конкретна людина, її треба обрати.
+    for (const n of nodes) {
+      const step = n.data.step;
+      if (step.ownerRole === 'custom' && !step.ownerUserId) {
+        found.push(`Крок «${step.title}» не має призначеного виконавця`);
+      }
+    }
+    return [...new Set(found)];
+  }, [collectPayload, nodes]);
+
   const save = useCallback(async (publish: boolean) => {
     if (!template) return;
     setSaving(true);
@@ -438,7 +452,6 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
       if (!res.ok) throw new Error(data.error || 'Не вдалося зберегти');
 
       setTemplate(data.template);
-      setIssues(data.issues || []);
       setIsDirty(false);
       setMessage({
         type: 'success',
@@ -480,8 +493,11 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
     );
   }
 
-  const localIssues = nodes.filter(n => n.data.hasIssue).map(n => `Крок «${n.data.step.title}» налаштований не повністю`);
-  const allIssues = [...new Set([...localIssues, ...issues])];
+  // Проблеми рахуємо з поточного стану схеми тими самими правилами, що й сервер.
+  // Відповідь API (issues) описує вже збережену версію, тож після кожної правки
+  // вона застаріває — спиратись на неї означало б блокувати публікацію того,
+  // що користувач щойно виправив.
+  const allIssues = graphIssues;
 
   return (
     <div
