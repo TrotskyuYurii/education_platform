@@ -78,12 +78,22 @@ export const NotificationService = {
     if (entry.isCritical) {
       const user = await User.findById(userId).select('email fullName');
       if (!user?.email) return;
-      await sendEmail(
+      // Start the send now, but do NOT await it: an SMTP handshake takes seconds
+      // (and much longer when the mail server misbehaves), while send() is called
+      // from inside request handlers — e.g. assigning an onboarding, which fires
+      // one critical notification per target user. Awaiting here made the API look
+      // frozen even though every record had already been written. sendEmail never
+      // throws, so a floating promise cannot produce an unhandled rejection.
+      void sendEmail(
         user.email,
         entry.title,
         `<p>${entry.message}</p>`,
         entry.message
-      );
+      ).then(result => {
+        if (!result.success) {
+          console.error(`✉️ Critical notification email to ${user.email} was not delivered: ${result.error}`);
+        }
+      });
       return;
     }
 

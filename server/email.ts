@@ -16,6 +16,12 @@ export function getEmailTransporter(): any {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS || '',
         } : undefined,
+        // Nodemailer's defaults wait up to 2 min to connect and 10 min on a silent
+        // socket. A mail server that stops answering must not hold an HTTP request
+        // (or the nightly digest) hostage for minutes — fail fast and log instead.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
       });
       console.log(`✉️ SMTP Transporter initialized for host: ${host}`);
     } catch (err) {
