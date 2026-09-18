@@ -45,13 +45,28 @@ import {
   Rocket
 } from 'lucide-react';
 
+/** Що сервер зробив зі скріншотами документа під час імпорту. */
+export interface ImportAssetReport {
+  /** Збережено файлів у теці інструкції */
+  saved: number;
+  /** З них розставлено в тексті інструкції */
+  used: number;
+  /** Прибрано посилань на файли, яких не існує */
+  dropped: number;
+}
+
 interface TestManagementProps {
   sections: InstructionSection[];
   questions: QuizQuestion[];
   courses: any[];
   cases: any[];
   spaces?: KnowledgeSpace[];
-  onImport: (newSections: InstructionSection[], newQuestions: QuizQuestion[], replace: boolean) => void;
+  /** Повертає звіт сервера по збережених скріншотах, якщо імпорт пройшов успішно. */
+  onImport: (
+    newSections: InstructionSection[],
+    newQuestions: QuizQuestion[],
+    replace: boolean
+  ) => void | Promise<ImportAssetReport | void>;
   onReset: () => void;
   isSetupMode?: boolean;
   onRefresh?: () => Promise<void>;
@@ -719,12 +734,22 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         result.sections[0].assetsToken = data.assetsToken;
       }
 
-      onImport(result.sections, result.questions, false);
-      const imagesCount = Array.isArray(data.assets) ? data.assets.length : 0;
+      const report = await onImport(result.sections, result.questions, false);
+
+      const extracted = Array.isArray(data.assets) ? data.assets.length : 0;
+      // Скріншот доходить до читача лише якщо модель поставила на нього посилання,
+      // тож показуємо обидва числа — інакше «збережено 7» вводить в оману.
+      const imagesNote = extracted === 0
+        ? ' Скріншотів у документі не знайдено.'
+        : report
+          ? ` Скріншотів: знайдено ${extracted}, вставлено в текст — ${report.used}.`
+            + (report.dropped > 0 ? ` Прибрано ${report.dropped} посилань на неіснуючі файли.` : '')
+          : ` Збережено скріншотів: ${extracted}.`;
+
       setImportStatus({
         type: 'success',
-        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань`
-          + (imagesCount > 0 ? `, збережено скріншотів: ${imagesCount}.` : '.')
+        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань.`
+          + imagesNote
       });
     } catch (err: any) {
       setImportStatus({

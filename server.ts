@@ -25,9 +25,17 @@ async function startServer() {
     startNotificationScheduler();
   }
 
-  // Periodically remove abandoned pending uploads (files uploaded but never imported)
-  cleanupStalePendingUploads();
-  setInterval(cleanupStalePendingUploads, 60 * 60 * 1000);
+  // Periodically remove abandoned pending uploads (files uploaded but never imported).
+  // Файли живуть у базі, тож прибирання має сенс лише за наявності підключення.
+  if (isDbConnected) {
+    const sweep = () => {
+      cleanupStalePendingUploads().catch(err =>
+        console.error('Failed to clean up stale pending uploads', err)
+      );
+    };
+    sweep();
+    setInterval(sweep, 60 * 60 * 1000);
+  }
 
   // API Routes
   app.get('/api/health', (req, res) => {

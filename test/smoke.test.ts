@@ -22,18 +22,40 @@ app.get('/api/core/features', async (req, res) => {
   }
 });
 
-// Use a temporary database name for testing
-const TEST_MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/viatec_test';
+/**
+ * Тест чистить колекції, тому він МУСИТЬ працювати у власній базі.
+ * MONGODB_URI вказує на робочий кластер (і зазвичай взагалі без імені бази —
+ * тоді драйвер бере базу за замовчуванням, тобто саме ту, де живуть інструкції),
+ * тож ім'я бази підставляємо самі, а не покладаємось на оточення.
+ */
+const TEST_DB_NAME = 'viatec_smoke_test';
+
+function testDatabaseUri(): string {
+  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+  const [base, query] = uri.split('?');
+  const host = base.replace(/\/+$/, '').replace(/^(mongodb(?:\+srv)?:\/\/[^/]+)(\/.*)?$/, '$1');
+  return `${host}/${TEST_DB_NAME}${query ? `?${query}` : ''}`;
+}
 
 describe('Smoke Tests', () => {
   beforeAll(async () => {
-    await mongoose.connect(TEST_MONGO_URI);
+    await mongoose.connect(testDatabaseUri());
+
+    // Остання лінія оборони: не чистити нічого, крім своєї бази
+    const dbName = mongoose.connection.db?.databaseName;
+    if (dbName !== TEST_DB_NAME) {
+      throw new Error(`Тест відмовляється працювати з базою "${dbName}" — очікувалась "${TEST_DB_NAME}"`);
+    }
+
     await FeatureFlag.deleteMany({});
-  });
+  }, 30000);
 
   afterAll(async () => {
+    if (mongoose.connection.db?.databaseName === TEST_DB_NAME) {
+      await mongoose.connection.db.dropDatabase();
+    }
     await mongoose.connection.close();
-  });
+  }, 30000);
 
   it('should return 200 and empty flags map', async () => {
     const res = await request(app).get('/api/core/features');

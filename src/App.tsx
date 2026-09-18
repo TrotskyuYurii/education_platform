@@ -669,12 +669,15 @@ function MainApp() {
             }}
             onImport={async (newSections, newQuestions, replace) => {
               try {
-                await fetch('/api/admin/import', {
+                const res = await fetch('/api/admin/import', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ sections: newSections, questions: newQuestions, replace })
                 });
+                const data = await res.json().catch(() => null);
                 await fetchContent();
+                // Звіт по скріншотах адмінка показує в статусі імпорту
+                return data?.assets;
               } catch (err) {
                 console.error(err);
                 alert('Помилка при збереженні в БД');

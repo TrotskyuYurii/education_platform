@@ -48,7 +48,7 @@ export async function up(isDryRun: boolean) {
     }
 
     const versionNumber = plain.versionNumber || 1;
-    const normalized = normalizeDocumentAssets(plain, { sectionId: plain.id, versionNumber });
+    const normalized = await normalizeDocumentAssets(plain, { sectionId: plain.id, versionNumber });
 
     await Section.updateOne(
       { id: plain.id } as any,

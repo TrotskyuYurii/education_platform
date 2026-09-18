@@ -13,18 +13,20 @@ import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from '
 import {
   savePendingUpload,
   finalizePendingUpload,
-  getFileAbsolutePath,
-  fileExists,
-  createPendingAssetsDir,
-  resolveVersionAssetPath,
+  openStoredFile,
+  createTempExtractionDir,
+  removeTempExtractionDir,
+  savePendingAssets,
+  resolveVersionAsset,
   saveVersionAsset,
   listVersionAssets,
   copyVersionAssets,
-  deleteDocumentStorage,
-  mimeTypeForAsset
+  deleteDocumentStorage
 } from './services/fileStorage.js';
+import { sendStoredFile, sendStoredInline } from './services/fileDownload.js';
 import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.js';
 import { extractPdfImages } from './services/pdfImages.js';
+import { convertDocxWithImages } from './services/docxImages.js';
 import { buildInstructionPrompt } from '../shared/instructionPrompt.js';
 
 const upload = multer({ dest: 'uploads/' });
@@ -546,17 +548,21 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
     // pull them off before insertMany, then finalize the pending upload afterwards
     // once we know the section actually exists.
     const pendingFileFinalizations: Array<{ sectionId: string; token: string; fileName: string; mimeType: string }> = [];
-    const cleanSections = (sections || []).map((s: any) => {
+    // Звіт по скріншотах: адміну важливо бачити не лише «скільки збережено»,
+    // а й скільки з них модель справді розставила в тексті інструкції.
+    const assetReport = { saved: 0, used: 0, dropped: 0 };
+    const cleanSections: any[] = [];
+    for (const s of (sections || [])) {
       const { sourceFileToken, sourceFileName, sourceMimeType, assetsToken, ...rest } = s;
       if (sourceFileToken) {
         pendingFileFinalizations.push({ sectionId: s.id, token: sourceFileToken, fileName: sourceFileName, mimeType: sourceMimeType });
       }
 
-      // Зображення виносимо у файли ДО запису в БД: інакше мегабайтний base64 осідає
-      // в документі Mongo (і впирається в ліміт 16 МБ), замість того щоб лежати
-      // звичайним файлом у теці документа поруч з оригіналом та instruction.md.
+      // Зображення виносимо в окремі файли ДО запису розділу: інакше мегабайтний
+      // base64 осідає в документі Mongo і впирається в ліміт 16 МБ, замість того
+      // щоб лежати у GridFS поруч з оригіналом та instruction.md.
       try {
-        const normalized = normalizeDocumentAssets(rest, {
+        const normalized = await normalizeDocumentAssets(rest, {
           sectionId: rest.id,
           versionNumber: rest.versionNumber || 1,
           pendingAssetsToken: assetsToken
@@ -566,19 +572,28 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
           assets: normalized.assets,
           markdownFile: normalized.markdownFile
         });
+
+        assetReport.saved += normalized.assets.length;
+        assetReport.used += normalized.usedAssetCount;
+        assetReport.dropped += normalized.droppedLinkCount;
+        if (normalized.droppedLinkCount > 0) {
+          console.warn(
+            `Section ${rest.id}: removed ${normalized.droppedLinkCount} image link(s) pointing to files that do not exist`
+          );
+        }
       } catch (assetErr) {
         console.error('Failed to store document images for section', rest.id, assetErr);
       }
 
-      return rest;
-    });
+      cleanSections.push(rest);
+    }
 
     if (cleanSections.length) await Section.insertMany(cleanSections);
     if (questions?.length) await Question.insertMany(questions);
 
     for (const pending of pendingFileFinalizations) {
       try {
-        const sourceFile = finalizePendingUpload(pending.token, pending.sectionId, 1, pending.fileName, pending.mimeType);
+        const sourceFile = await finalizePendingUpload(pending.token, pending.sectionId, 1, pending.fileName, pending.mimeType);
         await Section.updateOne({ id: pending.sectionId } as any, { $set: { sourceFile } } as any);
       } catch (fileErr) {
         console.error('Failed to finalize source file for section', pending.sectionId, fileErr);
@@ -593,7 +608,7 @@ apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
       { $pull: { readSectionIds: { $nin: currentValidIds } } } as any
     );
 
-    res.json({ success: true });
+    res.json({ success: true, assets: assetReport });
   } catch (err) {
     res.status(500).json({ error: 'Failed to import data' });
   }
@@ -604,7 +619,7 @@ apiRouter.post('/admin/upload-source-file', requireAuth, requireAdmin, upload.si
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    const { token } = savePendingUpload(req.file.path);
+    const { token } = await savePendingUpload(req.file.path);
     res.json({
       success: true,
       sourceFileToken: token,
@@ -619,8 +634,11 @@ apiRouter.post('/admin/upload-source-file', requireAuth, requireAdmin, upload.si
 
 // Access-check helper shared by the source-file download routes below
 function userCanAccessSection(user: any, section: any): boolean {
-  if (!section?.isActive) return false;
+  if (!section) return false;
+  // Адмін отримує деактивовані інструкції в /content і може їх відкрити, тож
+  // і їхні зображення мусить бачити — інакше в тексті лишаються «биті» кадри.
   if (user?.role === 'admin') return true;
+  if (!section.isActive) return false;
 
   const allowed: string[] = user?.allowedInstructionIds || [];
   if (allowed.length > 0) return allowed.includes(section.id);
@@ -630,6 +648,16 @@ function userCanAccessSection(user: any, section: any): boolean {
   return deps.includes(section.department);
 }
 
+/** Розміри та номер сторінки скріншота — зберігаються разом із файлом, щоб не читати його вдруге. */
+function assetDetails(
+  images: Array<{ fileName: string; width?: number; height?: number; page?: number }>
+): Record<string, { width?: number; height?: number; page?: number }> {
+  return Object.fromEntries(
+    images.map(img => [img.fileName, { width: img.width, height: img.height, page: img.page }])
+  );
+}
+
+
 apiRouter.get('/sections/:id/source-file', requireAuth, async (req: any, res) => {
   try {
     const section = await Section.findOne({ id: req.params.id } as any);
@@ -637,10 +665,11 @@ apiRouter.get('/sections/:id/source-file', requireAuth, async (req: any, res) =>
       return res.status(404).json({ error: 'Документ не знайдено' });
     }
     const sourceFile = (section as any).sourceFile;
-    if (!sourceFile?.storagePath || !fileExists(sourceFile.storagePath)) {
+    const stored = sourceFile?.storagePath ? await openStoredFile(sourceFile.storagePath) : null;
+    if (!stored) {
       return res.status(404).json({ error: 'Оригінальний файл не знайдено' });
     }
-    res.download(getFileAbsolutePath(sourceFile.storagePath), sourceFile.fileName || 'original');
+    sendStoredFile(res, stored, sourceFile.fileName || 'original');
   } catch (err) {
     console.error('Failed to download section source file', err);
     res.status(500).json({ error: 'Не вдалося завантажити файл' });
@@ -653,12 +682,13 @@ apiRouter.get('/sections/:id/source-file.md', requireAuth, async (req: any, res)
     if (!section || !userCanAccessSection(req.user, section)) {
       return res.status(404).json({ error: 'Документ не знайдено' });
     }
-    // Файл на диску — першоджерело (посилання на зображення в ньому відносні,
-    // тож тека документа лишається самодостатньою); поле в БД — запасний варіант
-    // для інструкцій, імпортованих до переходу на файлове зберігання.
+    // Файл у сховищі — першоджерело (посилання на зображення в ньому відносні,
+    // тож набір файлів документа лишається самодостатнім); поле в БД — запасний
+    // варіант для інструкцій, імпортованих до переходу на окреме зберігання.
     const markdownFile = (section as any).markdownFile;
-    if (markdownFile?.storagePath && fileExists(markdownFile.storagePath)) {
-      return res.download(getFileAbsolutePath(markdownFile.storagePath), `${section.id}.md`);
+    const stored = markdownFile?.storagePath ? await openStoredFile(markdownFile.storagePath) : null;
+    if (stored) {
+      return sendStoredFile(res, stored, `${section.id}.md`);
     }
 
     const rawMarkdown = (section as any).rawMarkdown;
@@ -692,14 +722,12 @@ apiRouter.get('/sections/:id/assets/:version/:file', requireAuth, async (req: an
       return res.status(400).json({ error: 'Некоректна версія документа' });
     }
 
-    const filePath = resolveVersionAssetPath(section.id, versionNumber, req.params.file);
-    if (!filePath) {
+    const asset = await resolveVersionAsset(section.id, versionNumber, req.params.file);
+    if (!asset) {
       return res.status(404).json({ error: 'Зображення не знайдено' });
     }
 
-    res.setHeader('Content-Type', mimeTypeForAsset(filePath));
-    res.setHeader('Cache-Control', 'private, max-age=86400');
-    res.sendFile(filePath);
+    sendStoredInline(res, { ...asset, fileName: req.params.file }, asset.mimeType);
   } catch (err) {
     console.error('Failed to serve document asset', err);
     res.status(500).json({ error: 'Не вдалося завантажити зображення' });
@@ -730,7 +758,7 @@ apiRouter.post('/admin/instructions/:id/assets', requireAuth, requireAdmin, uplo
     const buffer = fs.readFileSync(req.file.path);
     fs.unlinkSync(req.file.path);
 
-    const asset = saveVersionAsset(
+    const asset = await saveVersionAsset(
       section.id,
       versionNumber,
       req.file.originalname || 'screenshot.png',
@@ -739,7 +767,7 @@ apiRouter.post('/admin/instructions/:id/assets', requireAuth, requireAdmin, uplo
       'upload'
     );
 
-    const assets = listVersionAssets(section.id, versionNumber);
+    const assets = await listVersionAssets(section.id, versionNumber);
     await Section.updateOne({ id: section.id } as any, { $set: { assets } } as any);
 
     res.json({
@@ -776,7 +804,7 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
     let documentBlock: any;
     let readSucceeded = false;
     // Скріншоти, витягнуті з оригіналу: зберігаються у файли, модель лише розставляє на них посилання
-    let extractedImages: ReturnType<typeof extractPdfImages> = [];
+    let extractedImages: Array<{ fileName: string; page?: number; width?: number; height?: number; sizeBytes: number }> = [];
     let assetsToken: string | undefined;
 
     try {
@@ -796,21 +824,42 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
         };
 
         // Модель бачить сторінки PDF, але не вміє повертати сам малюнок, тому
-        // зображення дістаємо самі та тримаємо у тимчасовій теці до імпорту розділу.
+        // зображення дістаємо самі та кладемо у сховище під токеном очікування.
+        const pending = createTempExtractionDir();
         try {
-          const pending = createPendingAssetsDir();
           extractedImages = extractPdfImages(req.file.path, pending.dir);
           if (extractedImages.length > 0) {
+            await savePendingAssets(pending.token, pending.dir, assetDetails(extractedImages));
             assetsToken = pending.token;
           } else {
-            fs.rmSync(pending.dir, { recursive: true, force: true });
+            removeTempExtractionDir(pending.dir);
           }
         } catch (imgErr) {
           console.error('Failed to extract images from PDF', imgErr);
+          removeTempExtractionDir(pending.dir);
+          extractedImages = [];
         }
       } else if (isDocx) {
-        const { value: extractedText } = await mammoth.extractRawText({ path: req.file.path });
-        documentBlock = { type: 'text', text: extractedText };
+        // Конвертація в HTML (а не extractRawText) зберігає і структуру документа,
+        // і місце кожного скріншота в тексті — модель бачить, до якого кроку він належить.
+        const pending = createTempExtractionDir();
+        try {
+          const { text, images } = await convertDocxWithImages(req.file.path, pending.dir);
+          extractedImages = images;
+          documentBlock = { type: 'text', text };
+          if (images.length > 0) {
+            await savePendingAssets(pending.token, pending.dir, assetDetails(images));
+            assetsToken = pending.token;
+          } else {
+            removeTempExtractionDir(pending.dir);
+          }
+        } catch (docxErr) {
+          console.error('Failed to extract images from DOCX', docxErr);
+          removeTempExtractionDir(pending.dir);
+          extractedImages = [];
+          const { value: extractedText } = await mammoth.extractRawText({ path: req.file.path });
+          documentBlock = { type: 'text', text: extractedText };
+        }
       } else {
         const extractedText = fs.readFileSync(req.file.path, 'utf-8');
         documentBlock = { type: 'text', text: extractedText };
@@ -824,7 +873,7 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
         // Keep the original file in durable "pending" storage so it can be attached to
         // the Section once the user actually imports it (instead of discarding it).
         try {
-          const { token } = savePendingUpload(req.file.path);
+          const { token } = await savePendingUpload(req.file.path);
           (req as any).sourceFileToken = token;
         } catch (e) {
           console.error('Failed to persist source file', e);
@@ -849,7 +898,10 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
         page: img.page,
         width: img.width,
         height: img.height
-      }))
+      })),
+      // У тексті з .docx посилання вже стоять на місцях — модель має їх зберегти,
+      // а не розставляти заново (у PDF орієнтиром служить номер сторінки).
+      { inlineMarkers: isDocx }
     );
 
     const response = await anthropic.messages.create({
@@ -1037,7 +1089,7 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
     // інакше сховище засмічується файлами, на які вже ніщо не посилається
     if (deletedSection) {
       await InstructionVersion.deleteMany({ sectionId: secId } as any);
-      deleteDocumentStorage(secId);
+      await deleteDocumentStorage(secId);
     }
 
     res.json({ success: true });
@@ -1077,12 +1129,12 @@ apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (
 
     // Нова редакція успадковує скріншоти попередньої, інакше посилання в її тексті «повиснуть»
     if (targetVersionNumber !== previousVersionNumber) {
-      copyVersionAssets(instructionId, previousVersionNumber, targetVersionNumber);
+      await copyVersionAssets(instructionId, previousVersionNumber, targetVersionNumber);
     }
 
     // Зображення з редактора (як посилання, так і випадковий base64) → файли теки документа
     try {
-      const normalized = normalizeDocumentAssets(updatePayload, {
+      const normalized = await normalizeDocumentAssets(updatePayload, {
         sectionId: instructionId,
         versionNumber: targetVersionNumber
       });

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { KnowledgeService } from './service.js';
 import { requirePermission } from '../core/permissions.js';
-import { getFileAbsolutePath, fileExists } from '../../services/fileStorage.js';
+import { openStoredFile } from '../../services/fileStorage.js';
+import { sendStoredFile } from '../../services/fileDownload.js';
 
 export const knowledgeRouter = Router();
 
@@ -159,11 +160,12 @@ knowledgeRouter.get('/sections/:id/versions/:versionNumber/source-file', ensureU
     const version = await KnowledgeService.getVersionSourceFile(sectionId, versionNumber);
     const sourceFile = (version as any).sourceFile;
 
-    if (!sourceFile?.storagePath || !fileExists(sourceFile.storagePath)) {
+    const stored = sourceFile?.storagePath ? await openStoredFile(sourceFile.storagePath) : null;
+    if (!stored) {
       return res.status(404).json({ error: 'Оригінальний файл для цієї версії не знайдено' });
     }
 
-    res.download(getFileAbsolutePath(sourceFile.storagePath), sourceFile.fileName || 'original');
+    sendStoredFile(res, stored, sourceFile.fileName || 'original');
   } catch (err: any) {
     console.error('Failed to download version source file', err);
     res.status(404).json({ error: err.message || 'Файл не знайдено' });
@@ -179,10 +181,11 @@ knowledgeRouter.get('/sections/:id/versions/:versionNumber/source-file.md', ensu
     const versionNumber = Number(req.params.versionNumber);
     const version = await KnowledgeService.getVersionSourceFile(sectionId, versionNumber);
 
-    // Файл на диску (documents/<id>/v<N>/instruction.md) — першоджерело редакції
+    // Файл у сховищі (documents/<id>/v<N>/instruction.md) — першоджерело редакції
     const markdownFile = (version as any).markdownFile;
-    if (markdownFile?.storagePath && fileExists(markdownFile.storagePath)) {
-      return res.download(getFileAbsolutePath(markdownFile.storagePath), `${sectionId}-v${versionNumber}.md`);
+    const stored = markdownFile?.storagePath ? await openStoredFile(markdownFile.storagePath) : null;
+    if (stored) {
+      return sendStoredFile(res, stored, `${sectionId}-v${versionNumber}.md`);
     }
 
     const rawMarkdown = (version as any).rawMarkdown;

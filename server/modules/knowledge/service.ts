@@ -356,12 +356,12 @@ export class KnowledgeService {
 
     // Нова редакція успадковує скріншоти попередньої: посилання у її тексті
     // вказують на v<N>/assets, тож файли мають там бути ще до нормалізації
-    copyVersionAssets(sectionId, currentVersionNumber, nextVerNum);
+    await copyVersionAssets(sectionId, currentVersionNumber, nextVerNum);
 
     let normalizedAssets: any[] = [];
     let markdownFile: any;
     try {
-      const normalized = normalizeDocumentAssets(
+      const normalized = await normalizeDocumentAssets(
         { ...restUpdate, rawMarkdown: rawMarkdown !== undefined ? rawMarkdown : section.rawMarkdown || '' },
         { sectionId, versionNumber: nextVerNum, pendingAssetsToken: assetsToken }
       );
@@ -385,7 +385,7 @@ export class KnowledgeService {
 
     if (sourceFileToken) {
       // A new original file was uploaded for this revision
-      section.sourceFile = finalizePendingUpload(sourceFileToken, sectionId, nextVerNum, sourceFileName, sourceMimeType);
+      section.sourceFile = await finalizePendingUpload(sourceFileToken, sectionId, nextVerNum, sourceFileName, sourceMimeType);
     }
     // If no new file was uploaded, section.sourceFile simply carries over from the previous revision
 

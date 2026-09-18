@@ -126,13 +126,24 @@ export const INSTRUCTION_PROMPT_BODY = `Ти — провідний експер
  * Збирає промпт для автоматичного аналізу документа.
  * `images` — скріншоти, які платформа вже витягнула з оригіналу та зберегла у файли.
  */
-export function buildInstructionPrompt(images: AvailableImage[] = []): string {
+export function buildInstructionPrompt(
+  images: AvailableImage[] = [],
+  options: { inlineMarkers?: boolean } = {}
+): string {
+  // Для .docx платформа віддає моделі текст, у якому посилання на скріншоти вже
+  // стоять на своїх місцях, — тоді розставляти їх наново не треба, лише зберегти.
+  const placement = options.inlineMarkers && images.length > 0
+    ? '\nУ доданому тексті посилання на ці файли вже стоять на своїх місцях (так вони розташовані в оригіналі).\n'
+      + 'Перенеси кожне з них у Markdown у тому ж місці, замінивши на `![Змістовний підпис](assets/...)`.\n'
+      + 'Не переставляй зображення між кроками і не вигадуй для них нових місць.'
+    : '';
+
   return [
     INSTRUCTION_PROMPT_BODY,
     '---',
     IMAGE_RULES,
     '',
-    buildAvailableImagesBlock(images)
+    buildAvailableImagesBlock(images) + placement
   ].join('\n');
 }
 
