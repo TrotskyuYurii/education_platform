@@ -111,6 +111,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [positions, setPositions] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
   const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
+  const [onboardingCount, setOnboardingCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
   const availableDepartments = React.useMemo(() => {
@@ -200,6 +201,16 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     } catch (err) {}
   };
 
+  // Каталог онбордінгів за замовчуванням не віддає архівні — саме стільки
+  // схем адміністратор і побачить, відкривши розділ.
+  const fetchOnboardingCount = async () => {
+    try {
+      const res = await fetch('/api/v2/onboarding/templates');
+      const data = await res.json();
+      if (res.ok && Array.isArray(data?.templates)) setOnboardingCount(data.templates.length);
+    } catch (err) {}
+  };
+
   React.useEffect(() => {
     fetchDepartments();
     fetchPositions();
@@ -207,6 +218,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     fetchRoles();
     fetchUsers();
     fetchAssignmentsCount();
+    fetchOnboardingCount();
   }, []);
   const handleDeleteInstruction = async (id: string) => {
     if (!id) return;
@@ -907,14 +919,23 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
                   <button
                     onClick={() => setActiveTab('onboarding')}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
                       activeTab === 'onboarding'
                         ? 'bg-purple-100 text-purple-800 shadow-xs'
                         : 'text-slate-600 hover:bg-slate-200/60'
                     }`}
                   >
-                    <Rocket className="w-4 h-4 text-purple-600" />
-                    <span>Онбординг</span>
+                    <div className="flex items-center gap-2.5">
+                      <Rocket className="w-4 h-4 text-purple-600" />
+                      <span>Онбординг</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                      activeTab === 'onboarding'
+                        ? 'bg-purple-200/80 text-purple-900'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {onboardingCount !== null ? onboardingCount : '—'}
+                    </span>
                   </button>
 
                   <button
@@ -3049,6 +3070,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               courses={courses}
               cases={cases}
               onOpenAssignment={onOpenOnboardingAssignment}
+              onCatalogChanged={setOnboardingCount}
             />
           )}
 

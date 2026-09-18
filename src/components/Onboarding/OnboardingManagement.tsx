@@ -41,6 +41,8 @@ interface OnboardingManagementProps {
   cases: any[];
   /** Відкрити картку проходження конкретного співробітника. */
   onOpenAssignment?: (assignmentId: string) => void;
+  /** Скільки неархівних схем у каталозі — щоб лічильник у меню не відставав. */
+  onCatalogChanged?: (activeCount: number) => void;
 }
 
 type MgmtView = 'catalog' | 'progress' | 'rules' | 'surveys';
@@ -53,7 +55,7 @@ const VIEW_TABS: { key: MgmtView; label: string; icon: typeof LayoutGrid }[] = [
 ];
 
 export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
-  sections, courses, cases, onOpenAssignment
+  sections, courses, cases, onOpenAssignment, onCatalogChanged
 }) => {
   const [view, setView] = useState<MgmtView>('catalog');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -72,14 +74,18 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
       const res = await fetch(`/api/v2/onboarding/templates?includeArchived=${showArchived}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Не вдалося завантажити каталог');
-      setTemplates(data.templates || []);
+      const list: OnboardingTemplateSummary[] = data.templates || [];
+      setTemplates(list);
+      // Рахуємо самі, а не по довжині списку: з увімкненим «показати архівні»
+      // у відповіді лежать і архівні схеми, які до лічильника не належать.
+      onCatalogChanged?.(list.filter(t => t.status !== 'archived').length);
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Помилка завантаження');
     } finally {
       setLoadingTemplates(false);
     }
-  }, [showArchived]);
+  }, [showArchived, onCatalogChanged]);
 
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
@@ -307,7 +313,7 @@ const TemplateCard: React.FC<{
   const isPublished = template.status === 'published';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-purple-200 hover:shadow-sm transition flex flex-col">
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-purple-200 hover:shadow-sm transition flex flex-col min-w-0">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="w-10 h-10 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
           <Rocket className="w-4.5 h-4.5" />
@@ -317,7 +323,7 @@ const TemplateCard: React.FC<{
         </span>
       </div>
 
-      <h4 className="font-bold text-slate-900 leading-tight mb-1">{template.name}</h4>
+      <h4 className="font-bold text-slate-900 leading-tight mb-1 break-words">{template.name}</h4>
       <p className="text-xs text-slate-500 line-clamp-2 mb-3 min-h-[32px]">
         {template.description || 'Опис не заповнено'}
       </p>
@@ -347,22 +353,24 @@ const TemplateCard: React.FC<{
         <Metric value={template.assignedTotal} label="всього" tone="text-slate-700" />
       </div>
 
-      <div className="mt-auto flex items-center gap-1.5">
+      {/* Картка живе і в один, і в три стовпці, тож ряд дій має переноситись,
+          а не вилазити за межі: підписи звужуються, іконки лишаються цілими. */}
+      <div className="mt-auto flex flex-wrap items-center gap-1.5">
         <button
           onClick={onEdit}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
+          className="flex-1 basis-24 min-w-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
         >
-          <Pencil className="w-3.5 h-3.5" />
-          Схема
+          <Pencil className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Схема</span>
         </button>
         <button
           onClick={onAssign}
           disabled={!isPublished}
           title={isPublished ? 'Призначити співробітнику' : 'Спершу опублікуйте онбординг'}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex-1 basis-28 min-w-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          <UserPlus className="w-3.5 h-3.5" />
-          Призначити
+          <UserPlus className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Призначити</span>
         </button>
         <button
           onClick={onDuplicate}
@@ -394,9 +402,10 @@ const TemplateCard: React.FC<{
 };
 
 const Metric: React.FC<{ value: number | string; label: string; tone: string }> = ({ value, label, tone }) => (
-  <div className="text-center">
+  <div className="text-center min-w-0">
     <div className={`text-base font-bold ${tone}`}>{value}</div>
-    <div className="text-[10px] text-slate-400 uppercase tracking-wide">{label}</div>
+    {/* У вузькій картці підписи інакше налазять один на одного. */}
+    <div className="text-[10px] text-slate-400 uppercase tracking-wide truncate" title={label}>{label}</div>
   </div>
 );
 
