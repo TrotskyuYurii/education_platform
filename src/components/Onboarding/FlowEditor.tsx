@@ -32,7 +32,13 @@ import {
   Loader2,
   Info,
   X,
-  Lock
+  Lock,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 import { OnboardingNode, OnboardingStepType, OnboardingTemplate, OnboardingStageDef } from './types';
 import { STEP_TYPE_META, PALETTE_STEP_TYPES, OWNER_ROLE_LABELS, formatOffset } from './constants';
@@ -221,10 +227,40 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
   const [showSettings, setShowSettings] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
 
+  // Схема — найтісніше місце редактора, тож канвас можна розширювати:
+  // повноекранний режим виводить редактор поверх адмін-лейаута,
+  // а бічні панелі згортаються до вузьких смужок з іконками.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [propsOpen, setPropsOpen] = useState(true);
+
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<StepNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView, screenToFlowPosition } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // У повноекранному режимі редактор перекриває сторінку — прибираємо скрол фону
+  // і даємо звичний вихід по Esc (модалка параметрів має пріоритет на цю клавішу).
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !showSettings) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isFullscreen, showSettings]);
+
+  // Після зміни розмірів робочої зони вписуємо схему в новий кадр,
+  // інакше частина вузлів залишається за межами видимої області.
+  useEffect(() => {
+    const timer = setTimeout(() => fitView({ padding: 0.2, duration: 250 }), 80);
+    return () => clearTimeout(timer);
+  }, [isFullscreen, paletteOpen, propsOpen, fitView]);
 
   const targetTitleFor = useCallback((step: OnboardingNode): string => {
     if (step.type === 'instruction') return sections.find(s => s.id === step.targetId)?.title || '';
@@ -448,7 +484,13 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
   const allIssues = [...new Set([...localIssues, ...issues])];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-180px)] min-h-[600px]">
+    <div
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-[60] bg-white px-5 py-4 flex flex-col'
+          : 'flex flex-col h-[calc(100vh-180px)] min-h-[600px]'
+      }
+    >
 
       {/* Панель дій */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
@@ -497,6 +539,14 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
             Вирівняти
           </button>
           <button
+            onClick={() => setIsFullscreen(v => !v)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+            title={isFullscreen ? 'Вийти з повноекранного режиму (Esc)' : 'Відкрити схему на весь екран'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            {isFullscreen ? 'Згорнути' : 'На весь екран'}
+          </button>
+          <button
             onClick={() => save(false)}
             disabled={saving}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition disabled:opacity-50"
@@ -542,14 +592,31 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
       {/* Робоча зона: палітра + канвас + властивості */}
       <div className="flex-1 flex gap-4 mt-4 min-h-0">
 
-        {/* Палітра кроків */}
-        <div className="w-52 shrink-0 bg-slate-50 rounded-2xl border border-slate-200 p-3 overflow-y-auto">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-2">
-            Типи кроків
+        {/* Палітра кроків — у згорнутому стані лишається смужка з іконками */}
+        <div
+          className={`shrink-0 bg-slate-50 rounded-2xl border border-slate-200 p-2 overflow-y-auto transition-[width] ${
+            paletteOpen ? 'w-52' : 'w-14'
+          }`}
+        >
+          <div className={`flex items-center gap-1 mb-2 ${paletteOpen ? 'justify-between px-1' : 'justify-center'}`}>
+            {paletteOpen && (
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Типи кроків
+              </span>
+            )}
+            <button
+              onClick={() => setPaletteOpen(v => !v)}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-white transition shrink-0"
+              title={paletteOpen ? 'Згорнути палітру' : 'Розгорнути палітру'}
+            >
+              {paletteOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+            </button>
           </div>
-          <p className="text-[10px] text-slate-400 px-1 mb-3 leading-snug">
-            Перетягніть на схему або натисніть, щоб додати
-          </p>
+          {paletteOpen && (
+            <p className="text-[10px] text-slate-400 px-1 mb-3 leading-snug">
+              Перетягніть на схему або натисніть, щоб додати
+            </p>
+          )}
           <div className="space-y-1.5">
             {PALETTE_STEP_TYPES.map(type => {
               const meta = STEP_TYPE_META[type];
@@ -563,16 +630,20 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
                     e.dataTransfer.effectAllowed = 'move';
                   }}
                   onClick={() => addStep(type)}
-                  className="w-full flex items-start gap-2 p-2 rounded-xl bg-white border border-slate-200 hover:border-purple-300 hover:shadow-sm transition text-left cursor-grab active:cursor-grabbing"
-                  title={meta.hint}
+                  className={`w-full flex items-start gap-2 p-2 rounded-xl bg-white border border-slate-200 hover:border-purple-300 hover:shadow-sm transition text-left cursor-grab active:cursor-grabbing ${
+                    paletteOpen ? '' : 'justify-center'
+                  }`}
+                  title={paletteOpen ? meta.hint : `${meta.label} — ${meta.hint}`}
                 >
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.chip}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-slate-800 leading-tight">{meta.label}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5 line-clamp-2">{meta.hint}</div>
-                  </div>
+                  {paletteOpen && (
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800 leading-tight">{meta.label}</div>
+                      <div className="text-[10px] text-slate-400 leading-tight mt-0.5 line-clamp-2">{meta.hint}</div>
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -599,7 +670,7 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
               if (changes.some(c => c.type === 'remove')) setIsDirty(true);
             }}
             onConnect={onConnect}
-            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            onNodeClick={(_, node) => { setSelectedNodeId(node.id); setPropsOpen(true); }}
             onPaneClick={() => setSelectedNodeId(null)}
             fitView
             minZoom={0.2}
@@ -621,8 +692,28 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
           </ReactFlow>
         </div>
 
-        {/* Властивості вибраного кроку */}
-        <div className="w-72 shrink-0 bg-white rounded-2xl border border-slate-200 p-4 overflow-y-auto">
+        {/* Властивості вибраного кроку — згортаються, щоб віддати ширину схемі */}
+        {!propsOpen ? (
+          <div className="w-12 shrink-0 bg-white rounded-2xl border border-slate-200 p-2 flex flex-col items-center">
+            <button
+              onClick={() => setPropsOpen(true)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition"
+              title="Показати властивості кроку"
+            >
+              <PanelRightOpen className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+        <div className={`shrink-0 bg-white rounded-2xl border border-slate-200 p-4 overflow-y-auto ${isFullscreen ? 'w-80' : 'w-72'}`}>
+          <div className="flex justify-end -mt-1 -mr-1 mb-1">
+            <button
+              onClick={() => setPropsOpen(false)}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition"
+              title="Згорнути панель властивостей"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          </div>
           {!selectedNode ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-2 py-10">
               <div className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
@@ -647,6 +738,7 @@ const FlowEditorInner: React.FC<FlowEditorProps> = ({ templateId, sections, cour
             />
           )}
         </div>
+        )}
       </div>
 
       {showSettings && (

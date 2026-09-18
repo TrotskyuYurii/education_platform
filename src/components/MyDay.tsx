@@ -169,8 +169,13 @@ export const MyDay: React.FC<MyDayProps> = ({
     return str.charAt(0).toUpperCase() + str.slice(1);
   }, []);
 
-  // User display name
-  const userName = user?.fullName || user?.email?.split('@')[0] || user?.username || 'Співробітник';
+  // User display name — prefer the given name from ПІБ ("Прізвище Ім'я По батькові" → "Ім'я")
+  const userName = useMemo(() => {
+    const parts = (user?.fullName || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return parts[1];
+    if (parts.length === 1) return parts[0];
+    return user?.email?.split('@')[0] || user?.username || 'Співробітник';
+  }, [user?.fullName, user?.email, user?.username]);
 
   // Resolve user department display name cleanly without exposing raw MongoDB ObjectIds or database codes
   const [departmentMap, setDepartmentMap] = useState<Record<string, string>>({});
