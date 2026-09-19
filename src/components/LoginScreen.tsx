@@ -2,14 +2,27 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
+const EMAIL_DOMAIN = '@viatec.ua';
+const ADMIN_LOGIN = 'admin';
+
+/** Залишає лише локальну частину логіну: прибирає пробіли та все після '@' (зручно для вставки повної адреси). */
+const sanitizeLocalPart = (value: string) => value.replace(/\s+/g, '').split('@')[0].toLowerCase();
+
+/** Збирає повну адресу з локальної частини; 'admin' лишається службовим логіном без домену. */
+const buildEmail = (value: string) => {
+  const local = sanitizeLocalPart(value);
+  if (!local) return '';
+  return local === ADMIN_LOGIN ? ADMIN_LOGIN : `${local}${EMAIL_DOMAIN}`;
+};
+
 export const LoginScreen: React.FC = () => {
   const { login } = useAuth();
   
   // Step: 'credentials' | 'code'
   const [step, setStep] = useState<'email' | 'password' | 'code'>('email');
   
-  // Step 1: Credentials
-  const [email, setEmail] = useState('');
+  // Step 1: Credentials (користувач вводить лише локальну частину, домен додається автоматично)
+  const [emailLocal, setEmailLocal] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
@@ -26,6 +39,9 @@ export const LoginScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   const codeInputRef = useRef<HTMLInputElement>(null);
+
+  const isAdminLogin = sanitizeLocalPart(emailLocal) === ADMIN_LOGIN;
+  const fullEmail = buildEmail(emailLocal);
 
   // Timer countdown for code expiration
   useEffect(() => {
@@ -69,10 +85,10 @@ export const LoginScreen: React.FC = () => {
     setError('');
     setInfoMsg('');
 
-    const cleanEmail = email.trim().toLowerCase();
-    
-    if (cleanEmail !== 'admin' && !cleanEmail.endsWith('@viatec.ua')) {
-      setError('Вхід дозволено лише з корпоративної пошти у домені @viatec.ua');
+    const cleanEmail = fullEmail;
+
+    if (!cleanEmail) {
+      setError("Введіть ім'я користувача корпоративної пошти");
       return;
     }
 
@@ -114,7 +130,7 @@ export const LoginScreen: React.FC = () => {
     setError('');
     setInfoMsg('');
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = fullEmail;
     if (!password) {
       setError('Введіть пароль');
       return;
@@ -258,23 +274,31 @@ export const LoginScreen: React.FC = () => {
             <form className="space-y-5" onSubmit={handleEmailSubmit}>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Корпоративний Email (@viatec.ua)
+                  Корпоративний Email
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <div className="flex items-stretch w-full bg-white border border-slate-300 rounded-xl shadow-xs transition focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <div className="pl-3.5 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-slate-400" />
                   </div>
                   <input
                     type="text"
                     required
-                    placeholder="user@viatec.ua (або admin для першого запуску)"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="appearance-none block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl shadow-xs placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    autoFocus
+                    autoComplete="username"
+                    spellCheck={false}
+                    placeholder="ім'я.прізвище"
+                    value={emailLocal}
+                    onChange={(e) => setEmailLocal(sanitizeLocalPart(e.target.value))}
+                    className="flex-1 min-w-0 appearance-none bg-transparent pl-2.5 pr-1 py-2.5 border-0 rounded-l-xl placeholder-slate-400 focus:outline-none focus:ring-0 sm:text-sm"
                   />
+                  {!isAdminLogin && (
+                    <span className="flex items-center pr-3.5 pl-0.5 text-sm font-medium text-slate-500 select-none whitespace-nowrap">
+                      {EMAIL_DOMAIN}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Дозволяється вхід лише для співробітників компанії
+                  Домен <strong className="font-semibold text-slate-600">@viatec.ua</strong> підставляється автоматично — введіть лише ім'я користувача
                 </p>
               </div>
               <div className="pt-1">
@@ -292,7 +316,7 @@ export const LoginScreen: React.FC = () => {
             <form className="space-y-5" onSubmit={handlePasswordSubmit}>
               <div className="text-center">
                 <h3 className="text-lg font-bold text-slate-900">Введіть пароль</h3>
-                <p className="text-xs text-slate-600 mt-1 max-w-xs mx-auto">{email}</p>
+                <p className="text-xs text-slate-600 mt-1 max-w-xs mx-auto">{fullEmail}</p>
               </div>
               <div>
                 <div className="relative">
