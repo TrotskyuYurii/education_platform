@@ -38,8 +38,15 @@ const MOBILE_ITEM_IDLE: Record<NavAccent, string> = {
   admin: 'text-purple-700 bg-purple-50 border-purple-200'
 };
 
+/**
+ * Вертикальні відступи навмисно малі (`py-1`): висоту кнопки задає не її текст,
+ * а розтягування по смузі меню (`items-stretch` на `<nav>`). Інакше підпис, що
+ * переноситься у два рядки («Тестування (Квіз)»), робив би свій пункт помітно
+ * вищим за сусідні — і підсвічування вибраного розділу стрибало б за довжиною
+ * назви. `text-center` тримає перенесений підпис по центру кнопки.
+ */
 const navItemClass = (active: boolean, accent: NavAccent = 'default') =>
-  `flex items-center gap-2 px-3.5 py-2 rounded-lg border text-sm font-medium transition ${NAV_FOCUS} ${
+  `flex items-center justify-center text-center gap-2 px-3.5 py-1 rounded-lg border text-sm font-medium transition ${NAV_FOCUS} ${
     active ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE[accent]
   }`;
 
@@ -193,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-xs">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-4">
+        <div className="flex items-center justify-between min-h-16 gap-4">
           
           {/* Logo & Meta */}
           <div 
@@ -217,7 +224,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="hidden md:flex items-center gap-1.5" id="nav-tabs">
+          <nav className="hidden md:flex items-stretch self-stretch gap-1.5 py-1" id="nav-tabs">
             {navItems.map(({ icon: Icon, ...item }) => (
               <button
                 key={item.tab}
@@ -455,7 +462,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mobile Navigation Bar */}
-        <div className="flex md:hidden items-center overflow-x-auto border-t border-slate-100 py-1.5 gap-1.5 no-scrollbar">
+        <div className="flex md:hidden items-stretch overflow-x-auto border-t border-slate-100 py-1.5 gap-1.5 no-scrollbar">
           {navItems.map(({ icon: Icon, ...item }) => (
             <button
               key={item.tab}
