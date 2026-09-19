@@ -312,7 +312,7 @@ export const RoleSettings: React.FC = () => {
       {loading ? (
         <div className="py-12 text-center text-slate-400 text-sm">Завантаження конфігурації ролей...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
           {filteredRoles.map(role => {
             const isSuperAdmin = role.key === 'admin';
             const permCount = role.permissions?.length || 0;

@@ -799,20 +799,20 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
       
       {/* Header */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs mb-8">
+      <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 sm:px-6 sm:py-5 shadow-xs mb-5 lg:mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0">
-              <Settings2 className="w-6 h-6" />
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0">
+              <Settings2 className="w-5.5 h-5.5" />
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-700 bg-purple-100/60 px-2.5 py-0.5 rounded-full">
+            <div className="min-w-0">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
                 Адміністрування
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">
                 Керування тестами та інструкціями
               </h2>
             </div>
@@ -821,11 +821,11 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       </div>
 
       {/* Main Panel */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row overflow-hidden min-h-[500px]">
+      <div className="flex flex-col lg:flex-row gap-5 xl:gap-6 items-stretch lg:items-start">
         
         {/* Left Nav */}
         {!isSetupMode && (
-          <div className="md:w-64 border-b md:border-b-0 md:border-r border-slate-200 bg-slate-50/70 p-4 shrink-0">
+          <div className="w-full lg:w-64 xl:w-72 shrink-0 bg-white rounded-2xl border border-slate-200 shadow-xs p-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto">
             <div className="space-y-6">
               {/* Group 1: Матеріали */}
               <div>
@@ -1070,7 +1070,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         )}
 
         {/* Right Content */}
-        <div className="p-6 sm:p-8 grow h-full overflow-y-auto">
+        <div className="grow min-w-0 bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6 xl:p-8 min-h-[520px]">
           
           {/* TAB: LIST */}
           {activeTab === 'list' && (
@@ -2574,10 +2574,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-6">
+                <div className="min-w-0">
                   <h4 className="font-semibold text-slate-800 mb-3">Список користувачів</h4>
-                  <div className="space-y-2 max-h-[460px] overflow-y-auto pr-2">
+                  <div className="space-y-2 max-h-[min(640px,calc(100vh-20rem))] overflow-y-auto pr-2">
                     {users.map(u => (
                       <div 
                         key={u._id}
@@ -2685,7 +2685,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       {/* Role selection (RBAC) */}
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[150px] overflow-y-auto">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[200px] overflow-y-auto">
                           {roles.map(r => {
                             const currentRoles: string[] = selectedUser.roleKeys || [selectedUser.role || 'employee'];
                             const isChecked = currentRoles.includes(r.key);
@@ -2979,7 +2979,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       {/* Role selection (RBAC) */}
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[140px] overflow-y-auto">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[200px] overflow-y-auto">
                           {roles.map(r => {
                             const currentRoles: string[] = newUser.roleKeys || [newUser.role || 'employee'];
                             const isChecked = currentRoles.includes(r.key);
