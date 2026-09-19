@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, KeyRound, ArrowLeft, RefreshCw, AlertCircle, ShieldCheck, Eye, EyeOff, Clock } from 'lucide-react';
 
 const EMAIL_DOMAIN = '@viatec.ua';
 const ADMIN_LOGIN = 'admin';
@@ -16,7 +16,7 @@ const buildEmail = (value: string) => {
 };
 
 export const LoginScreen: React.FC = () => {
-  const { login } = useAuth();
+  const { login, sessionExpired, dismissSessionExpired } = useAuth();
   
   // Step: 'credentials' | 'code'
   const [step, setStep] = useState<'email' | 'password' | 'code'>('email');
@@ -84,6 +84,8 @@ export const LoginScreen: React.FC = () => {
     e.preventDefault();
     setError('');
     setInfoMsg('');
+    // Пояснення про автоматичний вихід більше не актуальне, щойно людина входить знову.
+    dismissSessionExpired();
 
     const cleanEmail = fullEmail;
 
@@ -116,7 +118,7 @@ export const LoginScreen: React.FC = () => {
         setStep('code');
         setResendCooldown(30);
       } else if (data.success || data.user) {
-        login(data.user);
+        login(data.user, data.session);
       }
     } catch (err: any) {
       setError(err.message || 'Помилка з\'єднання з сервером');
@@ -150,7 +152,7 @@ export const LoginScreen: React.FC = () => {
       }
 
       if (data.success || data.user) {
-        login(data.user);
+        login(data.user, data.session);
       }
     } catch (err: any) {
       setError(err.message || 'Помилка з\'єднання з сервером');
@@ -189,7 +191,7 @@ export const LoginScreen: React.FC = () => {
         throw new Error(data.error || 'Невірний або прострочений код');
       }
 
-      login(data.user);
+      login(data.user, data.session);
     } catch (err: any) {
       setError(err.message || 'Помилка перевірки коду');
     } finally {
@@ -255,6 +257,13 @@ export const LoginScreen: React.FC = () => {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 sm:px-10 shadow-sm sm:rounded-2xl border border-slate-200">
           
+          {sessionExpired && !error && (
+            <div className="mb-5 p-3.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-medium flex items-start gap-2.5">
+              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <span>Сесію завершено через тривалу бездіяльність. Увійдіть знову, щоб продовжити роботу.</span>
+            </div>
+          )}
+
           {error && (
             <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm font-medium flex items-start gap-2.5">
               <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />

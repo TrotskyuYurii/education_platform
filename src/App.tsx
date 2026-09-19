@@ -397,7 +397,7 @@ function MainApp() {
              <div className="font-bold text-lg text-slate-900 tracking-tight">ВІАТЕК</div>
              <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Налаштування</span>
           </div>
-          <button onClick={logout} className="text-rose-600 hover:underline text-sm font-medium">Вийти</button>
+          <button onClick={() => { void logout(); }} className="text-rose-600 hover:underline text-sm font-medium">Вийти</button>
         </header>
         <main className="grow p-6">
           <div className="max-w-4xl mx-auto mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-800 text-sm">
@@ -734,7 +734,7 @@ function MainApp() {
           </div>
           <div className="flex items-center gap-4">
             <span>Ви увійшли як <strong className="text-slate-700">{user?.email || user?.username}</strong> ({user?.role})</span>
-            <button onClick={logout} className="text-rose-600 hover:underline">Вийти</button>
+            <button onClick={() => { void logout(); }} className="text-rose-600 hover:underline">Вийти</button>
           </div>
         </div>
       </footer>

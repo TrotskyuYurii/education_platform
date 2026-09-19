@@ -11,6 +11,13 @@ import { User, Section, Question, Progress, Department, Course, Case } from './m
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
 import {
+  JWT_SECRET,
+  SESSION_COOKIE_NAME,
+  issueSessionCookie,
+  clearSessionCookie,
+  sessionPolicy
+} from './modules/core/session.js';
+import {
   savePendingUpload,
   finalizePendingUpload,
   openStoredFile,
@@ -38,12 +45,14 @@ import { analyticsRouter } from './modules/analytics/routes.js';
 export const apiRouter = Router();
 
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key';
-
 // Middleware to verify auth
+//
+// Навмисно НЕ продовжує сесію: строк життя токена = дозволений простій, і
+// оновлює його лише /auth/heartbeat за реальною активністю користувача.
+// Інакше фонові опитування застосунку тримали б сесію живою нескінченно.
 const requireAuth = async (req: any, res: any, next: any) => {
   try {
-    const token = req.cookies.token;
+    const token = req.cookies[SESSION_COOKIE_NAME];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     
     const decoded: any = jwt.verify(token, JWT_SECRET);
@@ -52,7 +61,13 @@ const requireAuth = async (req: any, res: any, next: any) => {
 
     req.user = user;
     next();
-  } catch (err) {
+  } catch (err: any) {
+    // Окремий код, щоб клієнт відрізняв «сесія протухла від простою» від
+    // зламаного токена і показав людині зрозуміле пояснення на екрані входу.
+    if (err?.name === 'TokenExpiredError') {
+      clearSessionCookie(res);
+      return res.status(401).json({ error: 'Сесію завершено через тривалу бездіяльність', code: 'SESSION_EXPIRED' });
+    }
     res.status(401).json({ error: 'Invalid token' });
   }
 };
@@ -153,10 +168,10 @@ apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
     }
 
     // If requireEmailCode is false or we're using password auth (Option 1)
-    const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
+    issueSessionCookie(res, user);
     
     res.json({ 
+      session: sessionPolicy(),
       user: { 
         id: user._id, 
         email: user.email,
@@ -207,10 +222,10 @@ apiRouter.post('/auth/verify-code', verifyCodeRateLimiter, async (req, res) => {
     user.authCodeExpires = null;
     await user.save();
 
-    const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
+    issueSessionCookie(res, user);
 
     res.json({
+      session: sessionPolicy(),
       user: {
         id: user._id,
         email: user.email,
@@ -258,8 +273,18 @@ apiRouter.post('/auth/resend-code', resendCodeRateLimiter, async (req, res) => {
 });
 
 apiRouter.post('/auth/logout', (req, res) => {
-  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
+  clearSessionCookie(res);
   res.json({ success: true });
+});
+
+/**
+ * «Пульс» активної сесії. Клієнт викликає його лише тоді, коли людина справді
+ * щось робить (клік, клавіатура, прокрутка), тому відлік простою обнуляється
+ * саме від дій користувача, а не від фонових запитів застосунку.
+ */
+apiRouter.post('/auth/heartbeat', requireAuth, (req: any, res) => {
+  issueSessionCookie(res, req.user);
+  res.json({ success: true, session: sessionPolicy() });
 });
 
 apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
@@ -280,6 +305,7 @@ apiRouter.get('/auth/me', requireAuth, async (req: any, res) => {
     }
 
     res.json({ 
+      session: sessionPolicy(),
       user: { 
         id: req.user._id, 
         email: req.user.email,

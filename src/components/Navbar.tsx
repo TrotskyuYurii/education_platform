@@ -1,9 +1,72 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users, Bell, Rocket } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
 export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'onboarding' | 'people' | 'signoff' | 'management' | 'dashboard' | 'about';
+
+/**
+ * Єдиний вигляд пунктів верхнього меню.
+ *
+ * Раніше кожна кнопка несла власний набір класів, тож вибраний розділ виглядав
+ * по-різному: десь синя заливка, десь фіолетова, десь інша геометрія, а іконка
+ * «Мій день» лишалася бурштиновою поверх синього тла. Тепер стан вибраного
+ * пункту описаний в одному місці, і новий розділ не може «поїхати» власними
+ * класами — він лише додається у `navItems`.
+ *
+ * Рамка прозора в неактивному стані навмисно: без неї вибраний пункт із рамкою
+ * був би на 2px більшим і сусіди смикалися б при перемиканні. Власний
+ * focus-ring теж не випадковий — інакше браузер малює системне обведення
+ * кольором акценту ОС, і той самий вибраний пункт виглядає щоразу інакше.
+ */
+type NavAccent = 'default' | 'admin';
+
+const NAV_FOCUS =
+  'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+
+const NAV_ITEM_ACTIVE = 'bg-blue-600 text-white border-blue-600 shadow-xs';
+
+const NAV_ITEM_IDLE: Record<NavAccent, string> = {
+  default: 'text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-100',
+  // Адміністрування лишається візуально окремою зоною, але тільки поки не вибране.
+  admin: 'text-purple-700 bg-purple-50/70 border-purple-200 hover:bg-purple-100'
+};
+
+const MOBILE_ITEM_IDLE: Record<NavAccent, string> = {
+  default: 'text-slate-700 bg-slate-100 border-transparent',
+  admin: 'text-purple-700 bg-purple-50 border-purple-200'
+};
+
+const navItemClass = (active: boolean, accent: NavAccent = 'default') =>
+  `flex items-center gap-2 px-3.5 py-2 rounded-lg border text-sm font-medium transition ${NAV_FOCUS} ${
+    active ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE[accent]
+  }`;
+
+const mobileItemClass = (active: boolean, accent: NavAccent = 'default') =>
+  `flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-lg border text-xs font-medium whitespace-nowrap transition ${NAV_FOCUS} ${
+    active ? NAV_ITEM_ACTIVE : MOBILE_ITEM_IDLE[accent]
+  }`;
+
+/**
+ * Лічильник біля назви: поки пункт не вибрано, він зберігає свій змістовий колір
+ * (результат тесту — зелений, борг з онбордінгу — бурштиновий), а на вибраному
+ * пункті стає однаковим для всіх, щоб не сперечатися із синьою заливкою.
+ */
+const navBadgeClass = (active: boolean, idleClass: string) =>
+  `text-xs font-semibold px-1.5 py-0.5 rounded-full ${active ? 'bg-white/25 text-white' : idleClass}`;
+
+interface NavItem {
+  /** Зберігаємо історичні id кнопок (`tab-btn-manual` для каталогу тощо). */
+  idSuffix: string;
+  tab: AppTab;
+  icon: LucideIcon;
+  label: string;
+  isActive: boolean;
+  accent?: NavAccent;
+  title?: string;
+  badge?: { text: string; idleClass: string } | null;
+}
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -64,6 +127,69 @@ export const Navbar: React.FC<NavbarProps> = ({
     setIsProfileMenuOpen(false);
   };
 
+  // Один список для обох меню — десктопного і мобільного, щоб вони не розходились.
+  const navItems: NavItem[] = [
+    {
+      idSuffix: 'myday',
+      tab: 'myday',
+      icon: Sun,
+      label: 'Мій день',
+      isActive: currentTab === 'myday'
+    },
+    {
+      idSuffix: 'manual',
+      tab: 'catalog',
+      icon: BookOpen,
+      label: 'Навчальні матеріали',
+      isActive: currentTab === 'catalog' || currentTab === 'manual',
+      badge: { text: `${clampedReadCount}/${totalSections}`, idleClass: 'bg-slate-200 text-slate-700' }
+    },
+    {
+      idSuffix: 'quiz',
+      tab: 'quiz',
+      icon: Award,
+      label: 'Тестування (Квіз)',
+      isActive: currentTab === 'quiz',
+      badge: bestScore !== null ? { text: `${bestScore}%`, idleClass: 'bg-emerald-100 text-emerald-800' } : null
+    },
+    {
+      idSuffix: 'cases',
+      tab: 'cases',
+      icon: Briefcase,
+      label: 'Кейси',
+      isActive: currentTab === 'cases'
+    },
+    {
+      idSuffix: 'onboarding',
+      tab: 'onboarding',
+      icon: Rocket,
+      label: 'Онбординг',
+      isActive: currentTab === 'onboarding',
+      title: 'Ваш маршрут адаптації та задачі з онбордінгу колег',
+      badge: onboardingPendingCount > 0
+        ? { text: String(onboardingPendingCount), idleClass: 'bg-amber-100 text-amber-800' }
+        : null
+    },
+    {
+      idSuffix: 'people',
+      tab: 'people',
+      icon: Users,
+      label: 'Люди',
+      isActive: currentTab === 'people'
+    },
+    ...(canManage
+      ? [{
+          idSuffix: 'management',
+          tab: 'management' as AppTab,
+          icon: Settings2,
+          label: 'Адміністрування',
+          isActive: currentTab === 'management',
+          accent: 'admin' as NavAccent,
+          title: 'Адміністрування: матеріали, користувачі, оргструктура та ролі'
+        }]
+      : [])
+  ];
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-xs">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -92,119 +218,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Navigation Tabs */}
           <nav className="hidden md:flex items-center gap-1.5" id="nav-tabs">
-            <button
-              id="tab-btn-myday"
-              onClick={() => onSelectTab('myday')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'myday'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Sun className="w-4 h-4 text-amber-400" />
-              <span>Мій день</span>
-            </button>
-
-            <button
-              id="tab-btn-manual"
-              onClick={() => onSelectTab('catalog')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'catalog' || currentTab === 'manual'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>Навчальні матеріали</span>
-              <span className={`text-xs px-1.5 py-0.2 rounded-full ${
-                currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-700'
-              }`}>
-                {clampedReadCount}/{totalSections}
-              </span>
-            </button>
-
-            <button
-              id="tab-btn-quiz"
-              onClick={() => onSelectTab('quiz')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'quiz'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Award className="w-4 h-4" />
-              <span>Тестування (Квіз)</span>
-              {bestScore !== null && (
-                <span className={`text-xs px-1.5 py-0.2 rounded-full ${
-                  currentTab === 'quiz' ? 'bg-blue-500 text-white' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {bestScore}%
-                </span>
-              )}
-            </button>
-            
-            <button
-              id="tab-btn-cases"
-              onClick={() => onSelectTab('cases')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'cases'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              <span>Кейси</span>
-            </button>
-
-            <button
-              id="tab-btn-onboarding"
-              onClick={() => onSelectTab('onboarding')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'onboarding'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-              title="Ваш маршрут адаптації та задачі з онбордінгу колег"
-            >
-              <Rocket className="w-4 h-4" />
-              <span>Онбординг</span>
-              {onboardingPendingCount > 0 && (
-                <span className={`text-xs px-1.5 py-0.2 rounded-full ${
-                  currentTab === 'onboarding' ? 'bg-blue-500 text-white' : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {onboardingPendingCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              id="tab-btn-people"
-              onClick={() => onSelectTab('people')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition ${
-                currentTab === 'people'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Люди</span>
-            </button>
-
-            {canManage && (
+            {navItems.map(({ icon: Icon, ...item }) => (
               <button
-                id="tab-btn-management"
-                onClick={() => onSelectTab('management')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition border ${
-                  currentTab === 'management'
-                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                    : 'text-purple-700 bg-purple-50/70 border-purple-200 hover:bg-purple-100'
-                }`}
-                title="Адміністрування: матеріали, користувачі, оргструктура та ролі"
+                key={item.tab}
+                id={`tab-btn-${item.idSuffix}`}
+                onClick={() => onSelectTab(item.tab)}
+                className={navItemClass(item.isActive, item.accent)}
+                title={item.title}
+                aria-current={item.isActive ? 'page' : undefined}
               >
-                <Settings2 className="w-4 h-4" />
-                <span>Адміністрування</span>
+                <Icon className="w-4 h-4" />
+                <span>{item.label}</span>
+                {item.badge && (
+                  <span className={navBadgeClass(item.isActive, item.badge.idleClass)}>
+                    {item.badge.text}
+                  </span>
+                )}
               </button>
-            )}
+            ))}
           </nav>
 
           {/* Global Omnisearch Trigger Button */}
@@ -212,7 +243,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="global-search-trigger"
               onClick={onOpenSearch}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-blue-600 hover:border-slate-300 transition flex items-center justify-center shadow-2xs group shrink-0"
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-blue-600 hover:border-slate-300 transition flex items-center justify-center shadow-2xs group shrink-0 ${NAV_FOCUS}`}
               title="Швидкий глобальний пошук (⌘K або Ctrl+K)"
               aria-label="Швидкий глобальний пошук"
             >
@@ -240,9 +271,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="tab-btn-signoff-menu"
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition border ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm font-medium transition ${NAV_FOCUS} ${
                   currentTab === 'signoff' || isProfileMenuOpen
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    ? NAV_ITEM_ACTIVE
                     : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border-slate-200'
                 }`}
                 title="Мій профіль та керування акаунтом"
@@ -425,71 +456,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Mobile Navigation Bar */}
         <div className="flex md:hidden items-center overflow-x-auto border-t border-slate-100 py-1.5 gap-1.5 no-scrollbar">
-          <button
-            id="mobile-tab-btn-myday"
-            onClick={() => onSelectTab('myday')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
-              currentTab === 'myday' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            <Sun className="w-3.5 h-3.5 text-amber-400" />
-            <span>Мій день</span>
-          </button>
-          <button
-            onClick={() => onSelectTab('catalog')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${
-              currentTab === 'catalog' || currentTab === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            Навчальні матеріали ({clampedReadCount}/{totalSections})
-          </button>
-          <button
-            onClick={() => onSelectTab('quiz')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${
-              currentTab === 'quiz' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            Тестування {bestScore !== null ? `(${bestScore}%)` : ''}
-          </button>
-          <button
-            onClick={() => onSelectTab('cases')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${
-              currentTab === 'cases' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            Кейси
-          </button>
-          <button
-            id="mobile-tab-btn-onboarding"
-            onClick={() => onSelectTab('onboarding')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
-              currentTab === 'onboarding' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            <Rocket className="w-3.5 h-3.5" />
-            Онбординг{onboardingPendingCount > 0 ? ` (${onboardingPendingCount})` : ''}
-          </button>
-          <button
-            id="mobile-tab-btn-people"
-            onClick={() => onSelectTab('people')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center gap-1.5 ${
-              currentTab === 'people' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            Люди
-          </button>
-          {canManage && (
+          {navItems.map(({ icon: Icon, ...item }) => (
             <button
-              onClick={() => onSelectTab('management')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap min-h-[38px] flex items-center ${
-                currentTab === 'management' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-700 font-semibold'
-              }`}
+              key={item.tab}
+              id={`mobile-tab-btn-${item.idSuffix}`}
+              onClick={() => onSelectTab(item.tab)}
+              className={mobileItemClass(item.isActive, item.accent)}
+              title={item.title}
+              aria-current={item.isActive ? 'page' : undefined}
             >
-              <Settings2 className="w-3.5 h-3.5 mr-1" />
-              Адміністрування
+              <Icon className="w-3.5 h-3.5" />
+              <span>{item.label}</span>
+              {item.badge && (
+                <span className={navBadgeClass(item.isActive, item.badge.idleClass)}>
+                  {item.badge.text}
+                </span>
+              )}
             </button>
-          )}
+          ))}
         </div>
       </div>
     </header>
