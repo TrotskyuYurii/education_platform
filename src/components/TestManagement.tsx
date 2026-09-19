@@ -6,6 +6,14 @@ import { OnboardingManagement } from './Onboarding';
 import { NotificationTemplates } from './Admin/NotificationTemplates';
 import { SystemLogPanel } from './Admin/SystemLogPanel';
 import { MaterialList, MaterialRow } from './Admin/MaterialList';
+import {
+  MaterialEditDialog,
+  FormField,
+  FormCheckbox,
+  FormSection,
+  FIELD_INPUT_CLASS,
+  FIELD_LABEL_CLASS
+} from './Admin/MaterialEditDialog';
 import { AnalyticsReports } from './Analytics/AnalyticsReports';
 import { useAuth } from '../context/AuthContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
@@ -45,6 +53,7 @@ import {
   Bell,
   BarChart3,
   ScrollText,
+  Plus,
   Paperclip,
   Rocket
 } from 'lucide-react';
@@ -260,6 +269,11 @@ const [users, setUsers] = useState<any[]>([]);
   const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
+  // Спільний для всіх форм редагування матеріалів стан збереження:
+  // діалог показує спінер і текст помилки замість alert().
+  const [creatingCase, setCreatingCase] = useState(false);
+  const [savingMaterial, setSavingMaterial] = useState(false);
+  const [materialError, setMaterialError] = useState<string | null>(null);
 
   const [editingCase, setEditingCase] = useState<any>(null);
    // dummy if missing
@@ -1360,60 +1374,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 {groupedCourses.map((inst) => (
                   <MaterialRow
                     key={inst.id}
-                    expanded={editingCourseId === inst.id ? (
-                      <div className="flex flex-col gap-2">
-                          <h4 className="text-sm font-bold text-slate-900">{inst.title}</h4>
-                          <select 
-                            value={editingCourseDep}
-                            onChange={(e) => setEditingCourseDep(e.target.value)}
-                            className="px-3 py-1.5 border border-slate-300 rounded-md text-sm w-full sm:max-w-xs"
-                          >
-                            <option value="">(Без підрозділу)</option>
-                            {departments.map(d => (
-                              <option key={d._id} value={d.name}>{d.name}</option>
-                            ))}
-                          </select>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`edit-inst-active-${inst.id}`}
-                              checked={editingInstIsActive}
-                              onChange={e => setEditingInstIsActive(e.target.checked)}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor={`edit-inst-active-${inst.id}`} className="text-sm font-bold text-slate-700">
-                              Активний (доступний для проходження)
-                            </label>
-                          </div>
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/admin/instructions/${inst.id}`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
-                                  });
-                                  if (res.ok) {
-                                    setEditingCourseId(null);
-                                    if (onRefresh) await onRefresh();
-                                  } else {
-                                    alert('Не вдалося оновити інструкцію');
-                                  }
-                                } catch (e) {
-                                  console.error(e);
-                                  alert('Помилка мережі при оновленні інструкції');
-                                }
-                              }}
-                              className="px-3 py-1 bg-purple-600 text-white rounded text-xs font-medium"
-                            >Зберегти</button>
-                            <button 
-                              onClick={() => setEditingCourseId(null)}
-                              className="px-3 py-1 bg-slate-200 text-slate-700 rounded text-xs font-medium"
-                            >Скасувати</button>
-                          </div>
-                      </div>
-                    ) : undefined}
                     icon={<FileText className="w-4 h-4" />}
                     iconTone="bg-blue-50 text-blue-600 border-blue-100"
                     title={inst.title}
@@ -1493,9 +1453,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             setEditingCourseId(inst.id);
                             setEditingCourseDep(inst.department);
                             setEditingInstIsActive(inst.isActive !== false);
+                            setMaterialError(null);
                           }}
                           className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition"
-                          title="Редагувати підрозділ"
+                          title="Редагувати інструкцію"
                         >
                           <Settings2 className="w-5 h-5" />
                         </button>
@@ -1796,245 +1757,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               >
                 {courses.map((course) => {
                   const currentCourseId = course.id || course._id;
-                  const isEditing = editingCourse?.id === currentCourseId || editingCourse?._id === currentCourseId;
                   return (
                   <MaterialRow
                     key={currentCourseId}
-                    expanded={isEditing ? (
-                      <div className="space-y-3">
-                          <input
-                            type="text"
-                            placeholder="Назва курсу"
-                            value={editingCourse?.title || ''}
-                            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, title: e.target.value })}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-                          />
-                          <select
-                            value={editingCourse?.department || ''}
-                            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, department: e.target.value })}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
-                          >
-                            <option value="">Оберіть підрозділ...</option>
-                            {availableDepartments.map(depName => (
-                              <option key={depName} value={depName}>{depName}</option>
-                            ))}
-                          </select>
-                    
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`edit-cert-${currentCourseId}`}
-                              checked={editingCourse?.hasCertificate || false}
-                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, hasCertificate: e.target.checked })}
-                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                            />
-                            <label htmlFor={`edit-cert-${currentCourseId}`} className="text-sm text-slate-700">
-                              Видавати сертифікат
-                            </label>
-                          </div>
-                    
-                          {editingCourse?.hasCertificate && (
-                            <div className="flex items-center gap-2 ml-6">
-                              <label className="text-sm text-slate-600">Термін дії (років):</label>
-                              <input
-                                type="number"
-                                min="1"
-                                max="10"
-                                value={editingCourse?.certificateValidityYears || 1}
-                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, certificateValidityYears: parseInt(e.target.value) || 1 })}
-                                className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
-                              />
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`edit-course-active-${currentCourseId}`}
-                              checked={editingCourse?.isActive !== false}
-                              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked })}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor={`edit-course-active-${currentCourseId}`} className="text-sm font-bold text-slate-700">
-                              Курс активний (доступний для проходження)
-                            </label>
-                          </div>
-
-                          <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                            <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
-                              <div className="flex items-center justify-between">
-                                <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds?.length || 0} обрано)</div>
-                                <select
-                                  value={editCourseInstFilter}
-                                  onChange={e => setEditCourseInstFilter(e.target.value)}
-                                  className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                  <option value="all">Усі підрозділи ({sections.length})</option>
-                                  {availableDepartments.map(depName => {
-                                    const count = sections.filter(s => s.department === depName).length;
-                                    return (
-                                      <option key={depName} value={depName}>{depName} ({count})</option>
-                                    );
-                                  })}
-                                </select>
-                              </div>
-                              <div className="relative">
-                                <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
-                                <input
-                                  type="text"
-                                  placeholder="Пошук інструкції за назвою або підрозділом..."
-                                  value={editCourseInstSearch}
-                                  onChange={e => setEditCourseInstSearch(e.target.value)}
-                                  className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
-                                />
-                              </div>
-                            </div>
-                            <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
-                              {sections
-                                .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
-                                .filter(sec => {
-                                  const q = editCourseInstSearch.trim().toLowerCase();
-                                  if (!q) return true;
-                                  return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-                                })
-                                .map(sec => {
-                                  const secId = sec.id || (sec as any)._id;
-                                  const isSelected = (editingCourse?.instructionIds || []).includes(secId);
-                                  return (
-                                    <label 
-                                      key={secId} 
-                                      className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
-                                        isSelected 
-                                          ? 'bg-blue-50 border-blue-200 shadow-sm' 
-                                          : 'border-transparent hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={e => {
-                                          const ids = editingCourse?.instructionIds || [];
-                                          if (e.target.checked) setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: [...ids, secId] });
-                                          else setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: ids.filter((i: any) => i !== secId) });
-                                        }}
-                                        className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                      />
-                                      <div className="flex-1 min-w-0">
-                                        <div className={`text-sm font-medium truncate ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>
-                                          {sec.title}
-                                        </div>
-                                        <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">{sec.department}</span>
-                                        </div>
-                                      </div>
-                                    </label>
-                                  );
-                                })}
-                              {sections.length === 0 ? (
-                                <div className="p-6 text-center text-sm text-slate-500">В базі знань немає доступних інструкцій</div>
-                              ) : sections
-                                  .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
-                                  .filter(sec => {
-                                    const q = editCourseInstSearch.trim().toLowerCase();
-                                    if (!q) return true;
-                                    return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-                                  }).length === 0 ? (
-                                <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2 mt-4 mb-4">
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={editingCourse?.useCases || false}
-                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: e.target.checked })}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <span className="text-sm text-slate-700">Використовувати практичні кейси</span>
-                            </label>
-                      
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={editingCourse?.isProgressive || false}
-                                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, isProgressive: e.target.checked })}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <span className="text-sm text-slate-700">Послідовне проходження (Курси-кроки)</span>
-                            </label>
-                      
-                            <div className="grid grid-cols-3 gap-3 mt-2">
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Мін. бал (%)</label>
-                                <input
-                                  type="number"
-                                  min="1" max="100"
-                                  value={editingCourse?.quizPassScorePercent ?? 80}
-                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizPassScorePercent: Number(e.target.value) })}
-                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Ліміт часу (хв)</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder="Без ліміту"
-                                  value={editingCourse?.quizTimeLimitMin || ''}
-                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizTimeLimitMin: e.target.value ? Number(e.target.value) : undefined })}
-                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-1">Макс. спроб</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder="Без ліміту"
-                                  value={editingCourse?.quizMaxAttempts || ''}
-                                  onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizMaxAttempts: e.target.value ? Number(e.target.value) : undefined })}
-                                  className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={async () => {
-                                if (!editingCourse?.title || !editingCourse?.department) return alert('Заповніть назву та підрозділ');
-                                try {
-                                  const courseIdToUpdate = editingCourse?.id || editingCourse?._id || currentCourseId;
-                                  const res = await fetch(`/api/admin/courses/${encodeURIComponent(courseIdToUpdate)}`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(editingCourse)
-                                  });
-                                  if (res.ok) {
-                                    setEditingCourse(null);
-                                    if (onRefresh) await onRefresh();
-                                  } else {
-                                    const errData = await res.json().catch(() => ({}));
-                                    alert(errData.error || 'Не вдалося зберегти зміни курсу');
-                                  }
-                                } catch (err) {
-                                  console.error('Failed to edit course:', err);
-                                  alert('Помилка при збереженні курсу');
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium transition hover:bg-purple-700"
-                            >
-                              Зберегти
-                            </button>
-                            <button
-                              onClick={() => setEditingCourse(null)}
-                              className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition hover:bg-slate-300"
-                            >
-                              Скасувати
-                            </button>
-                          </div>
-                      </div>
-                    ) : undefined}
                     icon={<BookOpen className="w-4 h-4" />}
                     iconTone="bg-purple-50 text-purple-600 border-purple-100"
                     title={course.title}
@@ -2050,7 +1775,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     actions={
                       <>
                         <button
-                          onClick={() => setEditingCourse({
+                          onClick={() => { setMaterialError(null); setEditingCourse({
                             id: currentCourseId,
                             _id: course._id,
                             title: course.title,
@@ -2064,7 +1789,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             quizTimeLimitMin: course.quizTimeLimitMin,
                             quizMaxAttempts: course.quizMaxAttempts,
                             isActive: course.isActive !== undefined ? course.isActive : true
-                          })}
+                          }); }}
                           className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
                           title="Редагувати курс"
                         >
@@ -2118,175 +1843,19 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </p>
               </div>
 
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <h4 className="text-md font-bold text-slate-900 mb-4">{editingCase ? 'Редагувати кейс' : 'Створити новий кейс'}</h4>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Назва кейсу</label>
-                    <input
-                      type="text"
-                      value={editingCase ? editingCase?.title : newCase.title}
-                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
-                      placeholder="Напр. Розгніваний клієнт на касі"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Прив'язка до інструкції</label>
-                    <select
-                      value={editingCase ? editingCase?.sectionId || '' : newCase.sectionId || ''}
-                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">-- Оберіть інструкцію --</option>
-                      {sections.map(sec => (
-                        <option key={sec.id} value={sec.id}>{sec.title}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Сценарій (опис ситуації)</label>
-                    <textarea
-                      value={editingCase ? editingCase?.scenario : newCase.scenario}
-                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, scenario: e.target.value }) : setNewCase({ ...newCase, scenario: e.target.value })}
-                      placeholder="Опишіть ситуацію детально..."
-                      rows={4}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg resize-none"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Варіанти відповідей (виберіть правильний)</label>
-                    {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((opt: any, idx: number) => (
-                      <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
-                        <div className="flex gap-2 items-center">
-                          <input 
-                            type="radio" 
-                            name={`correct-option-${editingCase ? 'edit' : 'new'}`}
-                            checked={opt.isCorrect}
-                            onChange={() => {
-                              const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((o: any, i: number) => ({
-                                ...o,
-                                isCorrect: i === idx
-                              }));
-                              if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
-                              else setNewCase({ ...newCase, options: updatedOptions });
-                            }}
-                            className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                          />
-                          <input
-                            type="text"
-                            value={opt.text}
-                            onChange={e => {
-                              const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
-                              updatedOptions[idx] = { ...updatedOptions[idx], text: e.target.value };
-                              if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
-                              else setNewCase({ ...newCase, options: updatedOptions });
-                            }}
-                            placeholder={`Варіант ${idx + 1}`}
-                            className="flex-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
-                          />
-                          {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).length > 1 && (
-                            <button
-                              onClick={() => {
-                                const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).filter((_: any, i: number) => i !== idx);
-                                if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
-                                else setNewCase({ ...newCase, options: updatedOptions });
-                              }}
-                              className="p-1.5 text-rose-500 hover:bg-rose-100 rounded"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          value={opt.feedback || ''}
-                          onChange={e => {
-                            const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
-                            updatedOptions[idx] = { ...updatedOptions[idx], feedback: e.target.value };
-                            if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
-                            else setNewCase({ ...newCase, options: updatedOptions });
-                          }}
-                          placeholder="Зворотній зв'язок для цього варіанту (напр. 'Неправильно, тому що...')"
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white ml-6"
-                          style={{ width: 'calc(100% - 1.5rem)' }}
-                        />
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => {
-                        const newOpt = { id: `opt-${Date.now()}`, text: '', isCorrect: false, feedback: '' };
-                        if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: [...editingCase?.options, newOpt] });
-                        else setNewCase({ ...newCase, options: [...(newCase.options || []), newOpt] });
-                      }}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      + Додати варіант
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="checkbox"
-                      id="case-active"
-                      checked={editingCase ? editingCase?.isActive !== false : newCase.isActive}
-                      onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked}) : setNewCase({...newCase, isActive: e.target.checked})}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <label htmlFor="case-active" className="text-sm font-medium text-slate-700">Активний кейс</label>
-                  </div>
-
-                  <div className="flex gap-3 pt-4 border-t border-slate-100">
-                    <button
-                      onClick={async () => {
-                        const payload = editingCase || newCase;
-                        if (!payload.sectionId) {
-                          alert('Обов\'язково оберіть інструкцію, до якої прив\'язаний цей кейс');
-                          return;
-                        }
-                        if (!payload.title.trim() || !payload.scenario.trim()) {
-                          alert('Заповніть назву та сценарій');
-                          return;
-                        }
-                        if (!payload.options.some((o: any) => o.text.trim())) {
-                          alert('Додайте хоча б один заповнений варіант');
-                          return;
-                        }
-                        try {
-                          const method = editingCase ? 'PUT' : 'POST';
-                          const url = editingCase ? `/api/admin/cases/${editingCase?.id}` : '/api/admin/cases';
-                          const res = await fetch(url, {
-                            method,
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                          });
-                          if (res.ok) {
-                            setEditingCase(null);
-                            setNewCase({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
-                            if (onRefresh) await onRefresh();
-                          } else {
-                            alert('Не вдалося зберегти кейс');
-                          }
-                        } catch (e) {
-                          console.error('Failed to save case:', e);
-                          alert('Помилка при збереженні кейсу');
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
-                    >
-                      {editingCase ? 'Зберегти зміни' : 'Створити кейс'}
-                    </button>
-                    {editingCase && (
-                      <button
-                        onClick={() => setEditingCase(null)}
-                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
-                      >
-                        Скасувати
-                      </button>
-                    )}
-                  </div>
-                </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setEditingCase(null);
+                    setNewCase({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+                    setCreatingCase(true);
+                    setMaterialError(null);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Створити кейс
+                </button>
               </div>
 
               <div className="space-y-3">
@@ -2310,7 +1879,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         actions={
                           <>
                             <button 
-                            onClick={() => setEditingCase(c)} 
+                            onClick={() => { setMaterialError(null); setEditingCase(c); }}
                             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
                             title="Редагувати кейс"
                             >
@@ -3101,6 +2670,443 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         </div>
       </div>
       
+      {/* Створення / редагування кейсу */}
+      <MaterialEditDialog
+        open={Boolean(editingCase) || creatingCase}
+        onClose={() => { setEditingCase(null); setCreatingCase(false); setMaterialError(null); }}
+        icon={<Briefcase className="w-4 h-4" />}
+        iconTone="bg-amber-50 text-amber-600 border-amber-100"
+        title={editingCase ? 'Редагувати кейс' : 'Створити кейс'}
+        subtitle={editingCase?.title}
+        size="lg"
+        saving={savingMaterial}
+        error={materialError}
+        submitLabel={editingCase ? 'Зберегти' : 'Створити'}
+        onSubmit={async () => {
+          const payload = editingCase || newCase;
+          if (!payload.sectionId) {
+            setMaterialError("Обов'язково оберіть інструкцію, до якої прив'язаний цей кейс");
+            return;
+          }
+          if (!payload.title.trim() || !payload.scenario.trim()) {
+            setMaterialError('Заповніть назву та сценарій');
+            return;
+          }
+          if (!payload.options.some((o: any) => o.text.trim())) {
+            setMaterialError('Додайте хоча б один заповнений варіант');
+            return;
+          }
+          setSavingMaterial(true);
+          setMaterialError(null);
+          try {
+            const method = editingCase ? 'PUT' : 'POST';
+            const url = editingCase ? `/api/admin/cases/${editingCase?.id}` : '/api/admin/cases';
+            const res = await fetch(url, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error || 'Не вдалося зберегти кейс');
+            }
+            setEditingCase(null);
+            setCreatingCase(false);
+            setNewCase({ title: '', sectionId: '', scenario: '', options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
+            if (onRefresh) await onRefresh();
+          } catch (e: any) {
+            setMaterialError(e?.message || 'Помилка при збереженні кейсу');
+          } finally {
+            setSavingMaterial(false);
+          }
+        }}
+      >
+        <FormField label="Назва кейсу" required>
+          <input
+            type="text"
+            value={editingCase ? editingCase?.title : newCase.title}
+            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
+            placeholder="Напр. Розгніваний клієнт на касі"
+            className={FIELD_INPUT_CLASS}
+          />
+        </FormField>
+
+        <FormField label="Прив'язка до інструкції" required>
+          <select
+            value={editingCase ? editingCase?.sectionId || '' : newCase.sectionId || ''}
+            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
+            className={FIELD_INPUT_CLASS}
+          >
+            <option value="">-- Оберіть інструкцію --</option>
+            {sections.map(sec => (
+              <option key={sec.id} value={sec.id}>{sec.title}</option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField label="Сценарій (опис ситуації)" required>
+          <textarea
+            value={editingCase ? editingCase?.scenario : newCase.scenario}
+            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, scenario: e.target.value }) : setNewCase({ ...newCase, scenario: e.target.value })}
+            placeholder="Опишіть ситуацію детально..."
+            rows={4}
+            className={`${FIELD_INPUT_CLASS} resize-none`}
+          />
+        </FormField>
+
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Варіанти відповідей (виберіть правильний)</label>
+          {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((opt: any, idx: number) => (
+            <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="radio" 
+                  name={`correct-option-${editingCase ? 'edit' : 'new'}`}
+                  checked={opt.isCorrect}
+                  onChange={() => {
+                    const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).map((o: any, i: number) => ({
+                      ...o,
+                      isCorrect: i === idx
+                    }));
+                    if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
+                    else setNewCase({ ...newCase, options: updatedOptions });
+                  }}
+                  className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={opt.text}
+                  onChange={e => {
+                    const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
+                    updatedOptions[idx] = { ...updatedOptions[idx], text: e.target.value };
+                    if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
+                    else setNewCase({ ...newCase, options: updatedOptions });
+                  }}
+                  placeholder={`Варіант ${idx + 1}`}
+                  className="flex-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                />
+                {(editingCase ? (editingCase?.options || []) : (newCase.options || [])).length > 1 && (
+                  <button
+                    onClick={() => {
+                      const updatedOptions = (editingCase ? (editingCase?.options || []) : (newCase.options || [])).filter((_: any, i: number) => i !== idx);
+                      if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
+                      else setNewCase({ ...newCase, options: updatedOptions });
+                    }}
+                    className="p-1.5 text-rose-500 hover:bg-rose-100 rounded"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                value={opt.feedback || ''}
+                onChange={e => {
+                  const updatedOptions = [...(editingCase ? (editingCase?.options || []) : (newCase.options || []))];
+                  updatedOptions[idx] = { ...updatedOptions[idx], feedback: e.target.value };
+                  if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: updatedOptions });
+                  else setNewCase({ ...newCase, options: updatedOptions });
+                }}
+                placeholder="Зворотній зв'язок для цього варіанту (напр. 'Неправильно, тому що...')"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white ml-6"
+                style={{ width: 'calc(100% - 1.5rem)' }}
+              />
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const newOpt = { id: `opt-${Date.now()}`, text: '', isCorrect: false, feedback: '' };
+              if (editingCase) setEditingCase((prev: any) => !prev ? null : { ...prev, options: [...editingCase?.options, newOpt] });
+              else setNewCase({ ...newCase, options: [...(newCase.options || []), newOpt] });
+            }}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            + Додати варіант
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            type="checkbox"
+            id="case-active"
+            checked={editingCase ? editingCase?.isActive !== false : newCase.isActive}
+            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, isActive: e.target.checked}) : setNewCase({...newCase, isActive: e.target.checked})}
+            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="case-active" className="text-sm font-medium text-slate-700">Активний кейс</label>
+        </div>
+      </MaterialEditDialog>
+
+      {/* Редагування курсу */}
+      <MaterialEditDialog
+        open={Boolean(editingCourse)}
+        onClose={() => { setEditingCourse(null); setMaterialError(null); }}
+        icon={<BookOpen className="w-4 h-4" />}
+        iconTone="bg-purple-50 text-purple-600 border-purple-100"
+        title="Редагувати курс"
+        subtitle={editingCourse?.title}
+        size="lg"
+        saving={savingMaterial}
+        error={materialError}
+        submitDisabled={!editingCourse?.title || !editingCourse?.department}
+        onSubmit={async () => {
+          setSavingMaterial(true);
+          setMaterialError(null);
+          try {
+            const courseIdToUpdate = editingCourse?.id || editingCourse?._id;
+            const res = await fetch(`/api/admin/courses/${encodeURIComponent(courseIdToUpdate)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(editingCourse)
+            });
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || 'Не вдалося зберегти зміни курсу');
+            }
+            setEditingCourse(null);
+            if (onRefresh) await onRefresh();
+          } catch (err: any) {
+            setMaterialError(err?.message || 'Помилка при збереженні курсу');
+          } finally {
+            setSavingMaterial(false);
+          }
+        }}
+      >
+        <FormField label="Назва курсу" required>
+          <input
+            type="text"
+            placeholder="Назва курсу"
+            value={editingCourse?.title || ''}
+            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, title: e.target.value })}
+            className={FIELD_INPUT_CLASS}
+          />
+        </FormField>
+
+        <FormField label="Підрозділ" required>
+          <select
+            value={editingCourse?.department || ''}
+            onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, department: e.target.value })}
+            className={FIELD_INPUT_CLASS}
+          >
+            <option value="">Оберіть підрозділ...</option>
+            {availableDepartments.map(depName => (
+              <option key={depName} value={depName}>{depName}</option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormCheckbox
+          id="edit-cert"
+          checked={editingCourse?.hasCertificate || false}
+          onChange={checked => setEditingCourse((prev: any) => !prev ? null : { ...prev, hasCertificate: checked })}
+          label="Видавати сертифікат"
+        />
+                    
+        {editingCourse?.hasCertificate && (
+          <FormField label="Термін дії сертифіката, років" className="ml-6">
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={editingCourse?.certificateValidityYears || 1}
+              onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, certificateValidityYears: parseInt(e.target.value) || 1 })}
+              className={`${FIELD_INPUT_CLASS} max-w-[120px]`}
+            />
+          </FormField>
+        )}
+
+        <FormCheckbox
+          id="edit-course-active"
+          checked={editingCourse?.isActive !== false}
+          onChange={checked => setEditingCourse((prev: any) => !prev ? null : { ...prev, isActive: checked })}
+          label="Курс активний"
+          hint="Неактивні курси приховані від співробітників і недоступні для проходження."
+        />
+
+        <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+          <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds?.length || 0} обрано)</div>
+              <select
+                value={editCourseInstFilter}
+                onChange={e => setEditCourseInstFilter(e.target.value)}
+                className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">Усі підрозділи ({sections.length})</option>
+                {availableDepartments.map(depName => {
+                  const count = sections.filter(s => s.department === depName).length;
+                  return (
+                    <option key={depName} value={depName}>{depName} ({count})</option>
+                  );
+                })}
+              </select>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Пошук інструкції за назвою або підрозділом..."
+                value={editCourseInstSearch}
+                onChange={e => setEditCourseInstSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+              />
+            </div>
+          </div>
+          <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
+            {sections
+              .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
+              .filter(sec => {
+                const q = editCourseInstSearch.trim().toLowerCase();
+                if (!q) return true;
+                return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+              })
+              .map(sec => {
+                const secId = sec.id || (sec as any)._id;
+                const isSelected = (editingCourse?.instructionIds || []).includes(secId);
+                return (
+                  <label 
+                    key={secId} 
+                    className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                      isSelected 
+                        ? 'bg-blue-50 border-blue-200 shadow-sm' 
+                        : 'border-transparent hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={e => {
+                        const ids = editingCourse?.instructionIds || [];
+                        if (e.target.checked) setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: [...ids, secId] });
+                        else setEditingCourse((prev: any) => !prev ? null : { ...prev, instructionIds: ids.filter((i: any) => i !== secId) });
+                      }}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-medium truncate ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>
+                        {sec.title}
+                      </div>
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">{sec.department}</span>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            {sections.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">В базі знань немає доступних інструкцій</div>
+            ) : sections
+                .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
+                .filter(sec => {
+                  const q = editCourseInstSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
+                }).length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
+            ) : null}
+          </div>
+        </div>
+        <FormSection title="Проходження">
+          <FormCheckbox
+            checked={editingCourse?.useCases || false}
+            onChange={checked => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: checked })}
+            label="Використовувати практичні кейси"
+          />
+          <FormCheckbox
+            checked={editingCourse?.isProgressive || false}
+            onChange={checked => setEditingCourse((prev: any) => !prev ? null : { ...prev, isProgressive: checked })}
+            label="Послідовне проходження (курси-кроки)"
+            hint="Наступну інструкцію видно лише після вивчення попередньої."
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <FormField label="Мін. бал, %">
+              <input
+                type="number"
+                min="1" max="100"
+                value={editingCourse?.quizPassScorePercent ?? 80}
+                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizPassScorePercent: Number(e.target.value) })}
+                className={FIELD_INPUT_CLASS}
+              />
+            </FormField>
+            <FormField label="Ліміт часу, хв">
+              <input
+                type="number"
+                min="0"
+                placeholder="Без ліміту"
+                value={editingCourse?.quizTimeLimitMin || ''}
+                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizTimeLimitMin: e.target.value ? Number(e.target.value) : undefined })}
+                className={FIELD_INPUT_CLASS}
+              />
+            </FormField>
+            <FormField label="Макс. спроб">
+              <input
+                type="number"
+                min="0"
+                placeholder="Без ліміту"
+                value={editingCourse?.quizMaxAttempts || ''}
+                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizMaxAttempts: e.target.value ? Number(e.target.value) : undefined })}
+                className={FIELD_INPUT_CLASS}
+              />
+            </FormField>
+          </div>
+        </FormSection>
+      </MaterialEditDialog>
+
+      {/* Редагування інструкції — спільна оболонка для всіх матеріалів */}
+      <MaterialEditDialog
+        open={Boolean(editingCourseId)}
+        onClose={() => { setEditingCourseId(null); setMaterialError(null); }}
+        icon={<FileText className="w-4 h-4" />}
+        iconTone="bg-blue-50 text-blue-600 border-blue-100"
+        title="Редагувати інструкцію"
+        subtitle={groupedCourses.find(i => i.id === editingCourseId)?.title}
+        saving={savingMaterial}
+        error={materialError}
+        onSubmit={async () => {
+          setSavingMaterial(true);
+          setMaterialError(null);
+          try {
+            const res = await fetch(`/api/admin/instructions/${editingCourseId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error || 'Не вдалося оновити інструкцію');
+            }
+            setEditingCourseId(null);
+            if (onRefresh) await onRefresh();
+          } catch (e: any) {
+            setMaterialError(e?.message || 'Помилка мережі при оновленні інструкції');
+          } finally {
+            setSavingMaterial(false);
+          }
+        }}
+      >
+        <FormField label="Підрозділ">
+          <select
+            value={editingCourseDep}
+            onChange={e => setEditingCourseDep(e.target.value)}
+            className={FIELD_INPUT_CLASS}
+          >
+            <option value="">(Без підрозділу)</option>
+            {departments.map(d => (
+              <option key={d._id} value={d.name}>{d.name}</option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormCheckbox
+          id="edit-inst-active"
+          checked={editingInstIsActive}
+          onChange={setEditingInstIsActive}
+          label="Активна"
+          hint="Неактивні інструкції приховані від співробітників і недоступні для проходження."
+        />
+      </MaterialEditDialog>
+
       {editingMarkdownInstId && (
         <MarkdownEditor
           initialValue={editingMarkdownContent}

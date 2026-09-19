@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MaterialList, MaterialRow, MaterialBadge } from './MaterialList';
+import { MaterialEditDialog, FIELD_INPUT_CLASS, FIELD_LABEL_CLASS } from './MaterialEditDialog';
 import { 
   FolderTree, 
   BookOpen, 
@@ -56,6 +57,7 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
 
   // Space Modal State
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
+  const [spaceError, setSpaceError] = useState<string | null>(null);
   const [editingSpace, setEditingSpace] = useState<KnowledgeSpace | null>(null);
   const [spaceFormData, setSpaceFormData] = useState({
     name: '',
@@ -142,14 +144,16 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
     setIsSpaceModalOpen(true);
   };
 
-  const handleSaveSpace = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Діалог сам перехоплює submit, тож обробник більше не приймає подію,
+  // а помилку показує в підвалі діалога замість alert().
+  const handleSaveSpace = async () => {
     if (!spaceFormData.name.trim()) {
-      alert('Будь ласка, введіть назву простору');
+      setSpaceError('Будь ласка, введіть назву простору');
       return;
     }
 
     setSavingSpace(true);
+    setSpaceError(null);
     try {
       if (editingSpace) {
         const res = await fetch(`/api/v2/knowledge/spaces/${editingSpace.id}`, {
@@ -176,7 +180,7 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
       await onRefresh();
       setIsSpaceModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Помилка збереження простору');
+      setSpaceError(err.message || 'Помилка збереження простору');
     } finally {
       setSavingSpace(false);
     }
@@ -671,135 +675,111 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
         </div>
       )}
 
-      {/* SPACE MODAL (CREATE / EDIT) */}
-      {isSpaceModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
-              <h3 className="font-extrabold text-slate-900 text-lg">
-                {editingSpace ? 'Редагувати простір знань' : 'Створити новий простір знань'}
-              </h3>
-              <button
-                onClick={() => setIsSpaceModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* Створення / редагування простору знань */}
+      <MaterialEditDialog
+        open={isSpaceModalOpen}
+        onClose={() => { setIsSpaceModalOpen(false); setSpaceError(null); }}
+        icon={<FolderTree className="w-4 h-4" />}
+        iconTone="bg-blue-50 text-blue-600 border-blue-100"
+        title={editingSpace ? 'Редагувати простір знань' : 'Створити простір знань'}
+        subtitle={editingSpace?.name}
+        saving={savingSpace}
+        error={spaceError}
+        submitLabel={editingSpace ? 'Зберегти' : 'Створити'}
+        onSubmit={handleSaveSpace}
+      >
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Назва простору *</label>
+          <input
+            type="text"
+            required
+            value={spaceFormData.name}
+            onChange={e => setSpaceFormData({ ...spaceFormData, name: e.target.value })}
+            placeholder="напр., Склад та логістика"
+            className={FIELD_INPUT_CLASS}
+          />
+        </div>
 
-            <form onSubmit={handleSaveSpace} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Назва простору *</label>
-                <input
-                  type="text"
-                  required
-                  value={spaceFormData.name}
-                  onChange={e => setSpaceFormData({ ...spaceFormData, name: e.target.value })}
-                  placeholder="напр., Склад та логістика"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Код простору (префікс)</label>
-                  <input
-                    type="text"
-                    value={spaceFormData.code}
-                    onChange={e => setSpaceFormData({ ...spaceFormData, code: e.target.value.toUpperCase() })}
-                    placeholder="напр., LOG"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Порядок сортування</label>
-                  <input
-                    type="number"
-                    value={spaceFormData.order}
-                    onChange={e => setSpaceFormData({ ...spaceFormData, order: parseInt(e.target.value, 10) || 0 })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Опис призначення простору</label>
-                <textarea
-                  rows={2}
-                  value={spaceFormData.description}
-                  onChange={e => setSpaceFormData({ ...spaceFormData, description: e.target.value })}
-                  placeholder="Коротко опишіть, які матеріали та для яких підрозділів тут зберігаються"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Іконка</label>
-                  <select
-                    value={spaceFormData.icon}
-                    onChange={e => setSpaceFormData({ ...spaceFormData, icon: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="BookOpen">📖 Книга (Загальний)</option>
-                    <option value="Package">📦 Пакунок / Склад</option>
-                    <option value="TrendingUp">📈 Продажі / Ріст</option>
-                    <option value="CreditCard">💳 Фінанси / Каса</option>
-                    <option value="ShieldCheck">🛡️ IT / Безпека</option>
-                    <option value="Users">👥 Команда / HR</option>
-                    <option value="FolderTree">📁 Каталог знань</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Колір маркування</label>
-                  <select
-                    value={spaceFormData.color}
-                    onChange={e => setSpaceFormData({ ...spaceFormData, color: e.target.value })}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="blue">Синій (Корпоративний)</option>
-                    <option value="amber">Бурштиновий (Склад)</option>
-                    <option value="emerald">Смарагдовий (Фінанси)</option>
-                    <option value="purple">Фіолетовий (Продажі)</option>
-                    <option value="indigo">Індиго (IT та системи)</option>
-                    <option value="rose">Червоний (Безпека)</option>
-                    <option value="cyan">Бірюзовий (Сервіс)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Прив'язка до підрозділу компанії</label>
-                <input
-                  type="text"
-                  value={spaceFormData.department}
-                  onChange={e => setSpaceFormData({ ...spaceFormData, department: e.target.value })}
-                  placeholder="напр., Складська логістика або Бухгалтерія"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 mt-5">
-                <button
-                  type="button"
-                  onClick={() => setIsSpaceModalOpen(false)}
-                  className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition"
-                >
-                  Скасувати
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingSpace}
-                  className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition shadow-sm disabled:opacity-50"
-                >
-                  {savingSpace ? 'Збереження...' : (editingSpace ? 'Зберегти зміни' : 'Створити простір')}
-                </button>
-              </div>
-            </form>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={FIELD_LABEL_CLASS}>Код простору (префікс)</label>
+            <input
+              type="text"
+              value={spaceFormData.code}
+              onChange={e => setSpaceFormData({ ...spaceFormData, code: e.target.value.toUpperCase() })}
+              placeholder="напр., LOG"
+              className={`${FIELD_INPUT_CLASS} uppercase font-mono`}
+            />
+          </div>
+          <div>
+            <label className={FIELD_LABEL_CLASS}>Порядок сортування</label>
+            <input
+              type="number"
+              value={spaceFormData.order}
+              onChange={e => setSpaceFormData({ ...spaceFormData, order: parseInt(e.target.value, 10) || 0 })}
+              className={FIELD_INPUT_CLASS}
+            />
           </div>
         </div>
-      )}
+
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Опис призначення простору</label>
+          <textarea
+            rows={2}
+            value={spaceFormData.description}
+            onChange={e => setSpaceFormData({ ...spaceFormData, description: e.target.value })}
+            placeholder="Коротко опишіть, які матеріали та для яких підрозділів тут зберігаються"
+            className={FIELD_INPUT_CLASS}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={FIELD_LABEL_CLASS}>Іконка</label>
+            <select
+              value={spaceFormData.icon}
+              onChange={e => setSpaceFormData({ ...spaceFormData, icon: e.target.value })}
+              className={FIELD_INPUT_CLASS}
+            >
+              <option value="BookOpen">📖 Книга (Загальний)</option>
+              <option value="Package">📦 Пакунок / Склад</option>
+              <option value="TrendingUp">📈 Продажі / Ріст</option>
+              <option value="CreditCard">💳 Фінанси / Каса</option>
+              <option value="ShieldCheck">🛡️ IT / Безпека</option>
+              <option value="Users">👥 Команда / HR</option>
+              <option value="FolderTree">📁 Каталог знань</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={FIELD_LABEL_CLASS}>Колір маркування</label>
+            <select
+              value={spaceFormData.color}
+              onChange={e => setSpaceFormData({ ...spaceFormData, color: e.target.value })}
+              className={FIELD_INPUT_CLASS}
+            >
+              <option value="blue">Синій (Корпоративний)</option>
+              <option value="amber">Бурштиновий (Склад)</option>
+              <option value="emerald">Смарагдовий (Фінанси)</option>
+              <option value="purple">Фіолетовий (Продажі)</option>
+              <option value="indigo">Індиго (IT та системи)</option>
+              <option value="rose">Червоний (Безпека)</option>
+              <option value="cyan">Бірюзовий (Сервіс)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Прив'язка до підрозділу компанії</label>
+          <input
+            type="text"
+            value={spaceFormData.department}
+            onChange={e => setSpaceFormData({ ...spaceFormData, department: e.target.value })}
+            placeholder="напр., Складська логістика або Бухгалтерія"
+            className={FIELD_INPUT_CLASS}
+          />
+        </div>
+      </MaterialEditDialog>
 
       {/* VERSION HISTORY MODAL */}
       {selectedSectionForVersions && (

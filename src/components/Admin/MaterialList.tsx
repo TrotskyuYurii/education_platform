@@ -77,11 +77,6 @@ interface MaterialRowProps {
   /** Лічильники праворуч від тексту (кроки, регламенти, курси). */
   stats?: MaterialBadge[];
   actions?: React.ReactNode;
-  /**
-   * Розгорнутий вміст під рядком — форма редагування «на місці».
-   * Коли переданий, основний вміст рядка ховається, щоб форма не тіснилась.
-   */
-  expanded?: React.ReactNode;
 }
 
 export const MaterialRow: React.FC<MaterialRowProps> = ({
@@ -92,17 +87,8 @@ export const MaterialRow: React.FC<MaterialRowProps> = ({
   badges,
   meta,
   stats,
-  actions,
-  expanded
+  actions
 }) => {
-  if (expanded) {
-    return (
-      <div className="bg-white rounded-xl border border-blue-300 ring-1 ring-blue-100 p-4">
-        {expanded}
-      </div>
-    );
-  }
-
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 transition p-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
       {icon && (

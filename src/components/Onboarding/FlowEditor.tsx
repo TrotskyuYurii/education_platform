@@ -38,11 +38,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
-  PanelRightOpen
+  PanelRightOpen,
+  Rocket
 } from 'lucide-react';
 import { OnboardingNode, OnboardingStepType, OnboardingTemplate, OnboardingStageDef } from './types';
 import { validateOnboardingGraph } from '../../../shared/onboardingGraph';
 import { STEP_TYPE_META, PALETTE_STEP_TYPES, OWNER_ROLE_LABELS, formatOffset } from './constants';
+import { MaterialEditDialog, FIELD_INPUT_CLASS, FIELD_LABEL_CLASS } from '../Admin/MaterialEditDialog';
 
 interface FlowEditorProps {
   templateId: string;
@@ -986,83 +988,71 @@ const TemplateSettingsModal: React.FC<{
   onClose: () => void;
   onChange: (patch: Partial<OnboardingTemplate>) => void;
 }> = ({ template, onClose, onChange }) => {
-  const inputClass = 'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-800 focus:border-purple-400 focus:ring-1 focus:ring-purple-200 outline-none transition';
-  const labelClass = 'block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5';
-
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
-          <h3 className="font-bold text-slate-900">Параметри онбордінгу</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition p-1" aria-label="Закрити">
-            <X className="w-5 h-5" />
-          </button>
+    <MaterialEditDialog
+      open
+      onClose={onClose}
+      icon={<Rocket className="w-4 h-4" />}
+      iconTone="bg-purple-50 text-purple-600 border-purple-100"
+      title="Параметри онбордінгу"
+      subtitle={template.name}
+      submitLabel="Готово"
+      onSubmit={onClose}
+    >
+      <div>
+        <label className={FIELD_LABEL_CLASS}>Назва</label>
+        <input value={template.name} onChange={e => onChange({ name: e.target.value })} className={FIELD_INPUT_CLASS} />
+      </div>
+      <div>
+        <label className={FIELD_LABEL_CLASS}>Опис</label>
+        <textarea
+          value={template.description}
+          onChange={e => onChange({ description: e.target.value })}
+          rows={3}
+          className={`${FIELD_INPUT_CLASS} resize-none`}
+          placeholder="Для кого цей онбординг і що людина отримає на виході"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Тривалість, днів</label>
+          <input
+            type="number"
+            min={1}
+            value={template.durationDays}
+            onChange={e => onChange({ durationDays: parseInt(e.target.value, 10) || 90 })}
+            className={FIELD_INPUT_CLASS}
+          />
         </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Назва</label>
-            <input value={template.name} onChange={e => onChange({ name: e.target.value })} className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>Опис</label>
-            <textarea
-              value={template.description}
-              onChange={e => onChange({ description: e.target.value })}
-              rows={3}
-              className={`${inputClass} resize-none`}
-              placeholder="Для кого цей онбординг і що людина отримає на виході"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Тривалість, днів</label>
-              <input
-                type="number"
-                min={1}
-                value={template.durationDays}
-                onChange={e => onChange({ durationDays: parseInt(e.target.value, 10) || 90 })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Опитування, дні</label>
-              <input
-                value={(template.surveyDayOffsets || []).join(', ')}
-                onChange={e => onChange({
-                  surveyDayOffsets: e.target.value
-                    .split(',')
-                    .map(v => parseInt(v.trim(), 10))
-                    .filter(v => Number.isFinite(v) && v >= 0)
-                })}
-                className={inputClass}
-                placeholder="7, 30, 90"
-              />
-            </div>
-          </div>
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={template.requiresBuddy}
-              onChange={e => onChange({ requiresBuddy: e.target.checked })}
-              className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-400"
-            />
-            <span className="text-sm font-medium text-slate-700">Вимагати наставника при призначенні</span>
-          </label>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Опитування-фідбек надсилаються автоматично на вказані дні від дати виходу.
-            Порожній список вимикає опитування для цього онбордінгу.
-          </p>
-        </div>
-        <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition"
-          >
-            Готово
-          </button>
+        <div>
+          <label className={FIELD_LABEL_CLASS}>Опитування, дні</label>
+          <input
+            value={(template.surveyDayOffsets || []).join(', ')}
+            onChange={e => onChange({
+              surveyDayOffsets: e.target.value
+                .split(',')
+                .map(v => parseInt(v.trim(), 10))
+                .filter(v => Number.isFinite(v) && v >= 0)
+            })}
+            className={FIELD_INPUT_CLASS}
+            placeholder="7, 30, 90"
+          />
         </div>
       </div>
-    </div>
+      <label className="flex items-center gap-2.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={template.requiresBuddy}
+          onChange={e => onChange({ requiresBuddy: e.target.checked })}
+          className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-400"
+        />
+        <span className="text-sm font-medium text-slate-700">Вимагати наставника при призначенні</span>
+      </label>
+      <p className="text-xs text-slate-400 leading-relaxed">
+        Опитування-фідбек надсилаються автоматично на вказані дні від дати виходу.
+        Порожній список вимикає опитування для цього онбордінгу.
+      </p>
+    </MaterialEditDialog>
   );
 };
 
