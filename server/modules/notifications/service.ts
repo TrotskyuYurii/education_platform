@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { User, Progress } from '../../models.js';
 import { LearningNotification } from '../learning/models.js';
-import { sendEmail } from '../../email.js';
+import { queueEmail } from '../../email.js';
 import {
   NotificationTemplate,
   UserNotificationSettings,
@@ -82,18 +82,16 @@ export const NotificationService = {
       // (and much longer when the mail server misbehaves), while send() is called
       // from inside request handlers — e.g. assigning an onboarding, which fires
       // one critical notification per target user. Awaiting here made the API look
-      // frozen even though every record had already been written. sendEmail never
-      // throws, so a floating promise cannot produce an unhandled rejection.
-      void sendEmail(
+      // frozen even though every record had already been written. queueEmail
+      // returns synchronously and swallows every failure (see server/email.ts:
+      // circuit breaker + concurrency limit), so neither a dead mail server nor a
+      // burst of recipients can slow the request down or leak sockets.
+      queueEmail(
         user.email,
         entry.title,
         `<p>${entry.message}</p>`,
         entry.message
-      ).then(result => {
-        if (!result.success) {
-          console.error(`✉️ Critical notification email to ${user.email} was not delivered: ${result.error}`);
-        }
-      });
+      );
       return;
     }
 

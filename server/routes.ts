@@ -68,6 +68,7 @@ import { KnowledgeService } from './modules/knowledge/service.js';
 import { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.js';
 import { searchRouter } from './modules/search/routes.js';
 import { onboardingRouter } from './modules/onboarding/routes.js';
+import { systemRouter } from './modules/system/routes.js';
 import { OnboardingService } from './modules/onboarding/service.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
@@ -85,6 +86,7 @@ apiRouter.use('/progress-v2', requireAuth, progressV2Router);
 apiRouter.use('/v2/knowledge', requireAuth, knowledgeRouter);
 apiRouter.use('/search', requireAuth, searchRouter);
 apiRouter.use('/v2/onboarding', requireAuth, onboardingRouter);
+apiRouter.use('/v2/system', requireAuth, systemRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---

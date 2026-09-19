@@ -1,6 +1,6 @@
 import { User } from '../../models.js';
 import { CertificateRecord, LearningAssignment } from '../learning/models.js';
-import { sendEmail } from '../../email.js';
+import { sendEmail, isEmailCircuitOpen } from '../../email.js';
 import { NotificationOutbox, UserNotificationSettings, SchedulerRun } from './models.js';
 import { NotificationService } from './service.js';
 import { OnboardingService } from '../onboarding/service.js';
@@ -127,7 +127,18 @@ async function flushDigestEmails() {
             </ul>
           </div>
         `;
-        await sendEmail(user.email, `ВІАТЕК: ${items.length} нових сповіщень`, html);
+        const result = await sendEmail(user.email, `ВІАТЕК: ${items.length} нових сповіщень`, html);
+        if (!result.success) {
+          // Раніше записи позначалися як відправлені навіть після збою (sendEmail не кидає
+          // винятків), і дайджест тихо зникав. Залишаємо їх у outbox до наступного прогону.
+          console.warn(`✉️ Digest for user ${userId} not delivered (${result.error}), залишаємо в черзі`);
+          if (isEmailCircuitOpen()) {
+            // SMTP лежить — немає сенсу проганяти решту користувачів по таймаутах.
+            console.warn('✉️ SMTP недоступний — решту дайджестів відкладено до наступного прогону');
+            break;
+          }
+          continue;
+        }
       }
       await NotificationOutbox.updateMany(
         { _id: { $in: items.map(i => i._id) } },

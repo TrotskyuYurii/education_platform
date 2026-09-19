@@ -27,6 +27,22 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
     allowedScopes: ['all']
   },
   {
+    code: 'system.logs.view',
+    name: 'Перегляд журналу адміністратора',
+    category: 'system',
+    categoryLabel: 'Система та безпека',
+    description: 'Доступ до журналу системних проблем (збої відправки пошти, планувальника, інтеграцій) та до індикатора тривоги',
+    allowedScopes: ['all']
+  },
+  {
+    code: 'system.logs.manage',
+    name: 'Керування журналом адміністратора',
+    category: 'system',
+    categoryLabel: 'Система та безпека',
+    description: 'Зміна статусів записів (в роботі / вирішено), видалення та очищення журналу системних проблем',
+    allowedScopes: ['all']
+  },
+  {
     code: 'users.profile.view',
     name: 'Перегляд користувачів',
     category: 'users',

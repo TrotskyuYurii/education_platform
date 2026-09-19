@@ -4,8 +4,10 @@ import { KnowledgeSettings } from './Admin/KnowledgeSettings';
 import { AssignmentSettings } from './Admin/AssignmentSettings';
 import { OnboardingManagement } from './Onboarding';
 import { NotificationTemplates } from './Admin/NotificationTemplates';
+import { SystemLogPanel } from './Admin/SystemLogPanel';
 import { AnalyticsReports } from './Analytics/AnalyticsReports';
 import { useAuth } from '../context/AuthContext';
+import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
 import React, { useState, useRef } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
@@ -41,6 +43,7 @@ import {
   CalendarClock,
   Bell,
   BarChart3,
+  ScrollText,
   Paperclip,
   Rocket
 } from 'lucide-react';
@@ -72,9 +75,11 @@ interface TestManagementProps {
   onRefresh?: () => Promise<void>;
   /** Відкрити маршрут конкретного онбордінгу на вкладці «Онбординг». */
   onOpenOnboardingAssignment?: (assignmentId: string) => void;
+  /** Відкрити певну вкладку при вході в розділ (напр. за кліком по індикатору тривоги). */
+  initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog';
 
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
@@ -86,7 +91,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   onReset,
   isSetupMode,
   onRefresh,
-  onOpenOnboardingAssignment
+  onOpenOnboardingAssignment,
+  initialTab
 }) => {
   const { hasPermission } = useAuth();
 
@@ -268,17 +274,32 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<MgmtTab>(() => {
     if (isSetupMode) return 'users';
+    // Явний запит ззовні (клік по індикатору тривоги) має пріоритет над збереженою вкладкою.
+    if (initialTab) return initialTab;
     try {
       const saved = localStorage.getItem('viatec_mgmt_tab') as MgmtTab;
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog'].includes(saved)) {
         return saved;
       }
     } catch {}
     return 'list';
   });
+
+  // Зведення журналу — для червоного лічильника на вкладці.
+  const { summary: logSummary, canView: canViewLogs, refresh: refreshLogSummary } = useSystemLogAlarm();
+
+  // Після опрацювання записів лічильник має оновитись без очікування наступного полінгу.
+  React.useEffect(() => {
+    if (activeTab !== 'systemlog') refreshLogSummary();
+  }, [activeTab, refreshLogSummary]);
+
+  // Зовнішній запит може прийти й коли розділ уже змонтований.
+  React.useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   React.useEffect(() => {
     if (!isSetupMode) {
@@ -1018,6 +1039,27 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     >
                       <BarChart3 className="w-4 h-4" />
                       <span>Аналітика</span>
+                    </button>
+                  )}
+
+                  {canViewLogs && (
+                    <button
+                      onClick={() => setActiveTab('systemlog')}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                        activeTab === 'systemlog'
+                          ? 'bg-purple-100 text-purple-800 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <ScrollText className={`w-4 h-4 ${logSummary.unresolvedErrors > 0 ? 'text-rose-600' : ''}`} />
+                        <span>Журнал</span>
+                      </div>
+                      {logSummary.unresolvedErrors > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-rose-600 text-white animate-pulse">
+                          {logSummary.unresolvedErrors}
+                        </span>
+                      )}
                     </button>
                   )}
                 </div>
@@ -3037,6 +3079,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'organization' && <OrganizationSettings />}
           {activeTab === 'notifications' && <NotificationTemplates />}
           {activeTab === 'analytics' && <AnalyticsReports courses={courses} />}
+          {activeTab === 'systemlog' && <SystemLogPanel />}
 
           {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
           {activeTab === 'knowledge' && (

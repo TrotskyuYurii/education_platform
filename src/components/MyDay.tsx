@@ -26,12 +26,14 @@ import {
   Building2,
   Rocket,
   Lock,
-  Users as UsersIcon
+  Users as UsersIcon,
+  ScrollText
 } from 'lucide-react';
 import { InstructionSection, Course, UserProgress, KnowledgeSpace, LearningAssignment } from '../types';
 import { User } from '../context/AuthContext';
 import { ALL_UKRAINIAN_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
 import { AppTab } from './Navbar';
+import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
 
 interface MyDayProps {
   user: User | null;
@@ -49,6 +51,8 @@ interface MyDayProps {
   onDismissNotification: (id: string) => void;
   primaryRoleLabel?: string;
   canManage?: boolean;
+  /** Перейти до журналу адміністратора в розділі адміністрування. */
+  onOpenSystemLog?: () => void;
 }
 
 export const MyDay: React.FC<MyDayProps> = ({
@@ -67,7 +71,12 @@ export const MyDay: React.FC<MyDayProps> = ({
   onDismissNotification,
   primaryRoleLabel,
   canManage = false,
+  onOpenSystemLog,
 }) => {
+  // Журнал адміністратора: червоний індикатор показуємо лише тим, хто має
+  // право його читати — решті така тривога ні про що не говорить і нічого не дає.
+  const { summary: logSummary, hasAlarm: hasLogAlarm } = useSystemLogAlarm();
+
   // Assignments state
   const [assignments, setAssignments] = useState<LearningAssignment[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState(true);
@@ -338,7 +347,53 @@ export const MyDay: React.FC<MyDayProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
-      
+
+      {/* ============================================================ */}
+      {/* 0. ADMIN ALARM: незакриті системні помилки в журналі */}
+      {/* ============================================================ */}
+      {hasLogAlarm && (
+        <button
+          id="myday-system-log-alarm"
+          type="button"
+          onClick={onOpenSystemLog}
+          disabled={!onOpenSystemLog}
+          aria-live="polite"
+          className="w-full text-left rounded-2xl border-2 border-rose-400 bg-rose-50 px-4 py-3.5 shadow-sm transition hover:bg-rose-100 hover:border-rose-500 disabled:cursor-default disabled:hover:bg-rose-50 flex items-center gap-3.5 animate-in fade-in slide-in-from-top-2 duration-300"
+        >
+          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white">
+            <AlertTriangle className="h-5 w-5" />
+            <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+            </span>
+          </span>
+
+          <span className="grow min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-extrabold text-rose-900">
+                Увага: зафіксовано системні помилки ({logSummary.unresolvedErrors})
+              </span>
+              {logSummary.unresolvedWarnings > 0 && (
+                <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                  +{logSummary.unresolvedWarnings} попереджень
+                </span>
+              )}
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-rose-800">
+              {logSummary.lastErrorMessage || 'Відкрийте журнал адміністратора, щоб переглянути деталі.'}
+            </span>
+          </span>
+
+          {onOpenSystemLog && (
+            <span className="hidden sm:inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white">
+              <ScrollText className="h-3.5 w-3.5" />
+              До журналу
+              <ArrowRight className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </button>
+      )}
+
       {/* ============================================================ */}
       {/* 1. HERO HEADER: Greeting, Context, Time, Quote & Quick Search */}
       {/* ============================================================ */}

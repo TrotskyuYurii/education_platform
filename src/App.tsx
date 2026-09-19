@@ -87,6 +87,8 @@ function MainApp() {
   // Коли керівник/HR відкриває маршрут конкретного співробітника зі звіту,
   // вкладка «Онбординг» показує його проходження замість власного.
   const [onboardingFocusId, setOnboardingFocusId] = useState<string | null>(null);
+  // Клік по індикатору тривоги має відкрити саме вкладку журналу, а не ту, що збереглась з минулого разу.
+  const [mgmtInitialTab, setMgmtInitialTab] = useState<'systemlog' | undefined>(undefined);
   const [onboardingPendingCount, setOnboardingPendingCount] = useState(0);
 
   // Global hotkey Ctrl+K / Cmd+K
@@ -472,6 +474,8 @@ function MainApp() {
           // Перехід по вкладці завжди означає «мій онбординг», а не чужий,
           // який могли відкрити зі звіту адміністрування.
           if (tab === 'onboarding') setOnboardingFocusId(null);
+          // Ручний захід в адмінку повертає звичну збережену вкладку.
+          if (tab === 'management') setMgmtInitialTab(undefined);
           setCurrentTab(tab);
         }}
         readCount={validReadSectionIds.length}
@@ -494,6 +498,10 @@ function MainApp() {
             cases={cases}
             spaces={spaces}
             onOpenCourse={handleOpenCourse}
+            onOpenSystemLog={() => {
+              setMgmtInitialTab('systemlog');
+              setCurrentTab('management');
+            }}
             onOpenInstruction={(secId, courseId) => {
               if (courseId) setActiveCourseId(courseId);
               setSelectedSectionId(secId);
@@ -663,6 +671,7 @@ function MainApp() {
             cases={cases}
             spaces={spaces}
             onRefresh={fetchContent}
+            initialTab={mgmtInitialTab}
             onOpenOnboardingAssignment={(assignmentId) => {
               setOnboardingFocusId(assignmentId);
               setCurrentTab('onboarding');
