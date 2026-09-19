@@ -34,6 +34,7 @@ import {
   OnboardingBottleneck
 } from './types';
 import { TEMPLATE_STATUS_META, ASSIGNMENT_STATUS_META, formatDateUa } from './constants';
+import { MaterialList, MaterialRow } from '../Admin/MaterialList';
 
 interface OnboardingManagementProps {
   sections: any[];
@@ -265,9 +266,9 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
           ) : filteredTemplates.length === 0 ? (
             <EmptyCatalog hasSearch={Boolean(search)} onCreate={createTemplate} />
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+            <MaterialList>
               {filteredTemplates.map(t => (
-                <TemplateCard
+                <TemplateRow
                   key={t.id}
                   template={t}
                   onEdit={() => setEditingTemplateId(t.id)}
@@ -277,7 +278,7 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
                   onDelete={() => deleteTemplate(t.id, t.name)}
                 />
               ))}
-            </div>
+            </MaterialList>
           )}
         </>
       )}
@@ -298,10 +299,10 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
 };
 
 // ==========================================================
-// Картка шаблону в каталозі
+// Рядок шаблона в каталозі
 // ==========================================================
 
-const TemplateCard: React.FC<{
+const TemplateRow: React.FC<{
   template: OnboardingTemplateSummary;
   onEdit: () => void;
   onAssign: () => void;
@@ -313,101 +314,71 @@ const TemplateCard: React.FC<{
   const isPublished = template.status === 'published';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-purple-200 hover:shadow-sm transition flex flex-col min-w-0">
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="w-10 h-10 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-          <Rocket className="w-4.5 h-4.5" />
-        </div>
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusMeta.chip}`}>
-          {statusMeta.label}
-        </span>
-      </div>
-
-      <h4 className="font-bold text-slate-900 leading-tight mb-1 break-words">{template.name}</h4>
-      <p className="text-xs text-slate-500 line-clamp-2 mb-3 min-h-[32px]">
-        {template.description || 'Опис не заповнено'}
-      </p>
-
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-          {template.stepsCount} кроків
-        </span>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-          {template.durationDays} дн.
-        </span>
-        {template.requiresBuddy && (
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-700">
-            з наставником
-          </span>
-        )}
-        {template.departmentName && (
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700">
-            {template.departmentName}
-          </span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-100 mb-3">
-        <Metric value={template.assignedActive} label="активних" tone="text-blue-600" />
-        <Metric value={template.assignedCompleted} label="завершили" tone="text-emerald-600" />
-        <Metric value={template.assignedTotal} label="всього" tone="text-slate-700" />
-      </div>
-
-      {/* Картка живе і в один, і в три стовпці, тож ряд дій має переноситись,
-          а не вилазити за межі: підписи звужуються, іконки лишаються цілими. */}
-      <div className="mt-auto flex flex-wrap items-center gap-1.5">
-        <button
-          onClick={onEdit}
-          className="flex-1 basis-24 min-w-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
-        >
-          <Pencil className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Схема</span>
-        </button>
-        <button
-          onClick={onAssign}
-          disabled={!isPublished}
-          title={isPublished ? 'Призначити співробітнику' : 'Спершу опублікуйте онбординг'}
-          className="flex-1 basis-28 min-w-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <UserPlus className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Призначити</span>
-        </button>
-        <button
-          onClick={onDuplicate}
-          className="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 flex items-center justify-center transition shrink-0"
-          title="Створити копію"
-        >
-          <Copy className="w-3.5 h-3.5" />
-        </button>
-        {template.status !== 'archived' ? (
+    <MaterialRow
+      icon={<Rocket className="w-4 h-4" />}
+      iconTone="bg-purple-50 text-purple-600 border-purple-100"
+      title={template.name}
+      dimmed={template.status === 'archived'}
+      badges={[
+        { label: statusMeta.label, tone: statusMeta.tone },
+        { label: `${template.stepsCount} кроків`, tone: 'slate' },
+        { label: `${template.durationDays} дн.`, tone: 'slate' },
+        ...(template.requiresBuddy ? [{ label: 'з наставником', tone: 'cyan' as const }] : []),
+        ...(template.departmentName ? [{ label: template.departmentName, tone: 'blue' as const }] : [])
+      ]}
+      meta={template.description || 'Опис не заповнено'}
+      stats={[
+        { label: <span><b>{template.assignedActive}</b> активних</span>, tone: 'blue' },
+        { label: <span><b>{template.assignedCompleted}</b> завершили</span>, tone: 'emerald' },
+        { label: <span><b>{template.assignedTotal}</b> всього</span>, tone: 'slate' }
+      ]}
+      actions={
+        <>
           <button
-            onClick={onArchive}
-            className="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 flex items-center justify-center transition shrink-0"
-            title="В архів"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
           >
-            <Archive className="w-3.5 h-3.5" />
+            <Pencil className="w-3.5 h-3.5 shrink-0" />
+            <span>Схема</span>
           </button>
-        ) : (
           <button
-            onClick={onDelete}
-            className="w-8 h-8 rounded-xl border border-rose-200 text-rose-500 hover:bg-rose-50 flex items-center justify-center transition shrink-0"
-            title="Видалити назавжди"
+            onClick={onAssign}
+            disabled={!isPublished}
+            title={isPublished ? 'Призначити співробітнику' : 'Спершу опублікуйте онбординг'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <UserPlus className="w-3.5 h-3.5 shrink-0" />
+            <span>Призначити</span>
           </button>
-        )}
-      </div>
-    </div>
+          <button
+            onClick={onDuplicate}
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+            title="Створити копію"
+          >
+            <Copy className="w-4 h-4" />
+          </button>
+          {template.status !== 'archived' ? (
+            <button
+              onClick={onArchive}
+              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+              title="В архів"
+            >
+              <Archive className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={onDelete}
+              className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 transition"
+              title="Видалити назавжди"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </>
+      }
+    />
   );
 };
-
-const Metric: React.FC<{ value: number | string; label: string; tone: string }> = ({ value, label, tone }) => (
-  <div className="text-center min-w-0">
-    <div className={`text-base font-bold ${tone}`}>{value}</div>
-    {/* У вузькій картці підписи інакше налазять один на одного. */}
-    <div className="text-[10px] text-slate-400 uppercase tracking-wide truncate" title={label}>{label}</div>
-  </div>
-);
 
 const EmptyCatalog: React.FC<{ hasSearch: boolean; onCreate: () => void }> = ({ hasSearch, onCreate }) => (
   <div className="text-center py-16 px-6 bg-slate-50 rounded-2xl border border-dashed border-slate-300">

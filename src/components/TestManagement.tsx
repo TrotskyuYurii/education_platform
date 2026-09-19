@@ -5,6 +5,7 @@ import { AssignmentSettings } from './Admin/AssignmentSettings';
 import { OnboardingManagement } from './Onboarding';
 import { NotificationTemplates } from './Admin/NotificationTemplates';
 import { SystemLogPanel } from './Admin/SystemLogPanel';
+import { MaterialList, MaterialRow } from './Admin/MaterialList';
 import { AnalyticsReports } from './Analytics/AnalyticsReports';
 import { useAuth } from '../context/AuthContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
@@ -1352,212 +1353,200 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </div>
               )}
 
-              <div className="space-y-3">
-                {groupedCourses.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 text-sm">
-                    База інструкцій порожня.
-                  </div>
-                ) : (
-                  groupedCourses.map((inst) => {
-                    return (
-                      <div key={inst.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition">
-                        {editingCourseId === inst.id ? (
-                          <div className="flex-1 flex flex-col gap-2">
-                            <h4 className="text-sm font-bold text-slate-900">{inst.title}</h4>
-                            <select 
-                              value={editingCourseDep}
-                              onChange={(e) => setEditingCourseDep(e.target.value)}
-                              className="px-3 py-1.5 border border-slate-300 rounded-md text-sm w-full sm:max-w-xs"
-                            >
-                              <option value="">(Без підрозділу)</option>
-                              {departments.map(d => (
-                                <option key={d._id} value={d.name}>{d.name}</option>
-                              ))}
-                            </select>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                id={`edit-inst-active-${inst.id}`}
-                                checked={editingInstIsActive}
-                                onChange={e => setEditingInstIsActive(e.target.checked)}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <label htmlFor={`edit-inst-active-${inst.id}`} className="text-sm font-bold text-slate-700">
-                                Активний (доступний для проходження)
-                              </label>
-                            </div>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch(`/api/admin/instructions/${inst.id}`, {
-                                      method: 'PUT',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
-                                    });
-                                    if (res.ok) {
-                                      setEditingCourseId(null);
-                                      if (onRefresh) await onRefresh();
-                                    } else {
-                                      alert('Не вдалося оновити інструкцію');
-                                    }
-                                  } catch (e) {
-                                    console.error(e);
-                                    alert('Помилка мережі при оновленні інструкції');
+              <MaterialList
+                isEmpty={groupedCourses.length === 0}
+                empty="База інструкцій порожня."
+              >
+                {groupedCourses.map((inst) => (
+                  <MaterialRow
+                    key={inst.id}
+                    expanded={editingCourseId === inst.id ? (
+                      <div className="flex flex-col gap-2">
+                          <h4 className="text-sm font-bold text-slate-900">{inst.title}</h4>
+                          <select 
+                            value={editingCourseDep}
+                            onChange={(e) => setEditingCourseDep(e.target.value)}
+                            className="px-3 py-1.5 border border-slate-300 rounded-md text-sm w-full sm:max-w-xs"
+                          >
+                            <option value="">(Без підрозділу)</option>
+                            {departments.map(d => (
+                              <option key={d._id} value={d.name}>{d.name}</option>
+                            ))}
+                          </select>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`edit-inst-active-${inst.id}`}
+                              checked={editingInstIsActive}
+                              onChange={e => setEditingInstIsActive(e.target.checked)}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor={`edit-inst-active-${inst.id}`} className="text-sm font-bold text-slate-700">
+                              Активний (доступний для проходження)
+                            </label>
+                          </div>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/admin/instructions/${inst.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ department: editingCourseDep, isActive: editingInstIsActive })
+                                  });
+                                  if (res.ok) {
+                                    setEditingCourseId(null);
+                                    if (onRefresh) await onRefresh();
+                                  } else {
+                                    alert('Не вдалося оновити інструкцію');
                                   }
-                                }}
-                                className="px-3 py-1 bg-purple-600 text-white rounded text-xs font-medium"
-                              >Зберегти</button>
-                              <button 
-                                onClick={() => setEditingCourseId(null)}
-                                className="px-3 py-1 bg-slate-200 text-slate-700 rounded text-xs font-medium"
-                              >Скасувати</button>
-                            </div>
+                                } catch (e) {
+                                  console.error(e);
+                                  alert('Помилка мережі при оновленні інструкції');
+                                }
+                              }}
+                              className="px-3 py-1 bg-purple-600 text-white rounded text-xs font-medium"
+                            >Зберегти</button>
+                            <button 
+                              onClick={() => setEditingCourseId(null)}
+                              className="px-3 py-1 bg-slate-200 text-slate-700 rounded text-xs font-medium"
+                            >Скасувати</button>
+                          </div>
+                      </div>
+                    ) : undefined}
+                    icon={<FileText className="w-4 h-4" />}
+                    iconTone="bg-blue-50 text-blue-600 border-blue-100"
+                    title={inst.title}
+                    dimmed={inst.isActive === false}
+                    badges={[
+                      ...(inst.department ? [{ label: inst.department, tone: 'blue' as const }] : []),
+                      ...(inst.isActive === false ? [{ label: 'Вимкнено', tone: 'slate' as const }] : [])
+                    ]}
+                    meta={`ID: ${inst.id} · Питань: ${inst.questionCount}`}
+                    actions={
+                      <>
+                        {/* Unified Export Submenu */}
+                        <div className="relative">
+                          <button
+                            id={`btn-export-dropdown-${inst.id}`}
+                            onClick={() => setExportMenuInstId(exportMenuInstId === inst.id ? null : inst.id)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border ${
+                              exportMenuInstId === inst.id
+                                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
+                                : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
+                            }`}
+                            title="Підменю експорту"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Експорт</span>
+                            <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${exportMenuInstId === inst.id ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {exportMenuInstId === inst.id && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-20" 
+                                onClick={() => setExportMenuInstId(null)} 
+                              />
+                              <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
+                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  Формат експорту
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    handleExportInstMD(inst.id, inst.title);
+                                    setExportMenuInstId(null);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
+                                  title="Експортувати у Markdown (.md)"
+                                >
+                                  <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                    MD
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-800 leading-tight">Markdown (.md)</div>
+                                    <div className="text-[10px] text-slate-400">Текст інструкції з тестами</div>
+                                  </div>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleExportInstPDF(inst.id);
+                                    setExportMenuInstId(null);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
+                                  title="Експортувати у PDF"
+                                >
+                                  <div className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                    PDF
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-800 leading-tight">PDF (.pdf)</div>
+                                    <div className="text-[10px] text-slate-400">Формат для друку</div>
+                                  </div>
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setEditingCourseId(inst.id);
+                            setEditingCourseDep(inst.department);
+                            setEditingInstIsActive(inst.isActive !== false);
+                          }}
+                          className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition"
+                          title="Редагувати підрозділ"
+                        >
+                          <Settings2 className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const sec = sections.find(s => s.id === inst.id);
+                            if (!sec) return;
+                            const secQs = questions.filter(q => q.sectionId === inst.id);
+                            const md = exportToMarkdown(inst.title, [sec], secQs);
+                            setEditingMarkdownInstId(inst.id);
+                            setEditingMarkdownContent(md);
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                          title="Редагувати вміст (Markdown)"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
+                        {deletingInstId === (inst.id || (inst as any)._id) ? (
+                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
+                            <button
+                              type="button"
+                              disabled={isDeletingInst}
+                              onClick={() => handleDeleteInstruction(inst.id || (inst as any)._id)}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                            >
+                              {isDeletingInst ? '...' : 'Так'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isDeletingInst}
+                              onClick={() => setDeletingInstId(null)}
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                            >
+                              Ні
+                            </button>
                           </div>
                         ) : (
-                          <>
-                            <div className="flex-1">
-                              <div className="flex gap-2 mb-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md inline-block">
-                                  {inst.department}
-                                </span>
-                                {inst.isActive === false && (
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md inline-block">
-                                    Вимкнено
-                                  </span>
-                                )}
-                              </div>
-                              <h4 className={`text-sm font-bold ${inst.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{inst.title}</h4>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                ID: {inst.id} · Питань: {inst.questionCount}
-                              </p>
-                            </div>
-                            <div className="flex gap-2 shrink-0 self-start sm:self-center items-center">
-                              {/* Unified Export Submenu */}
-                              <div className="relative">
-                                <button
-                                  id={`btn-export-dropdown-${inst.id}`}
-                                  onClick={() => setExportMenuInstId(exportMenuInstId === inst.id ? null : inst.id)}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border ${
-                                    exportMenuInstId === inst.id
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
-                                      : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
-                                  }`}
-                                  title="Підменю експорту"
-                                >
-                                  <Upload className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Експорт</span>
-                                  <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${exportMenuInstId === inst.id ? 'rotate-180' : ''}`} />
-                                </button>
-
-                                {exportMenuInstId === inst.id && (
-                                  <>
-                                    <div 
-                                      className="fixed inset-0 z-20" 
-                                      onClick={() => setExportMenuInstId(null)} 
-                                    />
-                                    <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
-                                      <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                        Формат експорту
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          handleExportInstMD(inst.id, inst.title);
-                                          setExportMenuInstId(null);
-                                        }}
-                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
-                                        title="Експортувати у Markdown (.md)"
-                                      >
-                                        <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
-                                          MD
-                                        </div>
-                                        <div>
-                                          <div className="font-semibold text-slate-800 leading-tight">Markdown (.md)</div>
-                                          <div className="text-[10px] text-slate-400">Текст інструкції з тестами</div>
-                                        </div>
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleExportInstPDF(inst.id);
-                                          setExportMenuInstId(null);
-                                        }}
-                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
-                                        title="Експортувати у PDF"
-                                      >
-                                        <div className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-[10px] shrink-0">
-                                          PDF
-                                        </div>
-                                        <div>
-                                          <div className="font-semibold text-slate-800 leading-tight">PDF (.pdf)</div>
-                                          <div className="text-[10px] text-slate-400">Формат для друку</div>
-                                        </div>
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => {
-                                  setEditingCourseId(inst.id);
-                                  setEditingCourseDep(inst.department);
-                                  setEditingInstIsActive(inst.isActive !== false);
-                                }}
-                                className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition"
-                                title="Редагувати підрозділ"
-                              >
-                                <Settings2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const sec = sections.find(s => s.id === inst.id);
-                                  if (!sec) return;
-                                  const secQs = questions.filter(q => q.sectionId === inst.id);
-                                  const md = exportToMarkdown(inst.title, [sec], secQs);
-                                  setEditingMarkdownInstId(inst.id);
-                                  setEditingMarkdownContent(md);
-                                }}
-                                className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                                title="Редагувати вміст (Markdown)"
-                              >
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              {deletingInstId === (inst.id || (inst as any)._id) ? (
-                                <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                                  <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                                  <button
-                                    type="button"
-                                    disabled={isDeletingInst}
-                                    onClick={() => handleDeleteInstruction(inst.id || (inst as any)._id)}
-                                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                                  >
-                                    {isDeletingInst ? '...' : 'Так'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={isDeletingInst}
-                                    onClick={() => setDeletingInstId(null)}
-                                    className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                                  >
-                                    Ні
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setDeletingInstId(inst.id || (inst as any)._id)}
-                                  className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                                  title="Видалити інструкцію"
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                </button>
-                              )}
-                            </div>
-                          </>
+                          <button
+                            onClick={() => setDeletingInstId(inst.id || (inst as any)._id)}
+                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                            title="Видалити інструкцію"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
                         )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                      </>
+                    }
+                  />
+                ))}
+              </MaterialList>
             </div>
           )}
 
@@ -1801,19 +1790,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </div>
               </div>
 
-              <div className="space-y-3">
-                {courses.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 text-sm">
-                    Немає створених курсів.
-                  </div>
-                ) : (
-                  courses.map((course) => {
-                    const currentCourseId = course.id || course._id;
-                    const isEditing = editingCourse?.id === currentCourseId || editingCourse?._id === currentCourseId;
-                    return (
-                    <div key={currentCourseId} className="flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50">
-                      {isEditing ? (
-                        <div className="space-y-3">
+              <MaterialList
+                isEmpty={courses.length === 0}
+                empty="Немає створених курсів."
+              >
+                {courses.map((course) => {
+                  const currentCourseId = course.id || course._id;
+                  const isEditing = editingCourse?.id === currentCourseId || editingCourse?._id === currentCourseId;
+                  return (
+                  <MaterialRow
+                    key={currentCourseId}
+                    expanded={isEditing ? (
+                      <div className="space-y-3">
                           <input
                             type="text"
                             placeholder="Назва курсу"
@@ -1831,7 +1819,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               <option key={depName} value={depName}>{depName}</option>
                             ))}
                           </select>
-                          
+                    
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
@@ -1844,7 +1832,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               Видавати сертифікат
                             </label>
                           </div>
-                          
+                    
                           {editingCourse?.hasCertificate && (
                             <div className="flex items-center gap-2 ml-6">
                               <label className="text-sm text-slate-600">Термін дії (років):</label>
@@ -1965,7 +1953,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               />
                               <span className="text-sm text-slate-700">Використовувати практичні кейси</span>
                             </label>
-                            
+                      
                             <label className="flex items-center gap-2">
                               <input
                                 type="checkbox"
@@ -1975,7 +1963,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               />
                               <span className="text-sm text-slate-700">Послідовне проходження (Курси-кроки)</span>
                             </label>
-                            
+                      
                             <div className="grid grid-cols-3 gap-3 mt-2">
                               <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">Мін. бал (%)</label>
@@ -2045,89 +2033,78 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                               Скасувати
                             </button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="flex gap-2 mb-1">
-                              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-100 px-2 py-0.5 rounded-md inline-block">
-                                {course.department}
-                              </div>
-                              {!course.isActive && (
-                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md inline-block">
-                                  Вимкнено
-                                </div>
-                              )}
-                            </div>
-                            <h4 className={`text-sm font-bold ${course.isActive ? 'text-slate-900' : 'text-slate-500 line-through'}`}>{course.title}</h4>
-                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                              <span>Включає {course.instructionIds?.length || 0} інструкцій</span>
-                              {course.hasCertificate && (
-                                <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">
-                                  Сертифікат ({course.certificateValidityYears} р.)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
+                      </div>
+                    ) : undefined}
+                    icon={<BookOpen className="w-4 h-4" />}
+                    iconTone="bg-purple-50 text-purple-600 border-purple-100"
+                    title={course.title}
+                    dimmed={!course.isActive}
+                    badges={[
+                      ...(course.department ? [{ label: course.department, tone: 'blue' as const }] : []),
+                      ...(!course.isActive ? [{ label: 'Вимкнено', tone: 'slate' as const }] : []),
+                      ...(course.hasCertificate
+                        ? [{ label: `Сертифікат (${course.certificateValidityYears} р.)`, tone: 'emerald' as const }]
+                        : [])
+                    ]}
+                    meta={`Включає ${course.instructionIds?.length || 0} інструкцій`}
+                    actions={
+                      <>
+                        <button
+                          onClick={() => setEditingCourse({
+                            id: currentCourseId,
+                            _id: course._id,
+                            title: course.title,
+                            department: course.department,
+                            instructionIds: course.instructionIds || [],
+                            useCases: course.useCases || false,
+                            hasCertificate: course.hasCertificate || false,
+                            certificateValidityYears: course.certificateValidityYears || 1,
+                            isProgressive: course.isProgressive || false,
+                            quizPassScorePercent: course.quizPassScorePercent ?? 80,
+                            quizTimeLimitMin: course.quizTimeLimitMin,
+                            quizMaxAttempts: course.quizMaxAttempts,
+                            isActive: course.isActive !== undefined ? course.isActive : true
+                          })}
+                          className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
+                          title="Редагувати курс"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        {deletingCourseId === currentCourseId ? (
+                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
                             <button
-                              onClick={() => setEditingCourse({
-                                id: currentCourseId,
-                                _id: course._id,
-                                title: course.title,
-                                department: course.department,
-                                instructionIds: course.instructionIds || [],
-                                useCases: course.useCases || false,
-                                hasCertificate: course.hasCertificate || false,
-                                certificateValidityYears: course.certificateValidityYears || 1,
-                                isProgressive: course.isProgressive || false,
-                                quizPassScorePercent: course.quizPassScorePercent ?? 80,
-                                quizTimeLimitMin: course.quizTimeLimitMin,
-                                quizMaxAttempts: course.quizMaxAttempts,
-                                isActive: course.isActive !== undefined ? course.isActive : true
-                              })}
-                              className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
-                              title="Редагувати курс"
+                              type="button"
+                              disabled={isDeletingCourse}
+                              onClick={() => handleDeleteCourse(currentCourseId)}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              {isDeletingCourse ? '...' : 'Так'}
                             </button>
-                            {deletingCourseId === currentCourseId ? (
-                              <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                                <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                                <button
-                                  type="button"
-                                  disabled={isDeletingCourse}
-                                  onClick={() => handleDeleteCourse(currentCourseId)}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                                >
-                                  {isDeletingCourse ? '...' : 'Так'}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={isDeletingCourse}
-                                  onClick={() => setDeletingCourseId(null)}
-                                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                                >
-                                  Ні
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setDeletingCourseId(currentCourseId)}
-                                className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                                title="Видалити курс"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              disabled={isDeletingCourse}
+                              onClick={() => setDeletingCourseId(null)}
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                            >
+                              Ні
+                            </button>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    );
-                  })
-                )}
-              </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeletingCourseId(currentCourseId)}
+                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
+                            title="Видалити курс"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </>
+                    }
+                  />
+                  );
+                })}
+              </MaterialList>
             </div>
           )}
 
@@ -2314,63 +2291,67 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
               <div className="space-y-3">
                 <h4 className="text-md font-bold text-slate-900">Існуючі кейси ({cases.length})</h4>
-                {cases.map(c => {
-                  const currentCaseId = c.id || c._id;
-                  const isConfirming = deletingCaseId === currentCaseId;
+                <MaterialList
+                  isEmpty={cases.length === 0}
+                  empty="Немає створених кейсів."
+                >
+                  {cases.map(c => {
+                    const currentCaseId = c.id || c._id;
+                    const isConfirming = deletingCaseId === currentCaseId;
+                    return (
+                      <MaterialRow
+                        key={currentCaseId}
+                        icon={<Briefcase className="w-4 h-4" />}
+                        iconTone="bg-amber-50 text-amber-600 border-amber-100"
+                        title={c.title}
+                        dimmed={c.isActive === false}
+                        badges={c.isActive === false ? [{ label: 'Вимкнено', tone: 'slate' as const }] : []}
+                        meta={<span className="line-clamp-2">{c.scenario}</span>}
+                        actions={
+                          <>
+                            <button 
+                            onClick={() => setEditingCase(c)} 
+                            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                            title="Редагувати кейс"
+                            >
+                            <Edit2 className="w-4 h-4" />
+                            </button>
 
-                  return (
-                    <div key={currentCaseId} className="p-4 bg-white border border-slate-200 rounded-xl flex justify-between items-start gap-4">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h5 className={`font-bold ${c.isActive === false ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{c.title}</h5>
-                          {c.isActive === false && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">Вимкнено</span>
-                          )}
-                        </div>
-                        <p className="text-sm text-slate-600 line-clamp-2">{c.scenario}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button 
-                          onClick={() => setEditingCase(c)} 
-                          className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                          title="Редагувати кейс"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-
-                        {isConfirming ? (
-                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                            {isConfirming ? (
+                            <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                             <span className="text-xs font-semibold text-rose-700">Видалити?</span>
                             <button 
-                              type="button"
-                              disabled={isDeletingCase}
-                              onClick={() => handleDeleteCase(currentCaseId)} 
-                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
+                            type="button"
+                            disabled={isDeletingCase}
+                            onClick={() => handleDeleteCase(currentCaseId)} 
+                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
                             >
-                              {isDeletingCase ? '...' : 'Так'}
+                            {isDeletingCase ? '...' : 'Так'}
                             </button>
                             <button 
-                              type="button"
-                              disabled={isDeletingCase}
-                              onClick={() => setDeletingCaseId(null)} 
-                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
+                            type="button"
+                            disabled={isDeletingCase}
+                            onClick={() => setDeletingCaseId(null)} 
+                            className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
                             >
-                              Ні
+                            Ні
                             </button>
-                          </div>
-                        ) : (
-                          <button 
+                            </div>
+                            ) : (
+                            <button 
                             onClick={() => setDeletingCaseId(currentCaseId)} 
                             className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
                             title="Видалити кейс"
-                          >
+                            >
                             <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                            </button>
+                            )}
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </MaterialList>
               </div>
             </div>
           )}

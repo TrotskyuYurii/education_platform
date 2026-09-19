@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { MaterialList, MaterialRow, MaterialBadge } from './MaterialList';
 import { 
   FolderTree, 
   BookOpen, 
@@ -344,6 +345,22 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
     }
   };
 
+  // Той самий статус, але як опис бейджа для спільного рядка списку,
+  // щоб життєвий цикл виглядав так само, як решта переліків матеріалів.
+  const getStatusBadgeDescriptor = (status?: DocumentStatus): MaterialBadge => {
+    switch (status) {
+      case 'draft':
+        return { label: 'Чернетка', tone: 'slate', icon: <Clock className="w-3 h-3" /> };
+      case 'in_review':
+        return { label: 'На погодженні', tone: 'blue', icon: <AlertCircle className="w-3 h-3" /> };
+      case 'archived':
+        return { label: 'Архів', tone: 'rose', icon: <Archive className="w-3 h-3" /> };
+      case 'published':
+      default:
+        return { label: 'Опубліковано', tone: 'emerald', icon: <CheckCircle2 className="w-3 h-3" /> };
+    }
+  };
+
   const getStatusBadge = (status?: DocumentStatus) => {
     switch (status) {
       case 'draft':
@@ -492,110 +509,63 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
 
       {/* TAB 1: SPACES MANAGEMENT */}
       {activeSubTab === 'spaces' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {spaces.map(sp => {
-            const colorClass = getSpaceColorClass(sp.color);
-            return (
-              <div
-                key={sp.id}
-                className="bg-white rounded-2xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 p-5 flex flex-col justify-between group"
-              >
-                <div>
-                  {/* Card Top Row: Icon, Badges & Actions */}
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center border shadow-2xs shrink-0 ${colorClass}`}>
-                        {renderSpaceIcon(sp.icon)}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {sp.code && (
-                          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            [{sp.code}]
-                          </span>
-                        )}
-                        {sp.isDefault && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            Базовий
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleOpenEditSpace(sp)}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                        title="Редагувати простір"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      {!sp.isDefault && (
-                        <button
-                          onClick={() => handleDeleteSpace(sp.id)}
-                          disabled={deletingSpaceId === sp.id}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          title="Видалити простір"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Title & Technical Meta */}
-                  <div className="mb-2">
-                    <h4 className="font-bold text-slate-900 text-base leading-snug group-hover:text-blue-600 transition-colors">
-                      {sp.name}
-                    </h4>
-                    <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
-                      <span className="text-slate-300">ID:</span> {sp.id}
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <p className="text-xs text-slate-600 leading-relaxed mb-3 line-clamp-2 min-h-[34px]">
-                    {sp.description || 'Робоча область регламентів та навчальних курсів компанії.'}
-                  </p>
-
-                  {/* Department Badge */}
-                  {sp.department && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-700 mb-3 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 w-fit max-w-full">
-                      <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">Підрозділ: <b className="font-semibold text-slate-800">{sp.department}</b></span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer with Counters & Quick Navigation */}
-                <div className="pt-3.5 border-t border-slate-100 mt-2 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-xs font-medium border border-slate-100">
-                      <FileText className="w-3.5 h-3.5 text-slate-400" />
-                      <span><b>{sp.stats?.totalInstructions ?? 0}</b> регл.</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-xs font-medium border border-slate-100">
-                      <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-                      <span><b>{sp.stats?.totalCourses ?? 0}</b> курсів</span>
-                    </span>
-                  </div>
-
+        <MaterialList isEmpty={spaces.length === 0} empty="Просторів знань ще немає.">
+          {spaces.map(sp => (
+            <MaterialRow
+              key={sp.id}
+              icon={renderSpaceIcon(sp.icon)}
+              iconTone={getSpaceColorClass(sp.color)}
+              title={sp.name}
+              badges={[
+                ...(sp.code ? [{ label: `[${sp.code}]`, tone: 'slate' as const, mono: true }] : []),
+                ...(sp.isDefault ? [{ label: 'Базовий', tone: 'blue' as const }] : []),
+                ...(sp.department ? [{ label: sp.department, tone: 'slate' as const, icon: <Building2 className="w-3 h-3" /> }] : [])
+              ]}
+              meta={
+                <>
+                  {sp.description || 'Робоча область регламентів та навчальних курсів компанії.'}
+                  <span className="text-slate-400 font-mono"> · ID: {sp.id}</span>
+                </>
+              }
+              stats={[
+                { label: <span><b>{sp.stats?.totalInstructions ?? 0}</b> регл.</span>, tone: 'slate', icon: <FileText className="w-3 h-3 text-slate-400" /> },
+                { label: <span><b>{sp.stats?.totalCourses ?? 0}</b> курсів</span>, tone: 'slate', icon: <BookOpen className="w-3 h-3 text-slate-400" /> }
+              ]}
+              actions={
+                <>
                   <button
                     onClick={() => {
                       setSelectedSpaceFilter(sp.id);
                       setActiveSubTab('lifecycle');
                     }}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition group-hover:translate-x-0.5"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition"
                     title="Переглянути матеріали цього простору"
                   >
                     <span>Матеріали</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                  <button
+                    onClick={() => handleOpenEditSpace(sp)}
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                    title="Редагувати простір"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  {!sp.isDefault && (
+                    <button
+                      onClick={() => handleDeleteSpace(sp.id)}
+                      disabled={deletingSpaceId === sp.id}
+                      className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition disabled:opacity-50"
+                      title="Видалити простір"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              }
+            />
+          ))}
+        </MaterialList>
       )}
 
       {/* TAB 2: LIFECYCLE, VERSIONS & REVISIONS */}
@@ -640,92 +610,64 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
             </div>
           </div>
 
-          {/* Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="p-4">Регламент / Інструкція</th>
-                    <th className="p-4">Простір</th>
-                    <th className="p-4">Версія</th>
-                    <th className="p-4">Статус</th>
-                    <th className="p-4">Остання ревізія</th>
-                    <th className="p-4 text-right">Дії</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredSections.map(sec => {
-                    const space = spaces.find(s => s.id === sec.spaceId) || spaces[0];
-                    return (
-                      <tr key={sec.id} className="hover:bg-slate-50/70 transition">
-                        <td className="p-4 max-w-sm">
-                          <div className="font-bold text-slate-900 line-clamp-1">{sec.title}</div>
-                          <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
-                            {sec.department || 'Загальний'} • {sec.readTimeMin || 5} хв
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${getSpaceColorClass(space?.color)}`}>
-                            {renderSpaceIcon(space?.icon)}
-                            <span className="truncate max-w-[130px]">{space?.name || 'Загальний'}</span>
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-mono font-bold text-xs">
-                            <GitBranch className="w-3 h-3" /> v{sec.version || '1.0'}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {getStatusBadge(sec.status)}
-                        </td>
-                        <td className="p-4 text-slate-500 text-[11px]">
-                          <div className="font-medium text-slate-700">{sec.changeLog || 'Початкова редакція'}</div>
-                          {sec.lastReviewedAt && (
-                            <div className="text-slate-400 mt-0.5">
-                              {new Date(sec.lastReviewedAt).toLocaleDateString('uk-UA')}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenStatusDialog(sec)}
-                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
-                              title="Змінити життєвий цикл / статус"
-                            >
-                              Статус
-                            </button>
-                            <button
-                              onClick={() => handleOpenNewVersionDialog(sec)}
-                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-semibold transition"
-                              title="Створити нову редакцію (increment)"
-                            >
-                              + Версія
-                            </button>
-                            <button
-                              onClick={() => handleOpenVersions(sec)}
-                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                              title="Історія ревізій"
-                            >
-                              <History className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredSections.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
-                        Не знайдено регламентів за вказаними фільтрами
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Список матеріалів — той самий формат, що й решта переліків адмінки */}
+          <MaterialList
+            isEmpty={filteredSections.length === 0}
+            empty="Не знайдено регламентів за вказаними фільтрами"
+          >
+            {filteredSections.map(sec => {
+              const space = spaces.find(s => s.id === sec.spaceId) || spaces[0];
+              return (
+                <MaterialRow
+                  key={sec.id}
+                  icon={<FileText className="w-4 h-4" />}
+                  iconTone="bg-blue-50 text-blue-600 border-blue-100"
+                  title={sec.title}
+                  dimmed={sec.status === 'archived'}
+                  badges={[
+                    { label: space?.name || 'Загальний', tone: 'slate', icon: renderSpaceIcon(space?.icon) },
+                    { label: `v${sec.version || '1.0'}`, tone: 'purple', mono: true, icon: <GitBranch className="w-3 h-3" /> },
+                    getStatusBadgeDescriptor(sec.status)
+                  ]}
+                  meta={
+                    <>
+                      {sec.department || 'Загальний'} · {sec.readTimeMin || 5} хв · {sec.changeLog || 'Початкова редакція'}
+                      {sec.lastReviewedAt && (
+                        <span className="text-slate-400">
+                          {' '}· {new Date(sec.lastReviewedAt).toLocaleDateString('uk-UA')}
+                        </span>
+                      )}
+                    </>
+                  }
+                  actions={
+                    <>
+                      <button
+                        onClick={() => handleOpenStatusDialog(sec)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
+                        title="Змінити життєвий цикл / статус"
+                      >
+                        Статус
+                      </button>
+                      <button
+                        onClick={() => handleOpenNewVersionDialog(sec)}
+                        className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-semibold transition"
+                        title="Створити нову редакцію (increment)"
+                      >
+                        + Версія
+                      </button>
+                      <button
+                        onClick={() => handleOpenVersions(sec)}
+                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                        title="Історія ревізій"
+                      >
+                        <History className="w-4 h-4" />
+                      </button>
+                    </>
+                  }
+                />
+              );
+            })}
+          </MaterialList>
         </div>
       )}
 

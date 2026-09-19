@@ -1,3 +1,4 @@
+import type { BadgeTone } from '../Admin/MaterialList';
 import {
   BookOpen,
   GraduationCap,
@@ -171,10 +172,12 @@ export const ASSIGNMENT_STATUS_META: Record<string, { label: string; chip: strin
   cancelled: { label: 'Скасовано', chip: 'bg-slate-100 text-slate-400' }
 };
 
-export const TEMPLATE_STATUS_META: Record<string, { label: string; chip: string }> = {
-  draft: { label: 'Чернетка', chip: 'bg-amber-100 text-amber-700' },
-  published: { label: 'Опубліковано', chip: 'bg-emerald-100 text-emerald-700' },
-  archived: { label: 'Архів', chip: 'bg-slate-100 text-slate-500' }
+// `tone` — для спільного рядка списку матеріалів, `chip` залишено
+// для місць, де статус малюється власною версткою.
+export const TEMPLATE_STATUS_META: Record<string, { label: string; chip: string; tone: BadgeTone }> = {
+  draft: { label: 'Чернетка', chip: 'bg-amber-100 text-amber-700', tone: 'amber' },
+  published: { label: 'Опубліковано', chip: 'bg-emerald-100 text-emerald-700', tone: 'emerald' },
+  archived: { label: 'Архів', chip: 'bg-slate-100 text-slate-500', tone: 'slate' }
 };
 
 export const formatDateUa = (value?: string | null): string => {
