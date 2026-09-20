@@ -9,6 +9,7 @@ import {
 } from './Admin/MaterialEditDialog';
 import { UserManagement } from './Admin/UserManagement';
 import { useAuth } from '../context/AuthContext';
+import { useAiImportJobs } from '../context/AiImportJobsContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
 import React, { useState, useRef, useMemo, Suspense, lazy } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
@@ -125,6 +126,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   initialTab
 }) => {
   const { hasPermission } = useAuth();
+  // Пакетна ШІ-обробка виконується у фоні: адмінка лише ставить файли в чергу.
+  const { enqueueFiles, isEnqueuing, activeJobs } = useAiImportJobs();
 
   const [newCourse, setNewCourse] = useState<any>({
     title: '', 
@@ -318,7 +321,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const pdfAttachInputRef = useRef<HTMLInputElement>(null);
 
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
-  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
   const [attachedSourcePdf, setAttachedSourcePdf] = useState<File | null>(null);
 
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
@@ -679,76 +681,23 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
     }
   };
 
+  /**
+   * Пачка документів для ШІ-генерації.
+   *
+   * Обробка одного файлу займає десятки секунд, тож усе, що робить адмінка, —
+   * віддає файли серверу в чергу. Далі прогрес показує плаваюча панель, а
+   * людина може спокійно піти в будь-який інший розділ додатка.
+   */
   const handleAiFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setImportStatus(null);
-    setIsGeneratingAi(true);
+    const result = await enqueueFiles(files);
+    setImportStatus({ type: result.ok ? 'success' : 'error', message: result.message });
 
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await fetch('/api/admin/generate-instruction', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || 'AI processing failed');
-
-      const result = parseMarkdown(data.markdown);
-      if (result.sections.length === 0) {
-        setImportStatus({
-          type: 'error',
-          message: 'ШІ не зміг коректно згенерувати інструкцію. Спробуйте інший файл.'
-        });
-        setIsGeneratingAi(false);
-        return;
-      }
-
-      // Keep the original uploaded file (PDF/DOCX/TXT) and the full raw AI-generated
-      // Markdown (with stop-lists/quiz questions) attached to the section being imported.
-      result.sections[0].rawMarkdown = data.markdown;
-      if (data.sourceFileToken) {
-        result.sections[0].sourceFileToken = data.sourceFileToken;
-        result.sections[0].sourceFileName = data.sourceFileName;
-        result.sections[0].sourceMimeType = data.sourceMimeType;
-      }
-      // Скріншоти, витягнуті сервером з PDF: за цим токеном вони переїдуть
-      // у теку документа поруч з оригіналом та .md файлом
-      if (data.assetsToken) {
-        result.sections[0].assetsToken = data.assetsToken;
-      }
-
-      const report = await onImport(result.sections, result.questions, false);
-
-      const extracted = Array.isArray(data.assets) ? data.assets.length : 0;
-      // Скріншот доходить до читача лише якщо модель поставила на нього посилання,
-      // тож показуємо обидва числа — інакше «збережено 7» вводить в оману.
-      const imagesNote = extracted === 0
-        ? ' Скріншотів у документі не знайдено.'
-        : report
-          ? ` Скріншотів: знайдено ${extracted}, вставлено в текст — ${report.used}.`
-            + (report.dropped > 0 ? ` Прибрано ${report.dropped} посилань на неіснуючі файли.` : '')
-          : ` Збережено скріншотів: ${extracted}.`;
-
-      setImportStatus({
-        type: 'success',
-        message: `ШІ успішно обробив файл та створив: ${result.sections.length} інструкцій та ${result.questions.length} питань.`
-          + imagesNote
-      });
-    } catch (err: any) {
-      setImportStatus({
-        type: 'error',
-        message: err.message || 'Помилка при генерації через AI.'
-      });
-    } finally {
-      setIsGeneratingAi(false);
-      if (aiFileInputRef.current) {
-        aiFileInputRef.current.value = '';
-      }
+    if (aiFileInputRef.current) {
+      aiFileInputRef.current.value = '';
     }
   };
 
@@ -1214,10 +1163,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
                     {/* AI Generation Upload */}
                     <div className="p-6 border-2 border-dashed border-indigo-200 hover:border-indigo-300 rounded-xl bg-indigo-50/30 flex flex-col items-center justify-center text-center transition relative overflow-hidden">
-                      {isGeneratingAi && (
+                      {isEnqueuing && (
                         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                           <RefreshCw className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
-                          <span className="text-xs font-bold text-indigo-900">ШІ аналізує документ...</span>
+                          <span className="text-xs font-bold text-indigo-900">Завантаження файлів...</span>
                         </div>
                       )}
                       <Sparkles className="w-8 h-8 text-indigo-500 mb-2" />
@@ -1225,12 +1174,14 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         2. ШІ-Генерація (docx, pdf, txt)
                       </p>
                       <p className="text-xs text-indigo-500/80 mb-4 max-w-sm">
-                        Завантажте сирий документ, і ШІ сам згенерує інструкцію та тести.
+                        Виберіть один або одразу кілька документів (до 25 за раз). ШІ обробить їх у фоні —
+                        можна закрити цю сторінку та працювати далі, прогрес показується в кутку екрана.
                       </p>
 
                       <input 
                         type="file" 
                         accept=".pdf,.txt,.docx"
+                        multiple
                         className="hidden" 
                         ref={aiFileInputRef}
                         onChange={handleAiFileUpload}
@@ -1243,11 +1194,37 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             aiFileInputRef.current.click();
                           }
                         }}
-                        disabled={isGeneratingAi}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition w-full max-w-[200px]"
+                        disabled={isEnqueuing}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition w-full max-w-[220px]"
                       >
-                        Обробити через ШІ
+                        Вибрати файли та обробити
                       </button>
+
+                      {activeJobs.length > 0 && (
+                        <div className="mt-4 w-full max-w-[280px] space-y-2">
+                          {activeJobs.map(job => (
+                            <div key={job.id} className="text-left">
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-900 mb-1">
+                                <span className="truncate pr-2">
+                                  Оброблено {job.processedFiles} з {job.totalFiles}
+                                </span>
+                                <span className="shrink-0">{job.percent}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-indigo-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                                  style={{ width: `${job.percent}%` }}
+                                />
+                              </div>
+                              {job.currentFileName && (
+                                <p className="text-[10px] text-indigo-500 mt-1 truncate" title={job.currentFileName}>
+                                  Зараз: {job.currentFileName}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -24,6 +24,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { RichTextWithImages } from './RichTextWithImages';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 interface InstructionViewerProps {
   sections: InstructionSection[];
@@ -56,6 +57,8 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
 }) => {
   const [activeSectionId, setActiveSectionId] = useState<string | null>(initialSectionId || null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Зображення, відкрите на весь екран (лайтбокс)
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; alt: string } | null>(null);
 
   // Setup active course and sections
   const activeCourse = courseId ? courses.find(c => c.id === courseId) : undefined;
@@ -323,6 +326,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                 contentMarkdown={activeSection.contentMarkdown} 
                 contentHtml={activeSection.contentHtml}
                 images={activeSection.images} 
+                onImageClick={(url, alt) => setLightboxImage({ url, alt })}
               />
             </div>
 
@@ -415,6 +419,15 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Перегляд зображення на весь екран */}
+      {lightboxImage && (
+        <ImageLightboxModal
+          imageUrl={lightboxImage.url}
+          title={lightboxImage.alt || 'Скріншот інструкції'}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
     </div>
   );
 };

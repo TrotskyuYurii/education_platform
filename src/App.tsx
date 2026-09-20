@@ -3,6 +3,8 @@ import { Navbar, AppTab } from './components/Navbar';
 import { LoginScreen } from './components/LoginScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { useAuth } from './context/AuthContext';
+import { AiImportJobsProvider } from './context/AiImportJobsContext';
+import { AiImportProgressWidget } from './components/AiImportProgressWidget';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
 
@@ -50,7 +52,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const { user, logout, canManage, primaryRoleLabel } = useAuth();
+  const { user, logout, canManage, primaryRoleLabel, hasPermission } = useAuth();
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
@@ -471,6 +473,7 @@ function MainApp() {
   }
 
   return (
+    <AiImportJobsProvider enabled={hasPermission('admin.access')} onJobFinished={fetchContent}>
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       
       {/* Global Notifications */}
@@ -812,6 +815,10 @@ function MainApp() {
           <NotificationSettingsModal onClose={() => setIsNotificationSettingsOpen(false)} />
         </Suspense>
       )}
+
+      {/* Прогрес фонової ШІ-обробки документів — видно на будь-якій вкладці */}
+      <AiImportProgressWidget />
     </div>
+    </AiImportJobsProvider>
   );
 }

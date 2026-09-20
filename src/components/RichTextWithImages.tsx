@@ -45,6 +45,23 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
   
   if (!content) return null;
 
+  // Зображення всередині Markdown (таблиці, списки тощо) також мають відкриватися у великому вигляді
+  const markdownComponents = {
+    img: ({ src, alt }: { src?: string; alt?: string }) => {
+      const url = normalizeImageUrl(typeof src === 'string' ? src : undefined);
+      if (!url) return null;
+      return (
+        <img
+          src={url}
+          alt={alt || 'Скріншот'}
+          loading="lazy"
+          onClick={() => onImageClick && onImageClick(url, alt || '')}
+          className={`max-h-[400px] w-auto max-w-full object-contain rounded-lg border border-slate-200 ${onImageClick ? 'cursor-zoom-in hover:border-blue-400 transition' : ''}`}
+        />
+      );
+    }
+  };
+
   // We need to parse out images and text segments so we can render images properly
   const segments: { type: 'text' | 'image', text?: string, imageUrl?: string, alt?: string }[] = [];
   
@@ -121,7 +138,7 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
   if (segments.length === 0) {
     return (
       <div className={`markdown-body ${className}`}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {content}
         </ReactMarkdown>
       </div>
@@ -134,7 +151,7 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
         if (seg.type === 'text') {
           return (
             <div key={idx} className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {seg.text || ''}
               </ReactMarkdown>
             </div>

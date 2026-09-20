@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   ZoomIn, 
   ZoomOut, 
   RotateCcw, 
   Download, 
-  Maximize2, 
   Check, 
   Copy,
   Sparkles
@@ -52,6 +52,13 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  // Блокуємо прокручування сторінки під модальним вікном
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 4));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
@@ -111,9 +118,9 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     setIsDragging(false);
   };
 
-  return (
+  const modal = (
     <div 
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200 select-none"
+      className="fixed inset-0 z-[100] flex flex-col bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200 select-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -189,6 +196,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
       {/* Main Image Canvas */}
       <div 
         className="grow overflow-hidden relative flex items-center justify-center p-4 sm:p-8"
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -217,4 +225,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
       </div>
     </div>
   );
+
+  // Рендеримо поверх усієї сторінки, щоб батьківські контейнери не обрізали вікно
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : modal;
 };

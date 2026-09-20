@@ -5,8 +5,6 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import Anthropic from '@anthropic-ai/sdk';
-import mammoth from 'mammoth';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
@@ -19,11 +17,7 @@ import {
 } from './modules/core/session.js';
 import {
   savePendingUpload,
-  finalizePendingUpload,
   openStoredFile,
-  createTempExtractionDir,
-  removeTempExtractionDir,
-  savePendingAssets,
   resolveVersionAsset,
   saveVersionAsset,
   listVersionAssets,
@@ -32,11 +26,24 @@ import {
 } from './services/fileStorage.js';
 import { sendStoredFile, sendStoredInline } from './services/fileDownload.js';
 import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.js';
-import { extractPdfImages } from './services/pdfImages.js';
-import { convertDocxWithImages } from './services/docxImages.js';
-import { buildInstructionPrompt } from '../shared/instructionPrompt.js';
+import {
+  generateInstructionFromDocument,
+  InstructionGenerationError,
+  describeAiError
+} from './services/aiInstructionGenerator.js';
+import { importInstructions } from './services/instructionImport.js';
+import {
+  AiImportJob,
+  enqueueAiImportJob,
+  serializeAiImportJob
+} from './modules/knowledge/aiImportJobs.js';
 
 const upload = multer({ dest: 'uploads/' });
+
+/** Скільки документів дозволено віддати в одну пачку ШІ-обробки. */
+const AI_IMPORT_MAX_FILES = 25;
+/** Скільки завдань показувати в панелі прогресу. */
+const AI_IMPORT_JOB_LIST_LIMIT = 6;
 
 import { orgRouter } from './modules/org/routes.js';
 import { peopleRouter } from './modules/people/routes.js';
@@ -567,77 +574,10 @@ apiRouter.post('/admin/users', requireAuth, requirePermission('users.profile.edi
 apiRouter.post('/admin/import', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { sections, questions, replace } = req.body;
-    if (replace) {
-      await Section.deleteMany({});
-      await Question.deleteMany({});
-    }
-
-    // sourceFileToken/sourceFileName/sourceMimeType/assetsToken aren't Section schema fields —
-    // pull them off before insertMany, then finalize the pending upload afterwards
-    // once we know the section actually exists.
-    const pendingFileFinalizations: Array<{ sectionId: string; token: string; fileName: string; mimeType: string }> = [];
-    // Звіт по скріншотах: адміну важливо бачити не лише «скільки збережено»,
-    // а й скільки з них модель справді розставила в тексті інструкції.
-    const assetReport = { saved: 0, used: 0, dropped: 0 };
-    const cleanSections: any[] = [];
-    for (const s of (sections || [])) {
-      const { sourceFileToken, sourceFileName, sourceMimeType, assetsToken, ...rest } = s;
-      if (sourceFileToken) {
-        pendingFileFinalizations.push({ sectionId: s.id, token: sourceFileToken, fileName: sourceFileName, mimeType: sourceMimeType });
-      }
-
-      // Зображення виносимо в окремі файли ДО запису розділу: інакше мегабайтний
-      // base64 осідає в документі Mongo і впирається в ліміт 16 МБ, замість того
-      // щоб лежати у GridFS поруч з оригіналом та instruction.md.
-      try {
-        const normalized = await normalizeDocumentAssets(rest, {
-          sectionId: rest.id,
-          versionNumber: rest.versionNumber || 1,
-          pendingAssetsToken: assetsToken
-        });
-        Object.assign(rest, normalized.fields, {
-          rawMarkdown: normalized.rawMarkdown,
-          assets: normalized.assets,
-          markdownFile: normalized.markdownFile
-        });
-
-        assetReport.saved += normalized.assets.length;
-        assetReport.used += normalized.usedAssetCount;
-        assetReport.dropped += normalized.droppedLinkCount;
-        if (normalized.droppedLinkCount > 0) {
-          console.warn(
-            `Section ${rest.id}: removed ${normalized.droppedLinkCount} image link(s) pointing to files that do not exist`
-          );
-        }
-      } catch (assetErr) {
-        console.error('Failed to store document images for section', rest.id, assetErr);
-      }
-
-      cleanSections.push(rest);
-    }
-
-    if (cleanSections.length) await Section.insertMany(cleanSections);
-    if (questions?.length) await Question.insertMany(questions);
-
-    for (const pending of pendingFileFinalizations) {
-      try {
-        const sourceFile = await finalizePendingUpload(pending.token, pending.sectionId, 1, pending.fileName, pending.mimeType);
-        await Section.updateOne({ id: pending.sectionId } as any, { $set: { sourceFile } } as any);
-      } catch (fileErr) {
-        console.error('Failed to finalize source file for section', pending.sectionId, fileErr);
-      }
-    }
-
-    // After import, ensure users' progress does not reference deleted or non-existent instructions
-    const allCurrentSections = await Section.find({} as any, { id: 1 } as any);
-    const currentValidIds = allCurrentSections.map(s => s.id);
-    await Progress.updateMany(
-      {},
-      { $pull: { readSectionIds: { $nin: currentValidIds } } } as any
-    );
-
-    res.json({ success: true, assets: assetReport });
+    const assets = await importInstructions(sections, questions, Boolean(replace));
+    res.json({ success: true, assets });
   } catch (err) {
+    console.error('Failed to import data', err);
     res.status(500).json({ error: 'Failed to import data' });
   }
 });
@@ -674,15 +614,6 @@ function userCanAccessSection(user: any, section: any): boolean {
   const deps: string[] = user?.departments || [];
   if (deps.includes('Всі підрозділи')) return true;
   return deps.includes(section.department);
-}
-
-/** Розміри та номер сторінки скріншота — зберігаються разом із файлом, щоб не читати його вдруге. */
-function assetDetails(
-  images: Array<{ fileName: string; width?: number; height?: number; page?: number }>
-): Record<string, { width?: number; height?: number; page?: number }> {
-  return Object.fromEntries(
-    images.map(img => [img.fileName, { width: img.width, height: img.height, page: img.page }])
-  );
 }
 
 
@@ -816,161 +747,94 @@ apiRouter.post('/admin/generate-instruction', requireAuth, requireAdmin, upload.
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      fs.unlinkSync(req.file.path);
-      return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server.' });
-    }
-
-    const anthropic = new Anthropic({ apiKey });
-
-    const mimeType = req.file.mimetype;
-    const isPdf = mimeType === 'application/pdf';
-    const isDocx = mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    const isLegacyDoc = mimeType === 'application/msword';
-
-    let documentBlock: any;
-    let readSucceeded = false;
-    // Скріншоти, витягнуті з оригіналу: зберігаються у файли, модель лише розставляє на них посилання
-    let extractedImages: Array<{ fileName: string; page?: number; width?: number; height?: number; sizeBytes: number }> = [];
-    let assetsToken: string | undefined;
-
-    try {
-      if (isLegacyDoc) {
-        return res.status(400).json({ error: 'Формат .doc не підтримується. Будь ласка, збережіть файл як .docx або .pdf.' });
-      }
-
-      if (isPdf) {
-        const fileBuffer = fs.readFileSync(req.file.path);
-        documentBlock = {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: fileBuffer.toString('base64')
-          }
-        };
-
-        // Модель бачить сторінки PDF, але не вміє повертати сам малюнок, тому
-        // зображення дістаємо самі та кладемо у сховище під токеном очікування.
-        const pending = createTempExtractionDir();
-        try {
-          extractedImages = extractPdfImages(req.file.path, pending.dir);
-          if (extractedImages.length > 0) {
-            await savePendingAssets(pending.token, pending.dir, assetDetails(extractedImages));
-            assetsToken = pending.token;
-          } else {
-            removeTempExtractionDir(pending.dir);
-          }
-        } catch (imgErr) {
-          console.error('Failed to extract images from PDF', imgErr);
-          removeTempExtractionDir(pending.dir);
-          extractedImages = [];
-        }
-      } else if (isDocx) {
-        // Конвертація в HTML (а не extractRawText) зберігає і структуру документа,
-        // і місце кожного скріншота в тексті — модель бачить, до якого кроку він належить.
-        const pending = createTempExtractionDir();
-        try {
-          const { text, images } = await convertDocxWithImages(req.file.path, pending.dir);
-          extractedImages = images;
-          documentBlock = { type: 'text', text };
-          if (images.length > 0) {
-            await savePendingAssets(pending.token, pending.dir, assetDetails(images));
-            assetsToken = pending.token;
-          } else {
-            removeTempExtractionDir(pending.dir);
-          }
-        } catch (docxErr) {
-          console.error('Failed to extract images from DOCX', docxErr);
-          removeTempExtractionDir(pending.dir);
-          extractedImages = [];
-          const { value: extractedText } = await mammoth.extractRawText({ path: req.file.path });
-          documentBlock = { type: 'text', text: extractedText };
-        }
-      } else {
-        const extractedText = fs.readFileSync(req.file.path, 'utf-8');
-        documentBlock = { type: 'text', text: extractedText };
-      }
-      readSucceeded = true;
-    } catch (extractErr: any) {
-      console.error('Failed to read/extract uploaded document', extractErr);
-      return res.status(500).json({ error: 'Не вдалося обробити файл. Перевірте формат документа (.pdf, .txt, .docx).' });
-    } finally {
-      if (readSucceeded) {
-        // Keep the original file in durable "pending" storage so it can be attached to
-        // the Section once the user actually imports it (instead of discarding it).
-        try {
-          const { token } = await savePendingUpload(req.file.path);
-          (req as any).sourceFileToken = token;
-        } catch (e) {
-          console.error('Failed to persist source file', e);
-        }
-      } else {
-        // Rejected/unreadable upload — nothing worth keeping
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {
-          console.error('Failed to clean up temp file', e);
-        }
-      }
-    }
-
-    // Now generate the markdown
-    // Промпт та правила — спільні з адмінкою (shared/instructionPrompt.ts).
-    // Моделі передаємо перелік уже збережених скріншотів, щоб вона розставила
-    // посилання на файли замість вбудованого base64.
-    const aiPromptGuide = buildInstructionPrompt(
-      extractedImages.map(img => ({
-        fileName: img.fileName,
-        page: img.page,
-        width: img.width,
-        height: img.height
-      })),
-      // У тексті з .docx посилання вже стоять на місцях — модель має їх зберегти,
-      // а не розставляти заново (у PDF орієнтиром служить номер сторінки).
-      { inlineMarkers: isDocx }
-    );
-
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-5',
-      max_tokens: 16000,
-      messages: [
-        { role: 'user', content: [documentBlock, { type: 'text', text: aiPromptGuide }] }
-      ]
+    const generated = await generateInstructionFromDocument({
+      filePath: req.file.path,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype
     });
 
-    const markdownText = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n');
-
-    res.json({
-      success: true,
-      markdown: markdownText,
-      sourceFileToken: (req as any).sourceFileToken,
-      sourceFileName: req.file.originalname,
-      sourceMimeType: req.file.mimetype,
-      // Токен теки зі скріншотами: фронтенд повертає його при імпорті, і тоді
-      // зображення переїжджають у теку документа поруч з оригіналом та .md
-      assetsToken,
-      assets: extractedImages.map(img => ({
-        fileName: img.fileName,
-        page: img.page,
-        width: img.width,
-        height: img.height,
-        sizeBytes: img.sizeBytes
-      }))
-    });
+    res.json({ success: true, ...generated });
   } catch (err: any) {
-    console.error('Failed to generate instruction via AI', err);
-    let errMsg = 'Помилка при генерації через AI';
-    if (err?.status === 429 || (err?.message && err.message.includes('429'))) {
-      errMsg = 'Помилка API (429): Недостатньо коштів на балансі Anthropic API або перевищено ліміт запитів. Будь ласка, поповніть баланс на console.anthropic.com.';
-    } else if (err?.message) {
-      errMsg = err.message;
+    if (err instanceof InstructionGenerationError) {
+      return res.status(err.status).json({ error: err.message });
     }
-    res.status(500).json({ error: errMsg });
+    console.error('Failed to generate instruction via AI', err);
+    res.status(500).json({ error: describeAiError(err) });
+  }
+});
+
+/**
+ * Пакетна ШІ-обробка: адмін віддає одразу кілька документів, сервер ставить їх
+ * у чергу і повертає завдання. Далі клієнт лише опитує прогрес — людина може
+ * спокійно працювати з додатком, поки модель розбирає пачку.
+ */
+apiRouter.post('/admin/ai-import-jobs', requireAuth, requireAdmin, upload.array('files', AI_IMPORT_MAX_FILES), async (req: any, res) => {
+  try {
+    const files = (req.files || []) as Express.Multer.File[];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'Не вибрано жодного файлу' });
+    }
+
+    const job = await enqueueAiImportJob({
+      files: files.map(f => ({ originalname: f.originalname, path: f.path, mimetype: f.mimetype, size: f.size })),
+      userId: String(req.user?._id || ''),
+      userName: req.user?.fullName || req.user?.username || req.user?.email || ''
+    });
+
+    res.json({ success: true, job: serializeAiImportJob(job) });
+  } catch (err) {
+    console.error('Failed to enqueue AI import job', err);
+    res.status(500).json({ error: 'Не вдалося поставити файли в чергу обробки' });
+  }
+});
+
+/** Активні та останні завершені завдання поточного адміністратора. */
+apiRouter.get('/admin/ai-import-jobs', requireAuth, requireAdmin, async (req: any, res) => {
+  try {
+    const createdBy = String(req.user?._id || '');
+    const jobs = await AiImportJob
+      .find({ createdBy, dismissedAt: { $exists: false } } as any)
+      .sort({ createdAt: -1 } as any)
+      .limit(AI_IMPORT_JOB_LIST_LIMIT);
+
+    res.json({ jobs: jobs.map(serializeAiImportJob) });
+  } catch (err) {
+    console.error('Failed to list AI import jobs', err);
+    res.status(500).json({ error: 'Не вдалося отримати стан обробки' });
+  }
+});
+
+/** Зупиняє чергу: файл, що вже в роботі, дообробляється, решта пропускається. */
+apiRouter.post('/admin/ai-import-jobs/:id/cancel', requireAuth, requireAdmin, async (req: any, res) => {
+  try {
+    const job = await AiImportJob.findOne({ id: req.params.id, createdBy: String(req.user?._id || '') } as any);
+    if (!job) return res.status(404).json({ error: 'Завдання не знайдено' });
+
+    if (job.status === 'queued' || job.status === 'processing') {
+      job.cancelRequested = true;
+      await job.save();
+    }
+    res.json({ success: true, job: serializeAiImportJob(job) });
+  } catch (err) {
+    console.error('Failed to cancel AI import job', err);
+    res.status(500).json({ error: 'Не вдалося скасувати обробку' });
+  }
+});
+
+/** Прибирає завершене завдання з панелі прогресу. */
+apiRouter.post('/admin/ai-import-jobs/:id/dismiss', requireAuth, requireAdmin, async (req: any, res) => {
+  try {
+    const job = await AiImportJob.findOne({ id: req.params.id, createdBy: String(req.user?._id || '') } as any);
+    if (!job) return res.status(404).json({ error: 'Завдання не знайдено' });
+    if (job.status === 'queued' || job.status === 'processing') {
+      return res.status(409).json({ error: 'Обробка ще триває' });
+    }
+    job.dismissedAt = new Date();
+    await job.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to dismiss AI import job', err);
+    res.status(500).json({ error: 'Не вдалося прибрати завдання' });
   }
 });
 

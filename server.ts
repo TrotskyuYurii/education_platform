@@ -10,6 +10,7 @@ import { errorHandler } from './server/modules/core/errors.js';
 import { FeatureFlag } from './server/modules/core/models.js';
 import { startNotificationScheduler } from './server/modules/notifications/scheduler.js';
 import { cleanupStalePendingUploads } from './server/services/fileStorage.js';
+import { resetInterruptedAiImportJobs } from './server/modules/knowledge/aiImportJobs.js';
 
 async function startServer() {
   const app = express();
@@ -34,6 +35,11 @@ async function startServer() {
   const isDbConnected = await connectDB();
   if (isDbConnected) {
     startNotificationScheduler();
+    // Тимчасові файли пачок, що оброблялися на момент зупинки, вже втрачені —
+    // закриваємо такі завдання, щоб черга не залишилась «вічно в роботі».
+    resetInterruptedAiImportJobs().catch(err =>
+      console.error('Failed to reset interrupted AI import jobs', err)
+    );
   }
 
   // Periodically remove abandoned pending uploads (files uploaded but never imported).
