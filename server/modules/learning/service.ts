@@ -16,6 +16,19 @@ import { OnboardingService } from '../onboarding/service.js';
 // acknowledgment sheet (matches the qualification threshold shown throughout the UI).
 const ACKNOWLEDGMENT_PASS_THRESHOLD = 80;
 
+/**
+ * Позначка часу legacy-документа, з якого користувача вже синхронізували в цьому
+ * процесі. Клієнт опитує /api/progress кожні 15 секунд, а syncFromLegacy для
+ * кожного виклику робив запит плюс по одному updateOne на кожну прочитану
+ * секцію та кожне сповіщення. Для людини з 60 прочитаними розділами це понад
+ * сотня звернень до бази щохвилини — і всі вони після першої міграції нічого не
+ * змінюють. Legacy-документ пише лише syncToLegacy, і той щоразу оновлює
+ * updatedAt, тож незмінна позначка часу однозначно означає «імпортувати нічого».
+ * Кеш живе в пам'яті процесу: після перезапуску або в іншому воркері перша
+ * синхронізація просто відпрацює повністю, тому коректність не залежить від нього.
+ */
+const legacySyncWatermarks = new Map<string, number>();
+
 export class ProgressService {
   /**
    * One-way or two-way migration sync: if user has records in monolithic Progress,
@@ -23,18 +36,51 @@ export class ProgressService {
    */
   static async syncFromLegacy(userId: string | mongoose.Types.ObjectId): Promise<void> {
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
-    const legacy = await Progress.findOne({ userId: userObjectId });
+    const legacy = await Progress.findOne({ userId: userObjectId }).lean<any>();
     if (!legacy) return;
+    await this.applyLegacy(userObjectId, legacy);
+  }
+
+  /**
+   * Те саме, але для списку користувачів: один запит по всіх legacy-документах
+   * замість окремого findOne на кожного. Звіт адміністратора будується по сотнях
+   * співробітників, і саме ці findOne були там основним джерелом затримки.
+   */
+  static async syncManyFromLegacy(userIds: mongoose.Types.ObjectId[]): Promise<void> {
+    if (userIds.length === 0) return;
+    const legacyDocs = await Progress.find({ userId: { $in: userIds } } as any).lean<any[]>();
+    await Promise.all(
+      legacyDocs.map(legacy => this.applyLegacy(new mongoose.Types.ObjectId(legacy.userId), legacy))
+    );
+  }
+
+  private static async applyLegacy(
+    userObjectId: mongoose.Types.ObjectId,
+    legacy: any
+  ): Promise<void> {
+    const cacheKey = userObjectId.toString();
+    const legacyStamp = legacy.updatedAt ? new Date(legacy.updatedAt).getTime() : 0;
+    if (legacyStamp > 0 && legacySyncWatermarks.get(cacheKey) === legacyStamp) {
+      return;
+    }
+
+    // Усі upsert-и нижче складаємо в один bulkWrite на колекцію: та сама робота,
+    // але один похід у базу замість циклу окремих запитів.
+    const readingOps: any[] = [];
+    const certOps: any[] = [];
+    const notificationOps: any[] = [];
 
     // 1. Sync read sections
     if (Array.isArray(legacy.readSectionIds) && legacy.readSectionIds.length > 0) {
       for (const sId of legacy.readSectionIds) {
         if (!sId) continue;
-        await ReadingProgress.updateOne(
-          { userId: userObjectId, sectionId: sId },
-          { $setOnInsert: { userId: userObjectId, sectionId: sId, completedAt: legacy.updatedAt || new Date() } },
-          { upsert: true }
-        );
+        readingOps.push({
+          updateOne: {
+            filter: { userId: userObjectId, sectionId: sId },
+            update: { $setOnInsert: { userId: userObjectId, sectionId: sId, completedAt: legacy.updatedAt || new Date() } },
+            upsert: true
+          }
+        });
       }
     }
 
@@ -64,20 +110,22 @@ export class ProgressService {
     if (Array.isArray(legacy.certificates) && legacy.certificates.length > 0) {
       for (const c of legacy.certificates) {
         if (!c.courseId) continue;
-        await CertificateRecord.updateOne(
-          { userId: userObjectId, courseId: c.courseId, status: 'active' },
-          {
-            $setOnInsert: {
-              userId: userObjectId,
-              courseId: c.courseId,
-              courseTitle: c.courseTitle || 'Курс',
-              issuedAt: c.issuedAt ? new Date(c.issuedAt) : new Date(),
-              expiresAt: c.expiresAt ? new Date(c.expiresAt) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-              status: 'active'
-            }
-          },
-          { upsert: true }
-        );
+        certOps.push({
+          updateOne: {
+            filter: { userId: userObjectId, courseId: c.courseId, status: 'active' },
+            update: {
+              $setOnInsert: {
+                userId: userObjectId,
+                courseId: c.courseId,
+                courseTitle: c.courseTitle || 'Курс',
+                issuedAt: c.issuedAt ? new Date(c.issuedAt) : new Date(),
+                expiresAt: c.expiresAt ? new Date(c.expiresAt) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+                status: 'active'
+              }
+            },
+            upsert: true
+          }
+        });
       }
     }
 
@@ -103,20 +151,35 @@ export class ProgressService {
     if (Array.isArray(legacy.notifications) && legacy.notifications.length > 0) {
       for (const n of legacy.notifications) {
         if (!n.id) continue;
-        await LearningNotification.updateOne(
-          { userId: userObjectId, notificationId: n.id },
-          {
-            $setOnInsert: {
-              userId: userObjectId,
-              notificationId: n.id,
-              message: n.message || '',
-              read: !!n.read,
-              date: n.date ? new Date(n.date) : new Date()
-            }
-          },
-          { upsert: true }
-        );
+        notificationOps.push({
+          updateOne: {
+            filter: { userId: userObjectId, notificationId: n.id },
+            update: {
+              $setOnInsert: {
+                userId: userObjectId,
+                notificationId: n.id,
+                message: n.message || '',
+                read: !!n.read,
+                date: n.date ? new Date(n.date) : new Date()
+              }
+            },
+            upsert: true
+          }
+        });
       }
+    }
+
+    // Колекції незалежні одна від одної, тож пакети йдуть паралельно.
+    // ordered: false — щоб гонка з паралельним записом в одну секцію не
+    // обривала решту операцій пакета.
+    await Promise.all([
+      readingOps.length ? ReadingProgress.bulkWrite(readingOps, { ordered: false }) : null,
+      certOps.length ? CertificateRecord.bulkWrite(certOps, { ordered: false }) : null,
+      notificationOps.length ? LearningNotification.bulkWrite(notificationOps, { ordered: false }) : null
+    ]);
+
+    if (legacyStamp > 0) {
+      legacySyncWatermarks.set(cacheKey, legacyStamp);
     }
   }
 
@@ -190,26 +253,29 @@ export class ProgressService {
     // Run legacy sync first if needed
     await this.syncFromLegacy(userObjectId);
 
+    // Обробник лише читає й одразу віддає JSON, тож документи Mongoose тут ні до
+    // чого: .lean() прибирає гідрацію на найгарячішому маршруті додатка
+    // (клієнт смикає /api/progress кожні 15 секунд).
     const [currentSections, reads, attempts, certs, ack, notifs] = await Promise.all([
-      Section.find({} as any, { id: 1 } as any),
-      ReadingProgress.find({ userId: userObjectId }),
-      QuizAttempt.find({ userId: userObjectId }).sort({ date: 1 }),
-      CertificateRecord.find({ userId: userObjectId, status: 'active' }).sort({ issuedAt: -1 }),
-      Acknowledgment.findOne({ userId: userObjectId }),
-      LearningNotification.find({ userId: userObjectId }).sort({ date: -1 })
+      Section.find({} as any, { id: 1 } as any).lean<any[]>(),
+      ReadingProgress.find({ userId: userObjectId }).select('sectionId').lean<any[]>(),
+      QuizAttempt.find({ userId: userObjectId }).sort({ date: 1 }).lean<any[]>(),
+      CertificateRecord.find({ userId: userObjectId, status: 'active' }).sort({ issuedAt: -1 }).lean<any[]>(),
+      Acknowledgment.findOne({ userId: userObjectId }).lean<any>(),
+      LearningNotification.find({ userId: userObjectId }).sort({ date: -1 }).lean<any[]>()
     ]);
 
-    const validSectionIds = new Set(currentSections.map(s => s.id));
+    const validSectionIds = new Set(currentSections.map((s: any) => s.id));
     const validReadIds = reads
-      .map(r => r.sectionId)
+      .map((r: any) => r.sectionId)
       .filter(id => validSectionIds.has(id));
 
     const bestScore = attempts.length > 0 
-      ? Math.max(...attempts.map(a => a.percentage || 0)) 
+      ? Math.max(...attempts.map((a: any) => a.percentage || 0)) 
       : 0;
-    const totalAnswers = attempts.reduce((sum, a) => sum + (a.total || 0), 0);
+    const totalAnswers = attempts.reduce((sum: number, a: any) => sum + (a.total || 0), 0);
 
-      const attemptsList = attempts.map(a => ({
+      const attemptsList = attempts.map((a: any) => ({
         date: a.date ? (a.date instanceof Date ? a.date.toISOString() : new Date(a.date).toISOString()) : new Date().toISOString(),
         score: a.score,
         total: a.total,
@@ -242,13 +308,13 @@ export class ProgressService {
         },
         quizHistory: attemptsList,
         testScores: attemptsList,
-        certificates: certs.map(c => ({
+        certificates: certs.map((c: any) => ({
           courseId: c.courseId,
           courseTitle: c.courseTitle,
           issuedAt: c.issuedAt.toISOString(),
           expiresAt: c.expiresAt.toISOString()
         })),
-        notifications: notifs.map(n => ({
+        notifications: notifs.map((n: any) => ({
           id: n.notificationId,
           message: n.message,
           date: n.date.toISOString(),
@@ -267,8 +333,8 @@ export class ProgressService {
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     
     // Filter against real sections
-    const currentSections = await Section.find({} as any, { id: 1 } as any);
-    const validSectionIds = new Set(currentSections.map(s => s.id));
+    const currentSections = await Section.find({} as any, { id: 1 } as any).lean<any[]>();
+    const validSectionIds = new Set(currentSections.map((s: any) => s.id));
     const seen = new Set<string>();
     const sanitizedIds: string[] = [];
 
@@ -537,8 +603,8 @@ export class ProgressService {
    * Analytics summary report for a list of users (scoped)
    */
   static async getUsersProgressReport(userFilter: any, limit: number = 1000, skip: number = 0) {
-    const currentSections = await Section.find({} as any, { id: 1 } as any);
-    const validSectionIds = new Set(currentSections.map(s => s.id));
+    const currentSections = await Section.find({} as any, { id: 1 } as any).lean<any[]>();
+    const validSectionIds = new Set(currentSections.map((s: any) => s.id));
     const totalSectionsCount = currentSections.length;
 
     const users = await User.find(userFilter)
@@ -552,19 +618,19 @@ export class ProgressService {
     const userIds = users.map(u => u._id);
 
     // Sync from legacy for each user in list to ensure up-to-date data
-    await Promise.all(userIds.map(id => this.syncFromLegacy(id)));
+    await this.syncManyFromLegacy(userIds as mongoose.Types.ObjectId[]);
 
     // Fetch granular data in parallel
     const [allReads, allAttempts, allCerts, allAcks] = await Promise.all([
-      ReadingProgress.find({ userId: { $in: userIds } }),
-      QuizAttempt.find({ userId: { $in: userIds } }).sort({ date: 1 }),
-      CertificateRecord.find({ userId: { $in: userIds }, status: 'active' }),
-      Acknowledgment.find({ userId: { $in: userIds } })
+      ReadingProgress.find({ userId: { $in: userIds } }).select('userId sectionId').lean<any[]>(),
+      QuizAttempt.find({ userId: { $in: userIds } }).sort({ date: 1 }).lean<any[]>(),
+      CertificateRecord.find({ userId: { $in: userIds }, status: 'active' }).lean<any[]>(),
+      Acknowledgment.find({ userId: { $in: userIds } }).lean<any[]>()
     ]);
 
     // Group by userId
     const readsMap = new Map<string, Set<string>>();
-    allReads.forEach(r => {
+    allReads.forEach((r: any) => {
       const uid = r.userId.toString();
       if (!readsMap.has(uid)) readsMap.set(uid, new Set());
       if (validSectionIds.has(r.sectionId)) {
@@ -573,21 +639,21 @@ export class ProgressService {
     });
 
     const attemptsMap = new Map<string, any[]>();
-    allAttempts.forEach(a => {
+    allAttempts.forEach((a: any) => {
       const uid = a.userId.toString();
       if (!attemptsMap.has(uid)) attemptsMap.set(uid, []);
       attemptsMap.get(uid)!.push(a);
     });
 
     const certsMap = new Map<string, any[]>();
-    allCerts.forEach(c => {
+    allCerts.forEach((c: any) => {
       const uid = c.userId.toString();
       if (!certsMap.has(uid)) certsMap.set(uid, []);
       certsMap.get(uid)!.push(c);
     });
 
     const acksMap = new Map<string, any>();
-    allAcks.forEach(ack => {
+    allAcks.forEach((ack: any) => {
       acksMap.set(ack.userId.toString(), ack);
     });
 

@@ -1,23 +1,39 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { Navbar, AppTab } from './components/Navbar';
-import { InstructionViewer } from './components/InstructionViewer';
-import { QuizRunner } from './components/QuizRunner';
-import { CaseSimulator } from './components/CaseSimulator';
-import { AcknowledgmentForm } from './components/AcknowledgmentForm';
-import { TestManagement } from './components/TestManagement';
-import { CourseCatalog } from './components/CourseCatalog';
-import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
-import { AboutApp } from './components/AboutApp';
-import { GlobalSearchModal } from './components/GlobalSearchModal';
-import { MyDay } from './components/MyDay';
-import { PeopleDirectory } from './components/People';
-import { MyOnboarding } from './components/Onboarding';
-import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { useAuth } from './context/AuthContext';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
+
+// Вкладки вантажаться на вимогу: разом вони тягнуть recharts, @xyflow, html2pdf
+// та react-markdown — кілька мегабайт, які на старті потрібні лише одній вкладці.
+// Кожен lazy-імпорт указує на конкретний файл, а не на barrel-індекс, інакше
+// Rollup затягнув би сусідні важкі модулі в той самий чанк.
+const InstructionViewer = lazy(() => import('./components/InstructionViewer').then(m => ({ default: m.InstructionViewer })));
+const QuizRunner = lazy(() => import('./components/QuizRunner').then(m => ({ default: m.QuizRunner })));
+const CaseSimulator = lazy(() => import('./components/CaseSimulator').then(m => ({ default: m.CaseSimulator })));
+const AcknowledgmentForm = lazy(() => import('./components/AcknowledgmentForm').then(m => ({ default: m.AcknowledgmentForm })));
+const TestManagement = lazy(() => import('./components/TestManagement').then(m => ({ default: m.TestManagement })));
+const CourseCatalog = lazy(() => import('./components/CourseCatalog').then(m => ({ default: m.CourseCatalog })));
+const Dashboard = lazy(() => import('./components/Dashboard/Dashboard').then(m => ({ default: m.Dashboard })));
+const AboutApp = lazy(() => import('./components/AboutApp').then(m => ({ default: m.AboutApp })));
+const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
+const MyDay = lazy(() => import('./components/MyDay').then(m => ({ default: m.MyDay })));
+const PeopleDirectory = lazy(() => import('./components/People/PeopleDirectory').then(m => ({ default: m.PeopleDirectory })));
+const MyOnboarding = lazy(() => import('./components/Onboarding/MyOnboarding').then(m => ({ default: m.MyOnboarding })));
+const NotificationSettingsModal = lazy(() => import('./components/NotificationSettingsModal').then(m => ({ default: m.NotificationSettingsModal })));
+
+// Нейтральна заглушка на час підвантаження чанка вкладки: тримає висоту
+// сторінки, щоб футер не стрибав угору й назад.
+function TabFallback() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center" role="status" aria-live="polite">
+      <div className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-blue-600 animate-spin" />
+      <span className="sr-only">Завантаження розділу…</span>
+    </div>
+  );
+}
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -218,16 +234,48 @@ function MainApp() {
     }
   };
 
+  // Фонове опитування має сенс лише поки вкладку видно. У згорнутому вікні воно
+  // дарма навантажує сервер і тримає з'єднання: кожен користувач інакше робив би
+  // 240 зайвих запитів на годину. Повернення на вкладку одразу оновлює дані,
+  // тож користувач не бачить застарілого стану.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
     fetchOnboardingPending();
 
-    // Periodically sync progress/notifications so revocations or updates appear live
-    const interval = setInterval(() => {
+    const poll = () => {
       fetchProgress();
       fetchOnboardingPending();
-    }, 15000);
-    return () => clearInterval(interval);
+    };
+
+    const startPolling = () => {
+      if (pollRef.current !== null) return;
+      pollRef.current = setInterval(poll, 15000);
+    };
+
+    const stopPolling = () => {
+      if (pollRef.current === null) return;
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        poll();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    if (document.visibilityState === 'visible') startPolling();
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   // Sync progress on switching to catalog or dashboard
@@ -400,6 +448,7 @@ function MainApp() {
           <button onClick={() => { void logout(); }} className="text-rose-600 hover:underline text-sm font-medium">Вийти</button>
         </header>
         <main className="grow p-6">
+          <Suspense fallback={<LoadingScreen message="Завантаження..." />}>
           <div className="max-w-4xl mx-auto mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-800 text-sm">
             <strong className="block mb-1">Увага! Потрібне початкове налаштування</strong>
             Ви увійшли під системним обліковим записом. З міркувань безпеки, будь ласка, створіть нового користувача з правами <b>Адміністратор</b>. Після створення нового адміністратора, цей системний обліковий запис буде автоматично видалено і ви не зможете входити під ним.
@@ -415,6 +464,7 @@ function MainApp() {
             onReset={() => {}}
             onRefresh={fetchContent}
           />
+          </Suspense>
         </main>
       </div>
     );
@@ -486,6 +536,7 @@ function MainApp() {
       />
 
       <main className="grow">
+        <Suspense fallback={<TabFallback />}>
         {currentTab === 'myday' && (
           <MyDay
             user={user}
@@ -701,6 +752,7 @@ function MainApp() {
         {currentTab === 'about' && (
           <AboutApp onBack={() => setCurrentTab('catalog')} />
         )}
+        </Suspense>
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-6 print:hidden mt-auto">
@@ -740,19 +792,25 @@ function MainApp() {
       </footer>
 
       {/* Global Omnisearch Modal */}
-      <GlobalSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        spaces={spaces}
-        sections={sections}
-        questions={questions}
-        cases={cases}
-        courses={courses}
-        onNavigateToResult={handleNavigateToSearchResult}
-      />
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            spaces={spaces}
+            sections={sections}
+            questions={questions}
+            cases={cases}
+            courses={courses}
+            onNavigateToResult={handleNavigateToSearchResult}
+          />
+        </Suspense>
+      )}
 
       {isNotificationSettingsOpen && (
-        <NotificationSettingsModal onClose={() => setIsNotificationSettingsOpen(false)} />
+        <Suspense fallback={null}>
+          <NotificationSettingsModal onClose={() => setIsNotificationSettingsOpen(false)} />
+        </Suspense>
       )}
     </div>
   );

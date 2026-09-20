@@ -1,6 +1,5 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Download, Printer, ArrowLeft, Award, FileDown, Trash2 } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { UserProgress } from '../types';
 
 interface CertificateViewProps {
@@ -17,9 +16,12 @@ interface CertificateViewProps {
 
 export function CertificateView({ certificate, employeeInfo, onClose, onDelete }: CertificateViewProps) {
   const certificateRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const handleDownloadPdf = () => {
-    if (!certificateRef.current) return;
+  // html2pdf тягне за собою html2canvas і jsPDF — близько мегабайта коду, який
+  // потрібен лише в мить натискання кнопки. Тому вантажимо його динамічно.
+  const handleDownloadPdf = async () => {
+    if (!certificateRef.current || isExporting) return;
     const element = certificateRef.current;
     const opt = {
       margin:       0,
@@ -28,7 +30,16 @@ export function CertificateView({ certificate, employeeInfo, onClose, onDelete }
       html2canvas:  { scale: 2 },
       jsPDF:        { unit: 'in' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    setIsExporting(true);
+    try {
+      const { default: html2pdf } = await import('html2pdf.js');
+      await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+      console.error('Failed to export certificate to PDF', err);
+      alert('Не вдалося сформувати PDF. Спробуйте ще раз.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handlePrint = () => {
@@ -54,9 +65,9 @@ export function CertificateView({ certificate, employeeInfo, onClose, onDelete }
               <span>Анулювати сертифікат</span>
             </button>
           )}
-          <button onClick={handleDownloadPdf} className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition flex items-center gap-1 text-sm font-bold" title="Завантажити PDF">
+          <button onClick={handleDownloadPdf} disabled={isExporting} className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition flex items-center gap-1 text-sm font-bold disabled:opacity-60 disabled:cursor-wait" title="Завантажити PDF">
             <FileDown className="w-4 h-4" />
-            <span>Завантажити PDF</span>
+            <span>{isExporting ? 'Формуємо PDF…' : 'Завантажити PDF'}</span>
           </button>
           <button onClick={handlePrint} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition" title="Роздрукувати">
             <Printer className="w-5 h-5" />

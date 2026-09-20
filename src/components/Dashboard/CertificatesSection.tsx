@@ -16,7 +16,11 @@ interface CertificatesSectionProps {
   onDeleteCertificate: (courseId: string) => void;
 }
 
-export const CertificatesSection: React.FC<CertificatesSectionProps> = ({
+/**
+ * Працює в парі зі стабілізованими через useCallback обробниками в Dashboard:
+ * без них memo не спрацював би, бо кожен рендер створював би нові функції.
+ */
+export const CertificatesSection = React.memo<CertificatesSectionProps>(({
   certificates,
   selectedUserId,
   isAdmin,
@@ -109,4 +113,5 @@ export const CertificatesSection: React.FC<CertificatesSectionProps> = ({
       </div>
     </div>
   );
-};
+});
+CertificatesSection.displayName = 'CertificatesSection';

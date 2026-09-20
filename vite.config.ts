@@ -72,6 +72,48 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      // Сучасні браузери розуміють ES2022 — менше транспіляційного шуму в бандлі.
+      target: 'es2022',
+      cssCodeSplit: true,
+      // Мапи вихідного коду роздувають артефакт деплою; для продакшену не потрібні.
+      sourcemap: false,
+      // Чанки вже розділені вручну, тож поріг попередження опускаємо до реального.
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          // Важкі сторонні бібліотеки живуть у власних чанках: вони майже не
+          // змінюються між релізами, тож браузер тягне їх з кешу, а не заново.
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('@xyflow') || id.includes('d3-zoom') || id.includes('d3-drag')) {
+              return 'vendor-flow';
+            }
+            if (id.includes('html2pdf') || id.includes('html2canvas') || id.includes('jspdf')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('micromark') ||
+                id.includes('mdast-') || id.includes('unist-') || id.includes('hast-') ||
+                id.includes('vfile') || id.includes('unified')) {
+              return 'vendor-markdown';
+            }
+            if (id.includes('/motion') || id.includes('framer-motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) {
+              return 'vendor-react';
+            }
+            return 'vendor';
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

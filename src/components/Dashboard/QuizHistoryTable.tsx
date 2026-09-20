@@ -19,7 +19,11 @@ interface QuizHistoryTableProps {
   sections?: any[];
 }
 
-export const QuizHistoryTable: React.FC<QuizHistoryTableProps> = ({
+/**
+ * Таблиця історії тестів буває на сотні рядків, а її дані залежать лише від
+ * самого прогресу та довідників курсів і розділів.
+ */
+export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
   quizHistory,
   selectedUserId,
   courses = [],
@@ -158,4 +162,5 @@ export const QuizHistoryTable: React.FC<QuizHistoryTableProps> = ({
       )}
     </div>
   );
-};
+});
+QuizHistoryTable.displayName = 'QuizHistoryTable';

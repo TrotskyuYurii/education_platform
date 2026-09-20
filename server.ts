@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
@@ -15,6 +16,16 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   // Middleware
+  // Стиснення йде першим, щоб охопити і JSON відповідей API, і статику збірки.
+  // /api/content віддає весь markdown інструкцій — саме там виграш найбільший.
+  app.use(compression({
+    // Дрібні відповіді (статуси, лічильники) дешевше віддати як є, ніж стискати.
+    threshold: 1024,
+    filter: (req, res) => {
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    },
+  }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.use(cookieParser());
@@ -78,8 +89,23 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+
+    // Файли в /assets містять хеш вмісту в імені, тож їх можна кешувати назавжди:
+    // новий білд дає нові імена, а браузер повторних запитів уже не робить.
+    app.use('/assets', express.static(path.join(distPath, 'assets'), {
+      immutable: true,
+      maxAge: '1y',
+      index: false,
+    }));
+
+    // Решта статики (іконки, маніфест, sw.js) імені з хешем не має — кешуємо
+    // коротко, щоб оновлення доїжджали до користувачів без ручного скидання.
+    app.use(express.static(distPath, { maxAge: '1h', index: false }));
+
     app.get('*all', (req, res) => {
+      // index.html — точка входу зі списком актуальних чанків; його кешувати не
+      // можна, інакше після релізу браузер шукатиме вже неіснуючі файли.
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

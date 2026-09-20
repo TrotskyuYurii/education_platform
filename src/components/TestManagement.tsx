@@ -1,10 +1,3 @@
-import { OrganizationSettings } from './Admin/OrganizationSettings';
-import { RoleSettings } from './Admin/RoleSettings';
-import { KnowledgeSettings } from './Admin/KnowledgeSettings';
-import { AssignmentSettings } from './Admin/AssignmentSettings';
-import { OnboardingManagement } from './Onboarding';
-import { NotificationTemplates } from './Admin/NotificationTemplates';
-import { SystemLogPanel } from './Admin/SystemLogPanel';
 import { MaterialList, MaterialRow } from './Admin/MaterialList';
 import {
   MaterialEditDialog,
@@ -14,12 +7,39 @@ import {
   FIELD_INPUT_CLASS,
   FIELD_LABEL_CLASS
 } from './Admin/MaterialEditDialog';
-import { AnalyticsReports } from './Analytics/AnalyticsReports';
+import { UserManagement } from './Admin/UserManagement';
 import { useAuth } from '../context/AuthContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, Suspense, lazy } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
-import { TEMPLATE_MD, AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+import { AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+
+/**
+ * Панелі адміністрування вантажаться на вимогу.
+ *
+ * Статичними імпортами вони тягнули у чанк адмінки recharts (через звіти) і
+ * @xyflow (через редактор схем онбордингу) — разом близько пів мегабайта, який
+ * завантажувався навіть тоді, коли адміністратор зайшов лише виправити текст
+ * інструкції. Кожна з них і так малюється за умовою activeTab, тож lazy тут
+ * нічого не змінює в логіці, лише відкладає завантаження коду.
+ */
+const AdminHelpTab = lazy(() => import('./Admin/AdminHelpTab').then(m => ({ default: m.AdminHelpTab })));
+const AnalyticsReports = lazy(() => import('./Analytics/AnalyticsReports').then(m => ({ default: m.AnalyticsReports })));
+const OnboardingManagement = lazy(() => import('./Onboarding/OnboardingManagement').then(m => ({ default: m.OnboardingManagement })));
+const OrganizationSettings = lazy(() => import('./Admin/OrganizationSettings').then(m => ({ default: m.OrganizationSettings })));
+const RoleSettings = lazy(() => import('./Admin/RoleSettings').then(m => ({ default: m.RoleSettings })));
+const KnowledgeSettings = lazy(() => import('./Admin/KnowledgeSettings').then(m => ({ default: m.KnowledgeSettings })));
+const AssignmentSettings = lazy(() => import('./Admin/AssignmentSettings').then(m => ({ default: m.AssignmentSettings })));
+const NotificationTemplates = lazy(() => import('./Admin/NotificationTemplates').then(m => ({ default: m.NotificationTemplates })));
+const SystemLogPanel = lazy(() => import('./Admin/SystemLogPanel').then(m => ({ default: m.SystemLogPanel })));
+
+/** Спільна заглушка на час підвантаження чанка панелі. */
+const PanelFallback = () => (
+  <div className="py-16 flex items-center justify-center" role="status" aria-live="polite">
+    <div className="h-7 w-7 rounded-full border-2 border-slate-200 border-t-blue-600 animate-spin" />
+    <span className="sr-only">Завантаження розділу…</span>
+  </div>
+);
 import { MarkdownEditor } from './MarkdownEditor';
 import { 
   Download, 
@@ -124,8 +144,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
-  const [positions, setPositions] = useState<any[]>([]);
-  const [locations, setLocations] = useState<any[]>([]);
   const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
   const [onboardingCount, setOnboardingCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
@@ -170,13 +188,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [isDeletingDep, setIsDeletingDep] = useState(false);
   const [deletingDepId, setDeletingDepId] = useState<string | null>(null);
 
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch('/api/admin/users');
-      const data = await res.json();
-      if (res.ok) setUsers(data.users);
-    } catch (err) {}
-  };
   const fetchDepartments = async () => {
     try {
       const res = await fetch('/api/v2/org/departments');
@@ -184,29 +195,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
       if (res.ok) setDepartments(Array.isArray(data) ? data : []);
     } catch (err) {}
   };
-  const fetchPositions = async () => {
-    try {
-      const res = await fetch('/api/v2/org/positions');
-      const data = await res.json();
-      if (res.ok) setPositions(Array.isArray(data) ? data : []);
-    } catch (err) {}
-  };
-  const fetchLocations = async () => {
-    try {
-      const res = await fetch('/api/v2/org/locations');
-      const data = await res.json();
-      if (res.ok) setLocations(Array.isArray(data) ? data : []);
-    } catch (err) {}
-  };
-
-  const fetchRoles = async () => {
-    try {
-      const res = await fetch('/api/admin/roles');
-      const data = await res.json();
-      if (res.ok) setRoles(data.roles || []);
-    } catch (err) {}
-  };
-
   const fetchAssignmentsCount = async () => {
     try {
       const res = await fetch('/api/progress-v2/admin/assignments');
@@ -227,12 +215,11 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     } catch (err) {}
   };
 
+  // Підрозділи потрібні одразу (з них будується availableDepartments), а два
+  // лічильники — для бейджів у навігації. Решту довідників тепер вантажить
+  // сама вкладка «Користувачі», коли її відкривають.
   React.useEffect(() => {
     fetchDepartments();
-    fetchPositions();
-    fetchLocations();
-    fetchRoles();
-    fetchUsers();
     fetchAssignmentsCount();
     fetchOnboardingCount();
   }, []);
@@ -262,13 +249,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [createCourseInstSearch, setCreateCourseInstSearch] = useState('');
   const [editCourseInstFilter, setEditCourseInstFilter] = useState('all');
   const [editCourseInstSearch, setEditCourseInstSearch] = useState('');
-const [users, setUsers] = useState<any[]>([]);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [roles, setRoles] = useState<any[]>([]);
-  const [newUser, setNewUser] = useState<any>({ email: '', username: '', password: '', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
-  const [userMsg, setUserMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showEditPassword, setShowEditPassword] = useState(false);
   // Спільний для всіх форм редагування матеріалів стан збереження:
   // діалог показує спінер і текст помилки замість alert().
   const [creatingCase, setCreatingCase] = useState(false);
@@ -281,7 +261,6 @@ const [users, setUsers] = useState<any[]>([]);
   const [isDeletingCase, setIsDeletingCase] = useState(false);
 
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [helpSubTab, setHelpSubTab] = useState('formatting');
 
 const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const [showExportPanel, setShowExportPanel] = useState<boolean>(false);
@@ -369,93 +348,14 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         alert(data.error);
         return;
       }
-      setSelectedUser(null);
-      fetchUsers();
+      setEditingMarkdownInstId(null);
+      setEditingMarkdownContent('');
+      if (onRefresh) await onRefresh();
     } catch (err) {
-      alert('Помилка оновлення користувача');
+      alert('Помилка збереження вмісту інструкції');
     }
   };
 
-  
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUser) return;
-    try {
-      const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: selectedUser.fullName,
-          email: selectedUser.email,
-          departments: selectedUser.departments,
-          departmentId: selectedUser.departmentId,
-          allowedInstructionIds: selectedUser.allowedInstructionIds,
-          role: selectedUser.role,
-          roleKeys: selectedUser.roleKeys || ['employee'],
-          managerId: selectedUser.managerId,
-          positionId: selectedUser.positionId,
-          locationId: selectedUser.locationId,
-          hireDate: selectedUser.hireDate,
-          isActive: selectedUser.isActive,
-          authMethod: selectedUser.authMethod,
-          password: selectedUser.newPassword || undefined
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error);
-        return;
-      }
-      setSelectedUser(null);
-      fetchUsers();
-    } catch (err) {
-      alert('Помилка оновлення користувача');
-    }
-  };
-
-  
-  
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUserMsg(null);
-    const cleanEmail = newUser.email.trim().toLowerCase();
-    
-    if (!cleanEmail.endsWith('@viatec.ua')) {
-      setUserMsg({ type: 'error', text: 'Email має бути виключно в домені @viatec.ua' });
-      return;
-    }
-
-    if (!newUser.password && newUser.authMethod !== 'otp') {
-      setUserMsg({ type: 'error', text: 'Пароль є обов\'язковим полем' });
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          fullName: newUser.fullName,
-          email: cleanEmail, 
-          username: newUser.username, 
-          password: newUser.password || 'TemporaryPassword123!', 
-          authMethod: newUser.authMethod || 'password',
-          role: newUser.role, 
-          roleKeys: newUser.roleKeys || ['employee'], 
-          departmentId: newUser.departmentId, 
-          managerId: newUser.managerId 
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      
-      setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
-      setNewUser({ fullName: '', email: '', username: '', password: '', authMethod: 'password', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
-      fetchUsers();
-    } catch (err: any) {
-      setUserMsg({ type: 'error', text: err.message });
-    }
-  };
   const handleDeleteCase = async (id: string) => { 
     if (!id) return;
     setIsDeletingCase(true); 
@@ -510,29 +410,79 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
     }
   };
 
+  /**
+   * Скільки питань прив'язано до кожної інструкції.
+   *
+   * Раніше на кожну інструкцію робився окремий прохід по всіх питаннях, тобто
+   * O(інструкції × питання): на базі з 200 регламентів і 2000 питань це
+   * чотириста тисяч порівнянь. Один прохід із групуванням у Map дає той самий
+   * результат за O(інструкції + питання).
+   */
+  const questionCountBySection = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const q of questions) {
+      if (!q.sectionId) continue;
+      counts.set(q.sectionId, (counts.get(q.sectionId) || 0) + 1);
+    }
+    return counts;
+  }, [questions]);
+
   const groupedCourses = React.useMemo(() => {
     // Return sections since we are listing instructions
-    return sections.map(sec => {
-      const qCount = questions.filter(q => q.sectionId === sec.id).length;
-      return {
-        id: sec.id,
-        title: sec.title,
-        department: sec.department || 'Загальний',
-        isActive: sec.isActive !== undefined ? sec.isActive : true,
-        questionCount: qCount
-      };
-    });
-  }, [sections, questions]);
+    return sections.map(sec => ({
+      id: sec.id,
+      title: sec.title,
+      department: sec.department || 'Загальний',
+      isActive: sec.isActive !== undefined ? sec.isActive : true,
+      questionCount: questionCountBySection.get(sec.id) || 0
+    }));
+  }, [sections, questionCountBySection]);
 
-  const handleDownloadTemplate = () => {
-    const blob = new Blob([TEMPLATE_MD], { type: 'text/markdown;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'template_quiz_instructions.md';
-    link.click();
-    URL.revokeObjectURL(url);
+  /**
+   * Скільки інструкцій у кожному підрозділі. Обидва списки вибору підрозділу
+   * (створення та редагування курсу) рахували це лінійним пошуком просто в
+   * розмітці, на кожен рендер і для кожного підрозділу.
+   */
+  /**
+   * Інструкції, відфільтровані для списків вибору при створенні та редагуванні
+   * курсу.
+   *
+   * Обидва списки проганяли цей самий ланцюжок фільтрів двічі за рендер: раз
+   * щоб намалювати рядки, і вдруге — щоб перевірити, чи результат порожній.
+   * Разом із полем пошуку це означало чотири проходи по всій базі інструкцій
+   * з приведенням регістру на кожне натискання клавіші.
+   */
+  const filterSections = (departmentFilter: string, search: string) => {
+    const query = search.trim().toLowerCase();
+    return sections.filter(sec => {
+      if (departmentFilter && departmentFilter !== 'all' && sec.department !== departmentFilter) {
+        return false;
+      }
+      if (!query) return true;
+      return (sec.title && sec.title.toLowerCase().includes(query)) ||
+             (sec.department && sec.department.toLowerCase().includes(query));
+    });
   };
+
+  const createCourseVisibleSections = React.useMemo(
+    () => filterSections(createCourseInstFilter, createCourseInstSearch),
+    [sections, createCourseInstFilter, createCourseInstSearch]
+  );
+
+  const editCourseVisibleSections = React.useMemo(
+    () => filterSections(editCourseInstFilter, editCourseInstSearch),
+    [sections, editCourseInstFilter, editCourseInstSearch]
+  );
+
+  const sectionCountByDepartment = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const sec of sections) {
+      const dep = sec.department;
+      if (!dep) continue;
+      counts.set(dep, (counts.get(dep) || 0) + 1);
+    }
+    return counts;
+  }, [sections]);
 
   const handleCopyPrompt = async () => {
     try {
@@ -549,16 +499,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       setCopiedPrompt(true);
       setTimeout(() => setCopiedPrompt(false), 3000);
     }
-  };
-
-  const handleDownloadPrompt = () => {
-    const blob = new Blob([AI_PROMPT_GUIDE], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'ai_prompt_instruction_format.txt';
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleExportInstMD = (instId: string, title: string) => {
@@ -1580,7 +1520,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         >
                           <option value="all">Усі підрозділи ({sections.length})</option>
                           {availableDepartments.map(depName => {
-                            const count = sections.filter(s => s.department === depName).length;
+                            const count = sectionCountByDepartment.get(depName) || 0;
                             return (
                               <option key={depName} value={depName}>{depName} ({count})</option>
                             );
@@ -1599,13 +1539,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       </div>
                     </div>
                     <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
-                      {sections
-                        .filter(sec => !createCourseInstFilter || createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
-                        .filter(sec => {
-                          const q = createCourseInstSearch.trim().toLowerCase();
-                          if (!q) return true;
-                          return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-                        })
+                      {createCourseVisibleSections
                         .map(sec => {
                           const secId = sec.id || (sec as any)._id;
                           const isSelected = (newCourse.instructionIds || []).includes(secId);
@@ -1643,13 +1577,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         <div className="p-6 text-center text-sm text-slate-500">
                           В базі знань ще немає інструкцій. Створіть їх у вкладці «Регламенти / Інструкції».
                         </div>
-                      ) : sections
-                          .filter(sec => !createCourseInstFilter || createCourseInstFilter === 'all' || sec.department === createCourseInstFilter)
-                          .filter(sec => {
-                            const q = createCourseInstSearch.trim().toLowerCase();
-                            if (!q) return true;
-                            return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-                          }).length === 0 ? (
+                      ) : createCourseVisibleSections.length === 0 ? (
                         <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
                       ) : null}
                     </div>
@@ -1927,702 +1855,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
           {/* TAB: HELP / TEMPLATE */}
           {activeTab === 'help' && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4 flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Формат та шаблон для завантаження</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Повна специфікація розмітки, промпт для моделей ШІ та еталонний файл .md
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCopyPrompt}
-                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border ${
-                      copiedPrompt
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    {copiedPrompt ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4 text-blue-600" />}
-                    <span>{copiedPrompt ? 'Скопійовано!' : 'Скопіювати промпт для ШІ'}</span>
-                  </button>
-                  <button
-                    onClick={handleDownloadTemplate}
-                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-2 shadow-xs"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    <span>Завантажити шаблон (.md)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sub-tabs: Prompt vs Spec vs Template */}
-              <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl max-w-md">
-                <button
-                  type="button"
-                  onClick={() => setHelpSubTab('prompt')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    helpSubTab === 'prompt'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Промпт для ШІ</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHelpSubTab('spec')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    helpSubTab === 'spec'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Специфікація полів</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHelpSubTab('template')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    helpSubTab === 'template'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Зразок файлу (.md)</span>
-                </button>
-              </div>
-
-              {/* Sub-tab 1: AI Prompt Guide */}
-              {helpSubTab === 'prompt' && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-900 leading-relaxed">
-                    <p className="font-semibold mb-1">Як підготувати матеріали через інший ШІ:</p>
-                    <ol className="list-decimal pl-4 space-y-1">
-                      <li>Натисніть кнопку <strong>«Скопіювати промпт для ШІ»</strong> нижче або вгорі сторінки.</li>
-                      <li>Відкрийте <strong>ChatGPT, Claude, Google Gemini або DeepSeek</strong>.</li>
-                      <li>Вставте скопійований промпт, а після нього прикріпіть або вставте текст вашого вихідного регламенту (з Word, PDF чи наказу).</li>
-                      <li>Модель ШІ згенерує готовий Markdown-текст. Збережіть його у файл з розширенням <code>.md</code> та імпортуйте у вкладці «Імпорт».</li>
-                    </ol>
-                  </div>
-
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Текст промпту для передачі моделям ШІ:
-                      </span>
-                      <button
-                        onClick={handleDownloadPrompt}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-1"
-                      >
-                        <FileDown className="w-3.5 h-3.5" />
-                        <span>Зберегти як .txt</span>
-                      </button>
-                    </div>
-                    <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner max-h-[480px]">
-                      {AI_PROMPT_GUIDE}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-tab 2: Field Specification */}
-              {helpSubTab === 'spec' && (
-                <div className="space-y-6 text-sm text-slate-700">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
-                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                        1. Метадані інструкції
-                      </h4>
-                      <ul className="text-xs space-y-1.5 font-mono text-slate-600">
-                        <li><code># Назва інструкції: [Назва]</code> — головний заголовок</li>
-                        <li><code>**Підзаголовок:** [Короткий опис]</code> — тема розділу</li>
-                        <li><code>**Підрозділ:** [Назва підрозділу]</code> — фільтрація у каталозі</li>
-                        <li><code>**Суть:** [1-2 речення]</code> — ключовий висновок</li>
-                        <li><code>**Роль:** all | cashier | manager | accountant</code></li>
-                        <li><code>**Першоджерело:** [Стор. 1-3, Наказ №4]</code></li>
-                        <li><code>**Час читання:** [хв, наприклад: 4 хв]</code></li>
-                      </ul>
-                    </div>
-                    
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
-                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                        2. Зміст та покрокові дії
-                      </h4>
-                      <ul className="text-xs space-y-1.5 text-slate-600">
-                        <li><code>### ТЕКСТ РЕГЛАМЕНТУ</code> — ключові вимоги маркованим списком (<code>- пункт</code>).</li>
-                        <li><code>### ПОКРОКОВИЙ ПОРЯДОК ДІЙ</code> — кроки з заголовками <code>#### Крок 1: Дія</code>, детальним описом, порадами (<code>💡 Підказка:</code>) та застереженнями (<code>⚠️ Увага:</code>).</li>
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
-                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-pink-600"></span>
-                        3. Додавання зображень
-                      </h4>
-                      <ul className="text-xs space-y-1.5 text-slate-600">
-                        <li>Зображення зберігаються <b>окремими файлами</b> у теці інструкції (поруч з оригіналом PDF та .md файлом), а Markdown лише посилається на них.</li>
-                        <li>Формат посилання у тілі кроку (під <code>#### Крок X</code>):<br/> <code>![Опис скріншота](assets/img-001.png)</code></li>
-                        <li>При автоматичному аналізі PDF платформа сама витягує скріншоти у теку <code>assets/</code> та передає їх перелік моделі ШІ.</li>
-                        <li>Готуючи .md вручну, називайте файли послідовно (<code>img-001.png</code>, <code>img-002.png</code>) і прикріплюйте їх разом з оригіналом документа.</li>
-                        <li>Вставки <code>Base64</code> та зовнішні посилання підтримуються для сумісності: під час імпорту система сама перенесе такі зображення у файли.</li>
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white">
-                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                        4. Таблиці та автоматичні дії
-                      </h4>
-                      <ul className="text-xs space-y-1.5 text-slate-600">
-                        <li><code>### ТАБЛИЦЯ ВІДПОВІДНОСТЕЙ ТА ВІДПОВІДАЛЬНОСТІ</code> — звичайна Markdown таблиця (<code>| Колонка 1 | Колонка 2 |</code>).</li>
-                        <li><code>### АВТОМАТИЧНІ ДІЇ СИСТЕМИ</code> — список дій (<code>- дія</code>), які програма (BAS, CRM) виконує автоматично.</li>
-                        <li><code>### СТОП-ПРАВИЛА</code> — список критичних заборон (<code>- правило</code>), відображається у червоній рамці уваги.</li>
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-slate-200 bg-white md:col-span-2">
-                      <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-                        5. Тестові питання
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <ul className="text-xs space-y-1.5 text-slate-600">
-                          <li><code>### ПИТАННЯ: [Текст питання?]</code></li>
-                          <li><code>**Складність:** easy | medium | hard</code></li>
-                          <li><code>**Контекст:** [Робоча ситуація/кейс]</code></li>
-                          <li><code>**Першоджерело:** [Посилання на регламент]</code></li>
-                        </ul>
-                        <ul className="text-xs space-y-1.5 text-slate-600">
-                          <li><code>- [x] Правильна відповідь</code> (рівно одна позначка <code>[x]</code>)</li>
-                          <li><code>- [ ] Неправильна відповідь</code></li>
-                          <li><code>**Пояснення:** [Чому саме так]</code></li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-tab 3: Template File Preview */}
-              {helpSubTab === 'template' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Повний еталонний приклад файлу .md:
-                    </span>
-                    <button
-                      onClick={handleDownloadTemplate}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-1"
-                    >
-                      <FileDown className="w-3.5 h-3.5" />
-                      <span>Завантажити цей приклад (.md)</span>
-                    </button>
-                  </div>
-                  <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner max-h-[500px]">
-                    {TEMPLATE_MD}
-                  </pre>
-                </div>
-              )}
-            </div>
+            <Suspense fallback={<PanelFallback />}>
+              <AdminHelpTab />
+            </Suspense>
           )}
 
           {/* TAB: USERS */}
           {activeTab === 'users' && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-bold text-slate-900">Керування користувачами</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Створення та редагування користувачів. Налаштування доступів до підрозділів та інструкцій.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-6">
-                <div className="min-w-0">
-                  <h4 className="font-semibold text-slate-800 mb-3">Список користувачів</h4>
-                  <div className="space-y-2 max-h-[min(640px,calc(100vh-20rem))] overflow-y-auto pr-2">
-                    {users.map(u => (
-                      <div 
-                        key={u._id}
-                        onClick={() => {
-                          const normalizedDeptId = typeof u.departmentId === 'object' && u.departmentId ? u.departmentId._id : u.departmentId;
-                          const normalizedManagerId = typeof u.managerId === 'object' && u.managerId ? u.managerId._id : u.managerId;
-                          const normalizedDepts = Array.isArray(u.departments)
-                            ? u.departments.map((d: any) => typeof d === 'string' ? d : d?.name).filter(Boolean)
-                            : [];
-                          setSelectedUser({
-                            ...u,
-                            departmentId: normalizedDeptId,
-                            managerId: normalizedManagerId,
-                            departments: normalizedDepts
-                          });
-                        }}
-                        className={`p-3.5 rounded-xl border cursor-pointer transition ${selectedUser?._id === u._id ? 'border-purple-500 bg-purple-50/70 shadow-xs' : 'border-slate-200 bg-white hover:border-purple-300'}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <div className="font-semibold text-slate-900 text-sm">
-                              {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
-                            </div>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(u.roleKeys && u.roleKeys.length > 0 ? u.roleKeys : [u.role || 'employee']).map((rk: string) => {
-                                const matchedRole = roles.find(r => r.key === rk);
-                                const isAdm = rk === 'admin';
-                                return (
-                                  <span 
-                                    key={rk} 
-                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
-                                      isAdm 
-                                        ? 'bg-purple-100 text-purple-800 border border-purple-200' 
-                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                    }`}
-                                  >
-                                    {matchedRole?.title || rk}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between gap-2 text-xs border-t border-slate-100 pt-2">
-                          <span className="text-slate-500">
-                            {u.departmentId ? (
-                              <span>Відділ: <strong className="text-slate-700">{
-                                typeof u.departmentId === 'object' && u.departmentId
-                                  ? (u.departmentId.name || 'Призначено')
-                                  : (departments.find(d => (d._id || d.id) === u.departmentId)?.name || 'Призначено')
-                              }</strong></span>
-                            ) : (
-                              <span>Підрозділів: {Array.isArray(u.departments) ? u.departments.length : 0}</span>
-                            )}
-                          </span>
-                          {u.authMethod === 'otp' ? (
-                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                              ✉️ Email-код (8 знаків)
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-medium">
-                              Прямий вхід без коду
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  {selectedUser ? (
-                    <form onSubmit={handleUpdateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-900 text-sm">
-                          Редагування користувача
-                        </h4>
-                        <span className="text-xs text-purple-700 font-mono bg-purple-100 px-2 py-0.5 rounded">
-                          {selectedUser.email || selectedUser.username}
-                        </span>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">ПІБ співробітника</label>
-                        <input
-                          type="text"
-                          value={selectedUser.fullName || ''}
-                          onChange={e => setSelectedUser({...selectedUser, fullName: e.target.value})}
-                          placeholder="напр. Іваненко Петро Васильович"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Email (@viatec.ua) *</label>
-                        <input
-                          type="email"
-                          required
-                          value={selectedUser.email || ''}
-                          onChange={e => setSelectedUser({...selectedUser, email: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-
-                      {/* Role selection (RBAC) */}
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[200px] overflow-y-auto">
-                          {roles.map(r => {
-                            const currentRoles: string[] = selectedUser.roleKeys || [selectedUser.role || 'employee'];
-                            const isChecked = currentRoles.includes(r.key);
-                            return (
-                              <label key={r.key} className="flex items-center gap-2 p-1 rounded hover:bg-slate-50 cursor-pointer text-xs">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={e => {
-                                    let next: string[];
-                                    if (e.target.checked) {
-                                      next = [...currentRoles, r.key];
-                                    } else {
-                                      next = currentRoles.filter(k => k !== r.key);
-                                      if (next.length === 0) next = ['employee'];
-                                    }
-                                    const nextRole = next.includes('admin') ? 'admin' : 'user';
-                                    setSelectedUser({ ...selectedUser, roleKeys: next, role: nextRole });
-                                  }}
-                                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                                />
-                                <div>
-                                  <span className="font-medium text-slate-800">{r.title}</span>
-                                  <span className="text-[10px] text-slate-400 ml-1 font-mono">({r.key})</span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Primary Department and Manager */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Основний підрозділ</label>
-                          <select
-                            value={typeof selectedUser.departmentId === 'object' ? (selectedUser.departmentId?._id || '') : (selectedUser.departmentId || '')}
-                            onChange={e => setSelectedUser({...selectedUser, departmentId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Не обрано</option>
-                            {departments.map(d => (
-                              <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Керівник (Manager)</label>
-                          <select
-                            value={typeof selectedUser.managerId === 'object' ? (selectedUser.managerId?._id || '') : (selectedUser.managerId || '')}
-                            onChange={e => setSelectedUser({...selectedUser, managerId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Без керівника</option>
-                            {users.filter(u => u._id !== selectedUser._id).map(u => (
-                              <option key={u._id} value={u._id}>
-                                {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Position, Location, Hire date, Active status — Крок 10 */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Посада</label>
-                          <select
-                            value={typeof selectedUser.positionId === 'object' ? (selectedUser.positionId?._id || '') : (selectedUser.positionId || '')}
-                            onChange={e => setSelectedUser({...selectedUser, positionId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Не обрано</option>
-                            {positions.map(p => (
-                              <option key={p._id} value={p._id}>{p.title}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Локація</label>
-                          <select
-                            value={typeof selectedUser.locationId === 'object' ? (selectedUser.locationId?._id || '') : (selectedUser.locationId || '')}
-                            onChange={e => setSelectedUser({...selectedUser, locationId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Не обрано</option>
-                            {locations.map(l => (
-                              <option key={l._id} value={l._id}>{l.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Дата найму</label>
-                          <input
-                            type="date"
-                            value={selectedUser.hireDate ? String(selectedUser.hireDate).slice(0, 10) : ''}
-                            onChange={e => setSelectedUser({...selectedUser, hireDate: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          />
-                        </div>
-
-                        <div className="flex items-end pb-2">
-                          <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selectedUser.isActive !== false}
-                              onChange={e => setSelectedUser({...selectedUser, isActive: e.target.checked})}
-                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                            />
-                            Активний співробітник
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-white rounded-xl border border-slate-200">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Варіант авторизації
-                        </label>
-                        <select
-                          value={selectedUser.authMethod || 'password'}
-                          onChange={e => setSelectedUser({...selectedUser, authMethod: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        >
-                          <option value="password">Стандартний логін (email) та пароль</option>
-                          <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Новий пароль {selectedUser.authMethod === 'otp' ? '(не використовується)' : '(залиште порожнім, щоб не змінювати)'}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showEditPassword ? "text" : "password"}
-                            placeholder="••••••••"
-                            disabled={selectedUser.authMethod === 'otp'}
-                            value={selectedUser.newPassword || ''}
-                            onChange={e => setSelectedUser({...selectedUser, newPassword: e.target.value})}
-                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
-                          />
-                          <button
-                            type="button"
-                            disabled={selectedUser.authMethod === 'otp'}
-                            onClick={() => setShowEditPassword(!showEditPassword)}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
-                            title={showEditPassword ? "Приховати пароль" : "Показати пароль"}
-                          >
-                            {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Доступ до підрозділів</label>
-                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
-                          {departments.map(d => (
-                            <label key={d._id} className="flex items-center gap-2 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                checked={selectedUser.departments?.includes(d.name) || false}
-                                onChange={(e) => {
-                                  const deps = selectedUser.departments || [];
-                                  if (e.target.checked) {
-                                    setSelectedUser({...selectedUser, departments: [...deps, d.name]});
-                                  } else {
-                                    setSelectedUser({...selectedUser, departments: deps.filter((x: string) => x !== d.name)});
-                                  }
-                                }}
-                                className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                              />
-                              <span className="text-xs text-slate-700">{d.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-1">Якщо обрано "Всі підрозділи", користувач бачитиме інструкції всіх підрозділів.</p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Обмеження за інструкціями (опціонально)</label>
-                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
-                          {sections.map(s => (
-                            <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                checked={selectedUser.allowedInstructionIds?.includes(s.id) || false}
-                                onChange={(e) => {
-                                  const allowed = selectedUser.allowedInstructionIds || [];
-                                  if (e.target.checked) {
-                                    setSelectedUser({...selectedUser, allowedInstructionIds: [...allowed, s.id]});
-                                  } else {
-                                    setSelectedUser({...selectedUser, allowedInstructionIds: allowed.filter((x: string) => x !== s.id)});
-                                  }
-                                }}
-                                className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                              />
-                              <span className="text-xs text-slate-700">{s.title} <span className="text-slate-400">({s.department})</span></span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2 pt-1">
-                        <button type="submit" className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-xs transition">
-                          Зберегти зміни
-                        </button>
-                        <button type="button" onClick={() => setSelectedUser(null)} className="flex-1 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition">
-                          Скасувати
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleCreateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
-                      <h4 className="font-bold text-slate-900 text-sm">Створити нового користувача</h4>
-                      {userMsg && (
-                        <div className={`p-3 rounded-xl text-xs font-medium ${userMsg.type === 'error' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                          {userMsg.text}
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          ПІБ співробітника
-                        </label>
-                        <input
-                          type="text"
-                          value={newUser.fullName || ''}
-                          onChange={e => setNewUser({...newUser, fullName: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="напр. Іваненко Петро Васильович"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Корпоративний Email (@viatec.ua) *
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={newUser.email}
-                          onChange={e => setNewUser({...newUser, email: e.target.value})}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="user@viatec.ua"
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          Email використовується як логін для входу в систему.
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Пароль {newUser.authMethod === 'otp' ? '(не використовується)' : '*'}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showNewPassword ? "text" : "password"}
-                            required={newUser.authMethod !== 'otp'}
-                            disabled={newUser.authMethod === 'otp'}
-                            value={newUser.password}
-                            onChange={e => setNewUser({...newUser, password: e.target.value})}
-                            className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
-                            placeholder="••••••••"
-                          />
-                          <button
-                            type="button"
-                            disabled={newUser.authMethod === 'otp'}
-                            onClick={() => setShowNewPassword(!showNewPassword)}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
-                            title={showNewPassword ? "Приховати пароль" : "Показати пароль"}
-                          >
-                            {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="p-3 bg-white rounded-xl border border-slate-200">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Варіант авторизації
-                        </label>
-                        <select
-                          value={(newUser as any).authMethod || 'password'}
-                          onChange={e => setNewUser({...newUser, authMethod: e.target.value} as any)}
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        >
-                          <option value="password">Стандартний логін (email) та пароль</option>
-                          <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
-                        </select>
-                      </div>
-
-                      {/* Role selection (RBAC) */}
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">Призначені ролі (RBAC)</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-[200px] overflow-y-auto">
-                          {roles.map(r => {
-                            const currentRoles: string[] = newUser.roleKeys || [newUser.role || 'employee'];
-                            const isChecked = currentRoles.includes(r.key);
-                            return (
-                              <label key={r.key} className="flex items-center gap-2 p-1 rounded hover:bg-slate-50 cursor-pointer text-xs">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={e => {
-                                    let next: string[];
-                                    if (e.target.checked) {
-                                      next = [...currentRoles, r.key];
-                                    } else {
-                                      next = currentRoles.filter(k => k !== r.key);
-                                      if (next.length === 0) next = ['employee'];
-                                    }
-                                    const nextRole = next.includes('admin') ? 'admin' : 'user';
-                                    setNewUser({ ...newUser, roleKeys: next, role: nextRole });
-                                  }}
-                                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                                />
-                                <div>
-                                  <span className="font-medium text-slate-800">{r.title}</span>
-                                  <span className="text-[10px] text-slate-400 ml-1 font-mono">({r.key})</span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Primary Department and Manager */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Основний підрозділ</label>
-                          <select
-                            value={newUser.departmentId || ''}
-                            onChange={e => setNewUser({...newUser, departmentId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Не обрано</option>
-                            {departments.map(d => (
-                              <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Керівник (Manager)</label>
-                          <select
-                            value={newUser.managerId || ''}
-                            onChange={e => setNewUser({...newUser, managerId: e.target.value || undefined})}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          >
-                            <option value="">Без керівника</option>
-                            {users.map(u => (
-                              <option key={u._id} value={u._id}>
-                                {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-semibold text-xs transition">
-                        Створити користувача
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </div>
-            </div>
+            <UserManagement sections={sections} departments={departments} />
           )}
 
           {/* TAB: ROLES & PERMISSIONS */}
+          <Suspense fallback={<PanelFallback />}>
           {activeTab === 'roles' && <RoleSettings />}
 
           {/* TAB: DEPARTMENTS */}
@@ -2666,6 +1910,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               onCatalogChanged={setOnboardingCount}
             />
           )}
+          </Suspense>
 
         </div>
       </div>
@@ -2934,7 +2179,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               >
                 <option value="all">Усі підрозділи ({sections.length})</option>
                 {availableDepartments.map(depName => {
-                  const count = sections.filter(s => s.department === depName).length;
+                  const count = sectionCountByDepartment.get(depName) || 0;
                   return (
                     <option key={depName} value={depName}>{depName} ({count})</option>
                   );
@@ -2953,13 +2198,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
             </div>
           </div>
           <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
-            {sections
-              .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
-              .filter(sec => {
-                const q = editCourseInstSearch.trim().toLowerCase();
-                if (!q) return true;
-                return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-              })
+            {editCourseVisibleSections
               .map(sec => {
                 const secId = sec.id || (sec as any)._id;
                 const isSelected = (editingCourse?.instructionIds || []).includes(secId);
@@ -2995,13 +2234,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               })}
             {sections.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500">В базі знань немає доступних інструкцій</div>
-            ) : sections
-                .filter(sec => !editCourseInstFilter || editCourseInstFilter === 'all' || sec.department === editCourseInstFilter)
-                .filter(sec => {
-                  const q = editCourseInstSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return (sec.title && sec.title.toLowerCase().includes(q)) || (sec.department && sec.department.toLowerCase().includes(q));
-                }).length === 0 ? (
+            ) : editCourseVisibleSections.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
             ) : null}
           </div>

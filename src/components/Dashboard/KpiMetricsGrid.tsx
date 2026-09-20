@@ -9,7 +9,11 @@ interface KpiMetricsGridProps {
   totalQuestionsAnswered: number;
 }
 
-export const KpiMetricsGrid: React.FC<KpiMetricsGridProps> = ({
+/**
+ * Усі пропси — числа, тож memo відсікає геть усі зайві перемальовування:
+ * панель оновиться лише тоді, коли справді зміниться хоч одна цифра.
+ */
+export const KpiMetricsGrid = React.memo<KpiMetricsGridProps>(({
   bestScore,
   completedTestsCount,
   readCount,
@@ -59,4 +63,5 @@ export const KpiMetricsGrid: React.FC<KpiMetricsGridProps> = ({
       </div>
     </div>
   );
-};
+});
+KpiMetricsGrid.displayName = 'KpiMetricsGrid';

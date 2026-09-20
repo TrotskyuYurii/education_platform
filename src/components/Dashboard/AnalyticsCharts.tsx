@@ -12,7 +12,12 @@ interface AnalyticsChartsProps {
   totalSectionsCount: number;
 }
 
-export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
+/**
+ * Найдорожчий вузол дашборда: три SVG-графіки recharts. Пропси приходять з
+ * useMemo батька, тож будь-яка стороння зміна стану — відкриття сертифіката,
+ * перемикання співробітника — більше не перемальовує графіки заново.
+ */
+export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
   scoreByDept,
   readProgress,
   totalSectionsCount,
@@ -116,4 +121,5 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
 
     </div>
   );
-};
+});
+AnalyticsCharts.displayName = 'AnalyticsCharts';

@@ -1331,7 +1331,10 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
       }
     }
 
-    const courses = await Course.find(courseQuery);
+    // .lean() по всьому обробнику: відповідь одразу серіалізується в JSON, тож
+    // гідрація в повноцінні документи Mongoose — це витрачені такти CPU й пам'ять
+    // на кожен запит. На каталозі в сотні інструкцій різниця відчутна.
+    const courses = await Course.find(courseQuery).lean();
     
     // If not admin, restrict instruction visibility
     if (req.user.role !== 'admin') {
@@ -1340,7 +1343,7 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
           // If no specific restrictions, allow based on visible courses OR visible department
           const deps = req.user.departments || [];
           if (!deps.includes('Всі підрозділи')) {
-            const courseInstIds = courses.flatMap(c => c.instructionIds);
+            const courseInstIds = courses.flatMap((c: any) => c.instructionIds);
             instructionQuery.$or = [
               { department: { $in: deps } },
               { id: { $in: courseInstIds } }
@@ -1349,18 +1352,18 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
        }
     }
 
-    const sections = await Section.find(instructionQuery);
-    const sectionIds = sections.map(s => s.id);
-    const questions = await Question.find({ sectionId: { $in: sectionIds } } as any);
+    const sections = await Section.find(instructionQuery).lean();
+    const sectionIds = sections.map((s: any) => s.id);
+    const questions = await Question.find({ sectionId: { $in: sectionIds } } as any).lean();
     
     // Also fetch cases that belong to these courses (or all for admin)
     const caseQuery: any = {};
     if (req.user.role !== 'admin') {
       caseQuery.isActive = true;
-      const courseCaseIds = courses.flatMap(c => c.caseIds || []);
+      const courseCaseIds = courses.flatMap((c: any) => c.caseIds || []);
       caseQuery.id = { $in: courseCaseIds };
     }
-    const cases = await Case.find(caseQuery);
+    const cases = await Case.find(caseQuery).lean();
     
     // Fetch knowledge spaces
     const spaces = await KnowledgeService.getSpaces(req.user.role === 'admin');

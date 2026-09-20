@@ -96,7 +96,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleDeleteCertificate = async (courseId: string) => {
+  // useCallback тут не косметика: без стабільного посилання memo на
+  // CertificatesSection не спрацьовував би — кожен рендер Dashboard підсовував
+  // би секції нову функцію і та перемальовувалась би щоразу.
+  const handleDeleteCertificate = useCallback(async (courseId: string) => {
     if (!isAdmin || !selectedUserId) return;
     if (!confirm('Ви впевнені, що хочете анулювати цей сертифікат? Співробітник отримає сповіщення про це.')) return;
 
@@ -116,7 +119,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       console.error(err);
       alert('Помилка при видаленні сертифікату');
     }
-  };
+  }, [isAdmin, selectedUserId, fetchSelectedUserProgress, fetchUsersList]);
+
+  const handleViewCertificate = useCallback((cert: any) => setSelectedCertificate(cert), []);
 
   // Determine active progress to display (either selected user's or current user's)
   const activeProgress: UserProgress = useMemo(() => {
@@ -296,7 +301,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             certificates={certificates}
             selectedUserId={selectedUserId}
             isAdmin={isAdmin}
-            onViewCertificate={(cert) => setSelectedCertificate(cert)}
+            onViewCertificate={handleViewCertificate}
             onDeleteCertificate={handleDeleteCertificate}
           />
 
