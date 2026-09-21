@@ -849,17 +849,21 @@ apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => 
       isProgressive,
       quizTimeLimitMin,
       quizPassScorePercent,
-      quizMaxAttempts
+      quizMaxAttempts,
+      isActive
     } = req.body;
-    const course = await Course.create({ 
-      id: `course-${Date.now()}`, 
-      title, 
-      department, 
+    const course = await Course.create({
+      id: `course-${Date.now()}`,
+      title,
+      department,
       instructionIds: Array.isArray(instructionIds) ? instructionIds : [],
       useCases: !!useCases,
       hasCertificate: !!hasCertificate,
       certificateValidityYears: certificateValidityYears || 1,
       isProgressive: !!isProgressive,
+      // Форма створення тепер має перемикач «Курс активний» — курс можна
+      // підготувати вимкненим і показати співробітникам пізніше.
+      isActive: isActive === undefined ? true : !!isActive,
       quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
       quizPassScorePercent: quizPassScorePercent !== undefined ? Number(quizPassScorePercent) : 80,
       quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined

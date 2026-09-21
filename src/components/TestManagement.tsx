@@ -1,4 +1,5 @@
 import { MaterialList, MaterialRow } from './Admin/MaterialList';
+import { MaterialPreviewDialog, MaterialPreviewTarget } from './Admin/MaterialPreviewDialog';
 import {
   MaterialEditDialog,
   FormField,
@@ -112,6 +113,22 @@ interface TestManagementProps {
 
 type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog';
 
+/** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
+const blankCourse = () => ({
+  title: '',
+  department: '',
+  instructionIds: [] as string[],
+  caseIds: [] as string[],
+  useCases: false,
+  hasCertificate: false,
+  certificateValidityYears: 1,
+  isActive: true,
+  isProgressive: false,
+  quizPassScorePercent: 80,
+  quizTimeLimitMin: undefined as number | undefined,
+  quizMaxAttempts: undefined as number | undefined
+});
+
 export const TestManagement: React.FC<TestManagementProps> = ({
   sections,
   questions,
@@ -129,21 +146,18 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   // Пакетна ШІ-обробка виконується у фоні: адмінка лише ставить файли в чергу.
   const { enqueueFiles, isEnqueuing, activeJobs } = useAiImportJobs();
 
-  const [newCourse, setNewCourse] = useState<any>({
-    title: '', 
-    department: '', 
-    instructionIds: [], 
-    caseIds: [], 
-    useCases: false, 
-    hasCertificate: false, 
-    certificateValidityYears: 1,
-    isProgressive: false,
-    quizPassScorePercent: 80,
-    quizTimeLimitMin: undefined,
-    quizMaxAttempts: undefined
-  });
+  /**
+   * Форма курсу — одна на створення й редагування.
+   *
+   * Раніше створення курсу було окремим блоком, розгорнутим над списком: та сама
+   * добірка інструкцій, ті самі налаштування тесту, але власна верстка і власний
+   * стан. Через це дві форми розходилися при кожній зміні, а сам блок займав
+   * пів екрана й відсував перелік курсів униз. Тепер курс створюється у тому ж
+   * діалозі, що й редагується (як кейси та призначення), а `creatingCourse`
+   * лише перемикає заголовок і метод збереження.
+   */
   const [editingCourse, setEditingCourse] = useState<any>(null);
-  const [createCourseInstFilter, setCreateCourseInstFilter] = useState('all');
+  const [creatingCourse, setCreatingCourse] = useState(false);
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -249,9 +263,9 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     }
   };
 
-  const [createCourseInstSearch, setCreateCourseInstSearch] = useState('');
-  const [editCourseInstFilter, setEditCourseInstFilter] = useState('all');
-  const [editCourseInstSearch, setEditCourseInstSearch] = useState('');
+  // Фільтр і пошук у добірці інструкцій — спільні для створення й редагування курсу.
+  const [courseInstFilter, setCourseInstFilter] = useState('all');
+  const [courseInstSearch, setCourseInstSearch] = useState('');
   // Спільний для всіх форм редагування матеріалів стан збереження:
   // діалог показує спінер і текст помилки замість alert().
   const [creatingCase, setCreatingCase] = useState(false);
@@ -326,6 +340,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
   const [exportMenuInstId, setExportMenuInstId] = useState<string | null>(null);
+
+  /**
+   * Матеріал, відкритий на перегляд поверх списку. Дає подивитися готовий
+   * вигляд інструкції, курсу чи кейса, не виходячи з адміністрування.
+   */
+  const [previewTarget, setPreviewTarget] = useState<MaterialPreviewTarget | null>(null);
 
   const handleSaveMarkdown = async (md: string) => {
     try {
@@ -441,18 +461,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   }, [sections, questionCountBySection]);
 
   /**
-   * Скільки інструкцій у кожному підрозділі. Обидва списки вибору підрозділу
-   * (створення та редагування курсу) рахували це лінійним пошуком просто в
-   * розмітці, на кожен рендер і для кожного підрозділу.
-   */
-  /**
-   * Інструкції, відфільтровані для списків вибору при створенні та редагуванні
-   * курсу.
+   * Інструкції, відфільтровані для добірки у формі курсу.
    *
-   * Обидва списки проганяли цей самий ланцюжок фільтрів двічі за рендер: раз
-   * щоб намалювати рядки, і вдруге — щоб перевірити, чи результат порожній.
-   * Разом із полем пошуку це означало чотири проходи по всій базі інструкцій
-   * з приведенням регістру на кожне натискання клавіші.
+   * Список проганяв цей самий ланцюжок фільтрів двічі за рендер: раз щоб
+   * намалювати рядки, і вдруге — щоб перевірити, чи результат порожній. Разом
+   * із полем пошуку це означало два проходи по всій базі інструкцій з
+   * приведенням регістру на кожне натискання клавіші.
    */
   const filterSections = (departmentFilter: string, search: string) => {
     const query = search.trim().toLowerCase();
@@ -466,16 +480,16 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
     });
   };
 
-  const createCourseVisibleSections = React.useMemo(
-    () => filterSections(createCourseInstFilter, createCourseInstSearch),
-    [sections, createCourseInstFilter, createCourseInstSearch]
+  const courseVisibleSections = React.useMemo(
+    () => filterSections(courseInstFilter, courseInstSearch),
+    [sections, courseInstFilter, courseInstSearch]
   );
 
-  const editCourseVisibleSections = React.useMemo(
-    () => filterSections(editCourseInstFilter, editCourseInstSearch),
-    [sections, editCourseInstFilter, editCourseInstSearch]
-  );
-
+  /**
+   * Скільки інструкцій у кожному підрозділі. Список вибору підрозділу рахував
+   * це лінійним пошуком просто в розмітці, на кожен рендер і для кожного
+   * підрозділу.
+   */
   const sectionCountByDepartment = React.useMemo(() => {
     const counts = new Map<string, number>();
     for (const sec of sections) {
@@ -1302,6 +1316,15 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     meta={`ID: ${inst.id} · Питань: ${inst.questionCount}`}
                     actions={
                       <>
+                        <button
+                          onClick={() => setPreviewTarget({ kind: 'instruction', id: inst.id })}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
+                          title="Переглянути інструкцію так, як її бачить співробітник"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Перегляд</span>
+                        </button>
+
                         {/* Unified Export Submenu */}
                         <div className="relative">
                           <button
@@ -1438,222 +1461,21 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </p>
               </div>
 
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                <h4 className="font-semibold text-slate-800">Створити новий курс</h4>
-                <div className="flex flex-col gap-3">
-                  <input
-                    type="text"
-                    placeholder="Назва курсу"
-                    value={newCourse.title}
-                    onChange={e => setNewCourse({ ...newCourse, title: e.target.value })}
-                    className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                  />
-                  <select
-                    value={newCourse.department}
-                    onChange={e => setNewCourse({ ...newCourse, department: e.target.value })}
-                    className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                  >
-                    <option value="">Оберіть підрозділ...</option>
-                    {availableDepartments.map(depName => (
-                      <option key={depName} value={depName}>{depName}</option>
-                    ))}
-                  </select>
-                  
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="checkbox"
-                      id="new-course-cert"
-                      checked={newCourse.hasCertificate}
-                      onChange={e => setNewCourse({ ...newCourse, hasCertificate: e.target.checked })}
-                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    <label htmlFor="new-course-cert" className="text-sm text-slate-700">
-                      Видавати сертифікат по завершенню
-                    </label>
-                  </div>
-                  
-                  {newCourse.hasCertificate && (
-                    <div className="flex items-center gap-2 ml-6">
-                      <label className="text-sm text-slate-600">Термін дії (років):</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={newCourse.certificateValidityYears}
-                        onChange={e => setNewCourse({ ...newCourse, certificateValidityYears: parseInt(e.target.value) || 1 })}
-                        className="px-2 py-1 w-20 border border-slate-300 rounded-md text-sm"
-                      />
-                    </div>
-                  )}
-                  
-                  <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                    <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({newCourse.instructionIds?.length || 0} обрано)</div>
-                        <select
-                          value={createCourseInstFilter}
-                          onChange={e => setCreateCourseInstFilter(e.target.value)}
-                          className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="all">Усі підрозділи ({sections.length})</option>
-                          {availableDepartments.map(depName => {
-                            const count = sectionCountByDepartment.get(depName) || 0;
-                            return (
-                              <option key={depName} value={depName}>{depName} ({count})</option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-2 h-4 w-4 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Пошук інструкції за назвою або підрозділом..."
-                          value={createCourseInstSearch}
-                          onChange={e => setCreateCourseInstSearch(e.target.value)}
-                          className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
-                      {createCourseVisibleSections
-                        .map(sec => {
-                          const secId = sec.id || (sec as any)._id;
-                          const isSelected = (newCourse.instructionIds || []).includes(secId);
-                          return (
-                            <label 
-                              key={secId} 
-                              className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
-                                isSelected 
-                                  ? 'bg-blue-50 border-blue-200 shadow-sm' 
-                                  : 'border-transparent hover:bg-slate-50'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={e => {
-                                  const ids = newCourse.instructionIds || [];
-                                  if (e.target.checked) setNewCourse({ ...newCourse, instructionIds: [...ids, secId] });
-                                  else setNewCourse({ ...newCourse, instructionIds: ids.filter((i: any) => i !== secId) });
-                                }}
-                                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className={`text-sm font-medium truncate ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>
-                                  {sec.title}
-                                </div>
-                                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">{sec.department}</span>
-                                </div>
-                              </div>
-                            </label>
-                          );
-                        })}
-                      {sections.length === 0 ? (
-                        <div className="p-6 text-center text-sm text-slate-500">
-                          В базі знань ще немає інструкцій. Створіть їх у вкладці «Регламенти / Інструкції».
-                        </div>
-                      ) : createCourseVisibleSections.length === 0 ? (
-                        <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 mt-4">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={newCourse.useCases || false}
-                        onChange={e => setNewCourse({ ...newCourse, useCases: e.target.checked })}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">Використовувати практичні кейси</span>
-                    </label>
-
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={newCourse.isProgressive || false}
-                        onChange={e => setNewCourse({ ...newCourse, isProgressive: e.target.checked })}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">Послідовне проходження (Курси-кроки)</span>
-                    </label>
-
-                    <div className="grid grid-cols-3 gap-3 mt-2">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Мін. бал (%)</label>
-                        <input
-                          type="number"
-                          min="1" max="100"
-                          value={newCourse.quizPassScorePercent ?? 80}
-                          onChange={e => setNewCourse({ ...newCourse, quizPassScorePercent: Number(e.target.value) })}
-                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Ліміт часу (хв)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="Без ліміту"
-                          value={newCourse.quizTimeLimitMin || ''}
-                          onChange={e => setNewCourse({ ...newCourse, quizTimeLimitMin: e.target.value ? Number(e.target.value) : undefined })}
-                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Макс. спроб</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="Без ліміту"
-                          value={newCourse.quizMaxAttempts || ''}
-                          onChange={e => setNewCourse({ ...newCourse, quizMaxAttempts: e.target.value ? Number(e.target.value) : undefined })}
-                          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!newCourse.title || !newCourse.department) return alert('Заповніть назву та підрозділ');
-                      try {
-                        const res = await fetch('/api/admin/courses', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(newCourse)
-                        });
-                        if (res.ok) {
-                          setNewCourse({ 
-                            title: '', 
-                            department: '', 
-                            instructionIds: [], 
-                            caseIds: [], 
-                            useCases: false, 
-                            hasCertificate: false, 
-                            certificateValidityYears: 1,
-                            isProgressive: false,
-                            quizPassScorePercent: 80,
-                            quizTimeLimitMin: undefined,
-                            quizMaxAttempts: undefined
-                          });
-                          if (onRefresh) await onRefresh();
-                        } else {
-                          const errData = await res.json().catch(() => ({}));
-                          alert(errData.error || 'Не вдалося створити курс');
-                        }
-                      } catch (err) {
-                        console.error('Failed to create course:', err);
-                        alert('Помилка при створенні курсу');
-                      }
-                    }}
-                    className="self-start px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold mt-2 shadow-xs transition"
-                  >
-                    Створити курс
-                  </button>
-                </div>
+              <div className="flex justify-end">
+                <button
+                  id="btn-open-create-course"
+                  onClick={() => {
+                    setMaterialError(null);
+                    setCourseInstFilter('all');
+                    setCourseInstSearch('');
+                    setEditingCourse(blankCourse());
+                    setCreatingCourse(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Створити курс
+                </button>
               </div>
 
               <MaterialList
@@ -1680,7 +1502,20 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     actions={
                       <>
                         <button
-                          onClick={() => { setMaterialError(null); setEditingCourse({
+                          onClick={() => setPreviewTarget({ kind: 'course', id: currentCourseId })}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
+                          title="Переглянути склад курсу та його матеріали"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Перегляд</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMaterialError(null);
+                            setCreatingCourse(false);
+                            setCourseInstFilter('all');
+                            setCourseInstSearch('');
+                            setEditingCourse({
                             id: currentCourseId,
                             _id: course._id,
                             title: course.title,
@@ -1694,7 +1529,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             quizTimeLimitMin: course.quizTimeLimitMin,
                             quizMaxAttempts: course.quizMaxAttempts,
                             isActive: course.isActive !== undefined ? course.isActive : true
-                          }); }}
+                            });
+                          }}
                           className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
                           title="Редагувати курс"
                         >
@@ -1783,7 +1619,16 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         meta={<span className="line-clamp-2">{c.scenario}</span>}
                         actions={
                           <>
-                            <button 
+                            <button
+                              onClick={() => setPreviewTarget({ kind: 'case', id: currentCaseId })}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
+                              title="Переглянути сценарій кейса з правильними відповідями"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Перегляд</span>
+                            </button>
+
+                            <button
                             onClick={() => { setMaterialError(null); setEditingCase(c); }}
                             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
                             title="Редагувати кейс"
@@ -2060,35 +1905,45 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       </MaterialEditDialog>
 
       {/* Редагування курсу */}
+      {/* Створення та редагування курсу — одна форма, як у кейсів */}
       <MaterialEditDialog
         open={Boolean(editingCourse)}
-        onClose={() => { setEditingCourse(null); setMaterialError(null); }}
+        onClose={() => { setEditingCourse(null); setCreatingCourse(false); setMaterialError(null); }}
         icon={<BookOpen className="w-4 h-4" />}
         iconTone="bg-purple-50 text-purple-600 border-purple-100"
-        title="Редагувати курс"
-        subtitle={editingCourse?.title}
+        title={creatingCourse ? 'Створити курс' : 'Редагувати курс'}
+        subtitle={creatingCourse ? 'Оберіть інструкції та умови проходження' : editingCourse?.title}
         size="lg"
         saving={savingMaterial}
         error={materialError}
+        submitLabel={creatingCourse ? 'Створити' : 'Зберегти'}
         submitDisabled={!editingCourse?.title || !editingCourse?.department}
         onSubmit={async () => {
           setSavingMaterial(true);
           setMaterialError(null);
           try {
             const courseIdToUpdate = editingCourse?.id || editingCourse?._id;
-            const res = await fetch(`/api/admin/courses/${encodeURIComponent(courseIdToUpdate)}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(editingCourse)
-            });
+            const res = await fetch(
+              creatingCourse ? '/api/admin/courses' : `/api/admin/courses/${encodeURIComponent(courseIdToUpdate)}`,
+              {
+                method: creatingCourse ? 'POST' : 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(editingCourse)
+              }
+            );
             if (!res.ok) {
               const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.error || 'Не вдалося зберегти зміни курсу');
+              throw new Error(
+                errData.error || (creatingCourse ? 'Не вдалося створити курс' : 'Не вдалося зберегти зміни курсу')
+              );
             }
             setEditingCourse(null);
+            setCreatingCourse(false);
             if (onRefresh) await onRefresh();
           } catch (err: any) {
-            setMaterialError(err?.message || 'Помилка при збереженні курсу');
+            setMaterialError(
+              err?.message || (creatingCourse ? 'Помилка при створенні курсу' : 'Помилка при збереженні курсу')
+            );
           } finally {
             setSavingMaterial(false);
           }
@@ -2150,8 +2005,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
             <div className="flex items-center justify-between">
               <div className="text-sm font-bold text-slate-700">Інструкції для курсу ({editingCourse?.instructionIds?.length || 0} обрано)</div>
               <select
-                value={editCourseInstFilter}
-                onChange={e => setEditCourseInstFilter(e.target.value)}
+                value={courseInstFilter}
+                onChange={e => setCourseInstFilter(e.target.value)}
                 className="px-2 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="all">Усі підрозділи ({sections.length})</option>
@@ -2168,14 +2023,14 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               <input
                 type="text"
                 placeholder="Пошук інструкції за назвою або підрозділом..."
-                value={editCourseInstSearch}
-                onChange={e => setEditCourseInstSearch(e.target.value)}
+                value={courseInstSearch}
+                onChange={e => setCourseInstSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
               />
             </div>
           </div>
           <div className="h-[300px] overflow-y-auto p-2 bg-white flex flex-col gap-1">
-            {editCourseVisibleSections
+            {courseVisibleSections
               .map(sec => {
                 const secId = sec.id || (sec as any)._id;
                 const isSelected = (editingCourse?.instructionIds || []).includes(secId);
@@ -2210,8 +2065,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 );
               })}
             {sections.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500">В базі знань немає доступних інструкцій</div>
-            ) : editCourseVisibleSections.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                В базі знань ще немає інструкцій. Створіть їх у вкладці «Регламенти / Інструкції».
+              </div>
+            ) : courseVisibleSections.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500">За заданими критеріями інструкцій не знайдено</div>
             ) : null}
           </div>
@@ -2328,6 +2185,17 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           }}
         />
       )}
+
+      {/* Перегляд матеріалу зі списків «Інструкції», «Курси» та «Кейси» */}
+      <MaterialPreviewDialog
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+        sections={sections}
+        questions={questions}
+        courses={courses}
+        cases={cases}
+        spaces={spaces}
+      />
     </div>
   );
 };
