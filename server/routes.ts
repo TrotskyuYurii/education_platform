@@ -2,12 +2,12 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { User, Section, Question, Progress, Department, Course, Case } from './models.js';
 import { generateAuthCode, sendAuthCodeEmail } from './email.js';
 import { loginRateLimiter, verifyCodeRateLimiter, resendCodeRateLimiter } from './modules/core/rateLimit.js';
+import { upload } from './modules/core/uploads.js';
 import {
   JWT_SECRET,
   SESSION_COOKIE_NAME,
@@ -38,7 +38,6 @@ import {
   serializeAiImportJob
 } from './modules/knowledge/aiImportJobs.js';
 
-const upload = multer({ dest: 'uploads/' });
 
 /** Скільки документів дозволено віддати в одну пачку ШІ-обробки. */
 const AI_IMPORT_MAX_FILES = 25;
