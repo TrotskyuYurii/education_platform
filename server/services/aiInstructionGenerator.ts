@@ -73,8 +73,10 @@ export async function generateInstructionFromDocument(params: {
   filePath: string;
   originalName: string;
   mimeType: string;
+  /** Назви підрозділів з оргструктури: модель обирає з них, нових не вигадує. */
+  departments?: string[];
 }): Promise<GeneratedInstruction> {
-  const { filePath, originalName, mimeType } = params;
+  const { filePath, originalName, mimeType, departments = [] } = params;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -188,9 +190,12 @@ export async function generateInstructionFromDocument(params: {
       width: img.width,
       height: img.height
     })),
-    // У тексті з .docx посилання вже стоять на місцях — модель має їх зберегти,
-    // а не розставляти заново (у PDF орієнтиром служить номер сторінки).
-    { inlineMarkers: isDocx }
+    {
+      // У тексті з .docx посилання вже стоять на місцях — модель має їх зберегти,
+      // а не розставляти заново (у PDF орієнтиром служить номер сторінки).
+      inlineMarkers: isDocx,
+      departments
+    }
   );
 
   const response = await anthropic.messages.create({

@@ -1,6 +1,7 @@
 import { Section, Question, Progress } from '../models.js';
 import { finalizePendingUpload } from './fileStorage.js';
 import { normalizeDocumentAssets } from './documentAssets.js';
+import { alignDepartmentsWithDirectory } from './departmentDirectory.js';
 
 /**
  * Звіт по скріншотах: адміну важливо бачити не лише «скільки збережено»,
@@ -10,6 +11,8 @@ export interface ImportAssetReport {
   saved: number;
   used: number;
   dropped: number;
+  /** Підрозділи, які довелося замінити на наявні в довіднику. */
+  departmentChanges: Array<{ sectionId: string; from: string; to: string }>;
 }
 
 /**
@@ -33,8 +36,20 @@ export async function importInstructions(
   // pull them off before insertMany, then finalize the pending upload afterwards
   // once we know the section actually exists.
   const pendingFileFinalizations: Array<{ sectionId: string; token: string; fileName: string; mimeType: string }> = [];
-  const assetReport: ImportAssetReport = { saved: 0, used: 0, dropped: 0 };
+  const assetReport: ImportAssetReport = { saved: 0, used: 0, dropped: 0, departmentChanges: [] };
   const cleanSections: any[] = [];
+
+  // Завантаження інструкції не створює підрозділів: назву з документа
+  // зіставляємо з оргструктурою, а без збігу відправляємо матеріал до
+  // системного «Всі підрозділи».
+  try {
+    assetReport.departmentChanges = await alignDepartmentsWithDirectory(sections || [], questions || []);
+    for (const change of assetReport.departmentChanges) {
+      console.warn(`Section ${change.sectionId}: department "${change.from}" is not in the directory, using "${change.to}"`);
+    }
+  } catch (depErr) {
+    console.error('Failed to align instruction departments with the directory', depErr);
+  }
 
   for (const s of (sections || [])) {
     const { sourceFileToken, sourceFileName, sourceMimeType, assetsToken, ...rest } = s;

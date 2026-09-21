@@ -8,6 +8,8 @@ export interface AiImportJobItem {
   status: AiImportItemStatus;
   error?: string;
   sectionTitles?: string[];
+  /** Підрозділи створених інструкцій — після звірки з довідником оргструктури. */
+  sectionDepartments?: string[];
   questionCount?: number;
   assetsFound?: number;
   assetsUsed?: number;

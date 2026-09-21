@@ -116,6 +116,10 @@ const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
                 {item.status === 'done' && (
                   <p className="text-[10px] text-slate-500 truncate">
                     {(item.sectionTitles && item.sectionTitles[0]) || 'Інструкцію створено'}
+                    {/* Підрозділ обирає ШІ з довідника — адміну варто бачити, куди потрапив матеріал. */}
+                    {item.sectionDepartments && item.sectionDepartments[0]
+                      ? ` · ${item.sectionDepartments[0]}`
+                      : ''}
                     {item.questionCount ? ` · питань: ${item.questionCount}` : ''}
                     {item.assetsFound ? ` · скріншотів: ${item.assetsUsed}/${item.assetsFound}` : ''}
                   </p>

@@ -7,6 +7,7 @@ import {
 } from '../../services/aiInstructionGenerator.js';
 import { importInstructions } from '../../services/instructionImport.js';
 import { Section } from '../../models.js';
+import { listDepartmentNames } from '../../services/departmentDirectory.js';
 // Парсер Markdown спільний з адмінкою: інакше пакетна обробка розбирала б
 // відповідь моделі за іншими правилами, ніж завантаження одного файлу.
 import { parseMarkdown } from '../../../src/utils/markdownParser.js';
@@ -24,6 +25,8 @@ const aiImportItemSchema = new mongoose.Schema({
   error: { type: String, default: '' },
   sectionIds: { type: [String], default: [] },
   sectionTitles: { type: [String], default: [] },
+  /** Підрозділи, до яких потрапили створені інструкції (після звірки з довідником). */
+  sectionDepartments: { type: [String], default: [] },
   questionCount: { type: Number, default: 0 },
   assetsFound: { type: Number, default: 0 },
   assetsUsed: { type: Number, default: 0 },
@@ -82,7 +85,7 @@ async function ensureUniqueSectionIds(sections: any[], takenIds: Set<string>): P
 }
 
 /** Обробляє один файл завдання і повертає підсумок для звіту. */
-async function processItem(job: any, index: number, takenIds: Set<string>): Promise<void> {
+async function processItem(job: any, index: number, takenIds: Set<string>, departments: string[]): Promise<void> {
   const item = job.items[index];
 
   item.status = 'processing';
@@ -94,7 +97,8 @@ async function processItem(job: any, index: number, takenIds: Set<string>): Prom
     const generated = await generateInstructionFromDocument({
       filePath: item.tempPath,
       originalName: item.fileName,
-      mimeType: item.mimeType
+      mimeType: item.mimeType,
+      departments
     });
     item.tempPath = '';
 
@@ -123,6 +127,9 @@ async function processItem(job: any, index: number, takenIds: Set<string>): Prom
     item.status = 'done';
     item.sectionIds = parsed.sections.map((s: any) => s.id);
     item.sectionTitles = parsed.sections.map((s: any) => s.title);
+    // Підрозділ читаємо ПІСЛЯ імпорту: саме там назву з документа звіряють
+    // з довідником і, за потреби, замінюють на «Всі підрозділи».
+    item.sectionDepartments = parsed.sections.map((s: any) => s.department);
     item.questionCount = parsed.questions.length;
     item.assetsFound = generated.assets.length;
     item.assetsUsed = report.used;
@@ -153,6 +160,10 @@ async function processJob(job: any): Promise<void> {
   // Id, видані в межах цього завдання: ще не всі з них встигли потрапити в базу.
   const takenIds = new Set<string>();
 
+  // Довідник підрозділів читаємо один раз на завдання: модель має обрати
+  // підрозділ інструкції з нього, а не вигадати власну назву.
+  const departments = await listDepartmentNames();
+
   for (let i = 0; i < job.items.length; i += 1) {
     if (job.items[i].status !== 'pending') continue;
 
@@ -163,7 +174,7 @@ async function processJob(job: any): Promise<void> {
       break;
     }
 
-    await processItem(job, i, takenIds);
+    await processItem(job, i, takenIds, departments);
   }
 
   if (job.cancelRequested) {
@@ -279,6 +290,7 @@ export interface SerializedAiImportItem {
   status: AiImportItemStatus;
   error: string;
   sectionTitles: string[];
+  sectionDepartments: string[];
   questionCount: number;
   assetsFound: number;
   assetsUsed: number;
@@ -327,6 +339,7 @@ export function serializeAiImportJob(job: any): SerializedAiImportJob {
       status: item.status as AiImportItemStatus,
       error: item.error,
       sectionTitles: item.sectionTitles,
+      sectionDepartments: item.sectionDepartments || [],
       questionCount: item.questionCount,
       assetsFound: item.assetsFound,
       assetsUsed: item.assetsUsed

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BookOpen, Check, Copy, FileDown, FileText, Sparkles } from 'lucide-react';
-import { TEMPLATE_MD, AI_PROMPT_GUIDE } from '../../utils/markdownParser';
+import { TEMPLATE_MD, buildAiPromptGuide } from '../../utils/markdownParser';
 
 /**
  * Вкладка «Довідка» розділу адміністрування: специфікація розмітки, промпт для
@@ -9,12 +9,18 @@ import { TEMPLATE_MD, AI_PROMPT_GUIDE } from '../../utils/markdownParser';
  * Винесена з TestManagement з двох причин. По-перше, вона цілком статична і
  * тримає лише два власні прапорці, тож не має приводу перемальовуватись разом
  * з рештою адмінки. По-друге, вона вбудовує в розмітку два великі текстові
- * блоки (TEMPLATE_MD і AI_PROMPT_GUIDE) — окремим модулем вони потрапляють у
+ * блоки (TEMPLATE_MD і текст промпту) — окремим модулем вони потрапляють у
  * власний чанк і не важчають головний код адміністрування.
  */
-export const AdminHelpTab: React.FC = () => {
+interface AdminHelpTabProps {
+  /** Довідник підрозділів — підставляється в промпт, щоб модель обирала з нього. */
+  departments?: string[];
+}
+
+export const AdminHelpTab: React.FC<AdminHelpTabProps> = ({ departments = [] }) => {
   const [helpSubTab, setHelpSubTab] = useState('formatting');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const aiPromptGuide = useMemo(() => buildAiPromptGuide(departments), [departments]);
 
   const handleDownloadTemplate = () => {
     const blob = new Blob([TEMPLATE_MD], { type: 'text/markdown;charset=utf-8;' });
@@ -27,7 +33,7 @@ export const AdminHelpTab: React.FC = () => {
   };
 
   const handleDownloadPrompt = () => {
-    const blob = new Blob([AI_PROMPT_GUIDE], { type: 'text/plain;charset=utf-8;' });
+    const blob = new Blob([aiPromptGuide], { type: 'text/plain;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -38,12 +44,12 @@ export const AdminHelpTab: React.FC = () => {
 
   const handleCopyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(AI_PROMPT_GUIDE);
+      await navigator.clipboard.writeText(aiPromptGuide);
       setCopiedPrompt(true);
       setTimeout(() => setCopiedPrompt(false), 3000);
     } catch (err) {
       const textArea = document.createElement('textarea');
-      textArea.value = AI_PROMPT_GUIDE;
+      textArea.value = aiPromptGuide;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
@@ -151,7 +157,7 @@ export const AdminHelpTab: React.FC = () => {
               </button>
             </div>
             <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner max-h-[480px]">
-              {AI_PROMPT_GUIDE}
+              {aiPromptGuide}
             </pre>
           </div>
         </div>

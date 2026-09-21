@@ -14,7 +14,7 @@ import { useAiImportJobs } from '../context/AiImportJobsContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
 import React, { useState, useRef, useMemo, Suspense, lazy } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
-import { AI_PROMPT_GUIDE, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+import { buildAiPromptGuide, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
 
 /**
  * Панелі адміністрування вантажаться на вимогу.
@@ -88,6 +88,8 @@ export interface ImportAssetReport {
   used: number;
   /** Прибрано посилань на файли, яких не існує */
   dropped: number;
+  /** Підрозділи, яких немає в оргструктурі й які сервер замінив на наявні */
+  departmentChanges?: Array<{ sectionId: string; from: string; to: string }>;
 }
 
 interface TestManagementProps {
@@ -165,12 +167,27 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [onboardingCount, setOnboardingCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
+  /**
+   * Довідник підрозділів як він є в оргструктурі — без назв, підхоплених із
+   * самих інструкцій. Саме цей перелік іде у промпт для ШІ: модель має обрати
+   * з нього, а не вигадати власну назву.
+   */
+  const orgDepartments = React.useMemo(
+    () => departments
+      .map(d => (typeof d?.name === 'string' ? d.name.trim() : ''))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'uk')),
+    [departments]
+  );
+
+  // Для списків вибору додаємо ще й підрозділи, записані в наявних інструкціях:
+  // інакше матеріал, завантажений до запровадження довідника, показував би
+  // порожній вибір.
   const availableDepartments = React.useMemo(() => {
-    const set = new Set<string>();
-    departments.forEach(d => { if (d?.name && typeof d.name === 'string' && d.name.trim()) set.add(d.name.trim()); });
+    const set = new Set<string>(orgDepartments);
     sections.forEach(s => { if (s?.department && typeof s.department === 'string' && s.department.trim()) set.add(s.department.trim()); });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
-  }, [departments, sections]);
+  }, [orgDepartments, sections]);
 
   const handleDeleteCourse = async (id: string) => {
     if (!id) return;
@@ -501,13 +518,14 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   }, [sections]);
 
   const handleCopyPrompt = async () => {
+    const promptText = buildAiPromptGuide(orgDepartments);
     try {
-      await navigator.clipboard.writeText(AI_PROMPT_GUIDE);
+      await navigator.clipboard.writeText(promptText);
       setCopiedPrompt(true);
       setTimeout(() => setCopiedPrompt(false), 3000);
     } catch (err) {
       const textArea = document.createElement('textarea');
-      textArea.value = AI_PROMPT_GUIDE;
+      textArea.value = promptText;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
@@ -666,10 +684,16 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           }
         }
 
-        onImport(result.sections, result.questions, replace);
+        const report = await onImport(result.sections, result.questions, replace);
+        // Підрозділ з файлу міг не збігтися з довідником — попереджаємо одразу,
+        // бо інакше інструкція «загубиться» у «Всіх підрозділах» непомітно.
+        const moved = report?.departmentChanges || [];
         setImportStatus({
           type: 'success',
           message: `Успішно імпортовано: інструкція та ${result.questions.length} питань.`
+            + (moved.length > 0
+              ? ` Підрозділ «${moved[0].from}» відсутній в оргструктурі — інструкцію віднесено до «${moved[0].to}».`
+              : '')
         });
         setAttachedSourcePdf(null);
         if (pdfAttachInputRef.current) pdfAttachInputRef.current.value = '';
@@ -1678,7 +1702,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {/* TAB: HELP / TEMPLATE */}
           {activeTab === 'help' && (
             <Suspense fallback={<PanelFallback />}>
-              <AdminHelpTab />
+              <AdminHelpTab departments={orgDepartments} />
             </Suspense>
           )}
 

@@ -38,17 +38,35 @@ const LocationSchema = z.object({
 });
 
 import { requirePermission } from '../core/permissions.js';
+import { DEFAULT_DEPARTMENT, isDefaultDepartment } from '../../../shared/departments.js';
 
 const requireOrgManage = requirePermission('org.manage');
+
+/**
+ * «Всі підрозділи» — системний запис.
+ *
+ * Його створює ініціалізація бази, на нього спирається перевірка «бачить усі
+ * матеріали» (server/routes.ts) і до нього потрапляють інструкції, підрозділ
+ * яких не вдалося зіставити з довідником. Тому його не можна ані видалити,
+ * ані перейменувати — інакше ці зв'язки мовчки розірвуться.
+ */
+const SYSTEM_DEPARTMENT_ERROR = `«${DEFAULT_DEPARTMENT}» — системний підрозділ: його не можна змінювати або видаляти.`;
 
 // --- Departments ---
 orgRouter.get('/departments', async (req, res) => {
   const items = await Department.find({}).sort({ order: 1, name: 1 }).populate('headUserId', 'fullName email');
-  res.json(items);
+  // Адмінка ховає дії редагування й видалення для системного запису.
+  res.json(items.map((item: any) => ({
+    ...item.toObject(),
+    isSystem: isDefaultDepartment(item.name)
+  })));
 });
 
 orgRouter.post('/departments', requireOrgManage, validateRequest(DepartmentSchema), async (req, res, next) => {
   try {
+    if (isDefaultDepartment(req.body?.name)) {
+      return res.status(400).json({ error: `Підрозділ «${DEFAULT_DEPARTMENT}» уже існує — він створюється системою.` });
+    }
     const item = await Department.create(req.body);
     await auditService.log({
       actorId: (req as any).user._id,
@@ -65,7 +83,13 @@ orgRouter.patch('/departments/:id', requireOrgManage, validateRequest(z.object({
   try {
     const before = await Department.findById(req.params.id);
     if (!before) return res.status(404).json({ error: 'Not found' });
-    
+    if (isDefaultDepartment(before.name)) {
+      return res.status(400).json({ error: SYSTEM_DEPARTMENT_ERROR });
+    }
+    if (req.body?.name !== undefined && isDefaultDepartment(req.body.name)) {
+      return res.status(400).json({ error: `Назву «${DEFAULT_DEPARTMENT}» зарезервовано за системним підрозділом.` });
+    }
+
     const item = await Department.findByIdAndUpdate(req.params.id, req.body, { new: true });
     await auditService.log({
       actorId: (req as any).user._id,
@@ -85,8 +109,8 @@ orgRouter.delete('/departments/:id', requireOrgManage, async (req, res, next) =>
     // this default department is relied on elsewhere (e.g. GET /api/content's
     // "sees everything" check) as a magic string, so deleting it must stay blocked.
     const existing = await Department.findById(req.params.id);
-    if (existing?.name === 'Всі підрозділи') {
-      return res.status(400).json({ error: 'Неможливо видалити підрозділ за замовчуванням' });
+    if (isDefaultDepartment(existing?.name)) {
+      return res.status(400).json({ error: SYSTEM_DEPARTMENT_ERROR });
     }
 
     const item = await Department.findByIdAndDelete(req.params.id);

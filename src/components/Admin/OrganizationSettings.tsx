@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Check, X, MapPin, Briefcase, Building2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, MapPin, Briefcase, Building2, Lock, AlertCircle } from 'lucide-react';
+import { DEFAULT_DEPARTMENT } from '../../../shared/departments';
 
 interface Department {
   _id: string;
@@ -7,6 +8,8 @@ interface Department {
   code?: string;
   isActive: boolean;
   order: number;
+  /** «Всі підрозділи»: створюється системою, редагування й видалення заблоковані. */
+  isSystem?: boolean;
 }
 
 interface Position {
@@ -34,7 +37,9 @@ export const OrganizationSettings = () => {
 
   // State for forms
   const [editingId, setEditingId] = useState<string | null>(null);
-  
+  // Сервер відхиляє зміни системного підрозділу — показуємо причину, а не мовчимо.
+  const [error, setError] = useState<string | null>(null);
+
   const [depForm, setDepForm] = useState({ name: '', code: '', order: 0, isActive: true });
   const [posForm, setPosForm] = useState({ title: '', departmentId: '', grade: '', isActive: true });
   const [locForm, setLocForm] = useState({ name: '', city: '', country: '', timezone: '', isActive: true });
@@ -62,18 +67,27 @@ export const OrganizationSettings = () => {
 
   const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
       const url = editingId ? `/api/v2/org/departments/${editingId}` : '/api/v2/org/departments';
       const method = editingId ? 'PATCH' : 'POST';
-      await fetch(url, {
+      const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(depForm)
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Не вдалося зберегти підрозділ');
+        return;
+      }
       setEditingId(null);
       setDepForm({ name: '', code: '', order: 0, isActive: true });
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      setError('Помилка мережі при збереженні підрозділу');
+    }
   };
 
   const handleSavePosition = async (e: React.FormEvent) => {
@@ -110,10 +124,19 @@ export const OrganizationSettings = () => {
 
   const handleDelete = async (type: string, id: string) => {
     if (!window.confirm('Видалити цей запис?')) return;
+    setError(null);
     try {
-      await fetch(`/api/v2/org/${type}/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v2/org/${type}/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Не вдалося видалити запис');
+        return;
+      }
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      setError('Помилка мережі при видаленні запису');
+    }
   };
 
   return (
@@ -127,28 +150,40 @@ export const OrganizationSettings = () => {
 
       <div className="flex gap-2">
         <button
-          onClick={() => { setActiveSubTab('departments'); setEditingId(null); }}
+          onClick={() => { setActiveSubTab('departments'); setEditingId(null); setError(null); }}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeSubTab === 'departments' ? 'bg-purple-100 text-purple-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
         >
           <Building2 className="w-4 h-4 inline-block mr-2" /> Підрозділи
         </button>
         <button
-          onClick={() => { setActiveSubTab('positions'); setEditingId(null); }}
+          onClick={() => { setActiveSubTab('positions'); setEditingId(null); setError(null); }}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeSubTab === 'positions' ? 'bg-purple-100 text-purple-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
         >
           <Briefcase className="w-4 h-4 inline-block mr-2" /> Посади
         </button>
         <button
-          onClick={() => { setActiveSubTab('locations'); setEditingId(null); }}
+          onClick={() => { setActiveSubTab('locations'); setEditingId(null); setError(null); }}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeSubTab === 'locations' ? 'bg-purple-100 text-purple-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
         >
           <MapPin className="w-4 h-4 inline-block mr-2" /> Локації
         </button>
       </div>
 
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-800">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+          <span className="leading-relaxed">{error}</span>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         {activeSubTab === 'departments' && (
           <div className="space-y-6">
+            <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 leading-relaxed">
+              Перелік підрозділів ведеться лише тут. Завантаження інструкцій нових підрозділів не створює: ШІ обирає
+              підрозділ із цього списку, а якщо впевненого збігу немає — відносить матеріал до «{DEFAULT_DEPARTMENT}».
+            </p>
+
             <form onSubmit={handleSaveDepartment} className="flex gap-3 items-end">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-slate-500 mb-1">Назва підрозділу</label>
@@ -176,11 +211,30 @@ export const OrganizationSettings = () => {
                 <tbody className="divide-y divide-slate-100">
                   {departments.map(d => (
                     <tr key={d._id} className="hover:bg-slate-50">
-                      <td className="py-3 px-4 text-sm text-slate-900 font-medium">{d.name}</td>
+                      <td className="py-3 px-4 text-sm text-slate-900 font-medium">
+                        <span className="inline-flex items-center gap-2 flex-wrap">
+                          {d.name}
+                          {d.isSystem && (
+                            <span
+                              title="Системний запис: до нього потрапляють матеріали без прив'язки до конкретного підрозділу"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wide"
+                            >
+                              <Lock className="w-3 h-3" />
+                              Системний
+                            </span>
+                          )}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-sm text-slate-500">{d.code || '-'}</td>
                       <td className="py-3 px-4 text-sm text-right space-x-2">
-                        <button onClick={() => { setEditingId(d._id); setDepForm({ name: d.name, code: d.code || '', order: d.order, isActive: d.isActive }); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
-                        <button onClick={() => handleDelete('departments', d._id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                        {d.isSystem ? (
+                          <span className="text-xs text-slate-400">Недоступно для змін</span>
+                        ) : (
+                          <>
+                            <button onClick={() => { setError(null); setEditingId(d._id); setDepForm({ name: d.name, code: d.code || '', order: d.order, isActive: d.isActive }); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                            <button onClick={() => handleDelete('departments', d._id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}

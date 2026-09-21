@@ -106,7 +106,7 @@ export const TEMPLATE_MD = `# Назва інструкції: Повернен�
  * Текст промпту спільний із серверним аналізом документа — див. shared/instructionPrompt.ts,
  * щоб правила (зокрема заборона Base64 та формат посилань assets/...) не розходилися.
  */
-export { AI_PROMPT_GUIDE } from '../../shared/instructionPrompt';
+export { buildAiPromptGuide } from '../../shared/instructionPrompt';
 
 /**
  * Нормалізує посилання на зображення.
