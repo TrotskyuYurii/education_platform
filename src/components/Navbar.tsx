@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Users, Bell, Rocket } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Bell, Rocket } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
 
-export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'onboarding' | 'people' | 'signoff' | 'management' | 'dashboard' | 'about';
+export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'onboarding' | 'signoff' | 'management' | 'dashboard' | 'about';
 
 /**
  * Єдиний вигляд пунктів верхнього меню.
@@ -176,13 +176,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       badge: onboardingPendingCount > 0
         ? { text: String(onboardingPendingCount), idleClass: 'bg-amber-100 text-amber-800' }
         : null
-    },
-    {
-      idSuffix: 'people',
-      tab: 'people',
-      icon: Users,
-      label: 'Люди',
-      isActive: currentTab === 'people'
     },
     ...(canManage
       ? [{

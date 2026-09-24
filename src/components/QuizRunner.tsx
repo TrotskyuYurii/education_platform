@@ -19,6 +19,7 @@ import {
   Shuffle
 } from 'lucide-react';
 import { SUCCESS_QUOTES, RESILIENCE_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
+import { useAppSettings } from '../context/AppSettingsContext';
 import {
   DEFAULT_QUIZ_QUESTION_COUNT,
   pickQuizQuestions,
@@ -116,6 +117,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   // Animation overlay state
   const [reaction, setReaction] = useState<{ type: 'success' | 'error', emoji: string, text: string, author?: string } | null>(null);
   const [finalQuote, setFinalQuote] = useState<UkrainianQuote | null>(null);
+  // Висловлювання вмикаються й вимикаються в «Адміністрування → Налаштування»
+  const { settings: appSettings } = useAppSettings();
+  const showQuotes = appSettings.quizQuotesEnabled;
 
   const currentTargetSection = useMemo(() => {
     if (!targetSectionId) return null;
@@ -202,7 +206,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     if (!examMode) {
       const isCorrect = optionIndex === currentQ.correctIndex;
       // ~50% chance to show an authentic Ukrainian motivational quote reaction
-      if (Math.random() < 0.5) {
+      if (showQuotes && Math.random() < 0.5) {
         const list = isCorrect ? SUCCESS_QUOTES : RESILIENCE_QUOTES;
         const randomItem = list[Math.floor(Math.random() * list.length)];
         
@@ -273,7 +277,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     const passScorePercent = currentTargetCourse?.quizPassScorePercent || 80;
     const isPassedResult = questionsToRun.length > 0 && ((correctCount / questionsToRun.length) * 100 >= passScorePercent);
     const quoteList = isPassedResult ? SUCCESS_QUOTES : RESILIENCE_QUOTES;
-    setFinalQuote(quoteList[Math.floor(Math.random() * quoteList.length)]);
+    setFinalQuote(showQuotes ? quoteList[Math.floor(Math.random() * quoteList.length)] : null);
 
     const modeLabel = targetSectionId 
       ? 'Тест за розділом' 
@@ -427,7 +431,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
             {(() => {
-              const pastAttempts = currentTargetCourse ? quizHistory.filter((h: any) => h.courseId === currentTargetCourse.id).length : 0;
+              const pastAttempts = currentTargetCourse ? quizHistory.filter((h: any) => h.mode !== 'cases' && h.courseId === currentTargetCourse.id).length : 0;
               const maxAttempts = currentTargetCourse?.quizMaxAttempts;
               const hasNoAttempts = maxAttempts ? pastAttempts >= maxAttempts : false;
 

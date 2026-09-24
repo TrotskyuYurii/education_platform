@@ -15,8 +15,8 @@ interface DashboardProps {
   sections: InstructionSection[];
   courses?: any[];
   currentUser?: User | null;
-  // Set by the "Люди" directory when an admin jumps here to inspect one
-  // employee's full learning analytics (see App.tsx / EmployeeCard).
+  // Відкрити аналітику конкретного співробітника одразу. Раніше це робив розділ
+  // «Люди» (прибраний з меню); зараз App.tsx проп не передає.
   initialSelectedUserId?: string | null;
 }
 
@@ -128,8 +128,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (selectedUserId && selectedUserData?.progress) {
       const p = selectedUserData.progress;
       const historyList = p.quizHistory || p.testScores || [];
-      const bestScore = historyList.length > 0 
-        ? Math.max(...historyList.map((s: any) => s.percentage || 0)) 
+      // Кейси — тренажер, у найкращий результат тестів вони не входять
+      const testHistory = historyList.filter((s: any) => s.mode !== 'cases');
+      const bestScore = testHistory.length > 0 
+        ? Math.max(...testHistory.map((s: any) => s.percentage || 0)) 
         : (p.bestScore || 0);
       const totalAnswers = historyList.length > 0
         ? historyList.reduce((sum: number, s: any) => sum + (s.total || 0), 0)

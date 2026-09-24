@@ -29,6 +29,7 @@ import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.
 import {
   generateInstructionFromDocument,
   generateAdditionalQuestions,
+  generateCaseFromInstruction,
   InstructionGenerationError,
   describeAiError
 } from './services/aiInstructionGenerator.js';
@@ -95,8 +96,10 @@ import { onboardingRouter } from './modules/onboarding/routes.js';
 import { systemRouter } from './modules/system/routes.js';
 import { foldersRouter } from './modules/folders/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
+import { settingsRouter } from './modules/settings/routes.js';
 import { ActivityService } from './modules/activity/service.js';
 import { OnboardingService } from './modules/onboarding/service.js';
+import { OnboardingAssignment } from './modules/onboarding/models.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
 const requireAdmin = requirePermission('admin.access');
@@ -107,6 +110,7 @@ const requireAdmin = requirePermission('admin.access');
 // only the prefix the frontend actually calls for each one; the rest were dead.
 apiRouter.use('/v2/org', requireAuth, orgRouter);
 apiRouter.use('/v2/people', requireAuth, peopleRouter);
+apiRouter.use('/v2/settings', requireAuth, settingsRouter);
 apiRouter.use('/v2/notifications', requireAuth, notificationsRouter);
 apiRouter.use('/v2/analytics', requireAuth, analyticsRouter);
 apiRouter.use('/progress-v2', requireAuth, progressV2Router);
@@ -1237,6 +1241,45 @@ apiRouter.post('/admin/cases', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * Чернетка кейсу від ШІ за текстом обраної інструкції. Нічого не зберігає:
+ * результат підставляється у форму, і адмін сам вирішує, чи створювати кейс.
+ */
+apiRouter.post('/admin/cases/generate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sectionId = typeof req.body?.sectionId === 'string' ? req.body.sectionId : '';
+    if (!sectionId) return res.status(400).json({ error: 'Спочатку оберіть інструкцію, за якою складати кейс.' });
+    const section = await Section.findOne({ id: sectionId } as any).lean<any>();
+    if (!section) return res.status(404).json({ error: 'Інструкцію не знайдено' });
+
+    const existingTitles = (await Case.find({ sectionId } as any, { title: 1 } as any).lean<any[]>())
+      .map(c => c.title)
+      .slice(0, 50);
+
+    const generated = await generateCaseFromInstruction({
+      instructionTitle: section.title || '',
+      instructionMarkdown: buildSectionMarkdownForAi(section),
+      hint: typeof req.body?.hint === 'string' ? req.body.hint.slice(0, 500) : undefined,
+      existingTitles
+    });
+
+    res.json({
+      success: true,
+      case: {
+        title: generated.title,
+        scenario: generated.scenario,
+        options: generated.options.map((o, i) => ({ id: `opt-${i + 1}`, ...o }))
+      }
+    });
+  } catch (err: any) {
+    if (err instanceof InstructionGenerationError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    console.error('Failed to generate case via AI', err);
+    res.status(500).json({ error: describeAiError(err) });
+  }
+});
+
 apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const caseId = req.params.id;
@@ -1327,12 +1370,26 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
     const sectionIds = sections.map((s: any) => s.id);
     const questions = await Question.find({ sectionId: { $in: sectionIds } } as any).lean();
     
-    // Also fetch cases that belong to these courses (or all for admin)
+    // Кейси співробітника: ті, що прив'язані до доступних йому інструкцій, загальні
+    // (без інструкції), додані до курсу напряму та призначені кроками його онбордингу.
+    // Раніше бралися лише Course.caseIds, які ніде не заповнюються, тож
+    // співробітники не бачили жодного кейсу.
     const caseQuery: any = {};
     if (req.user.role !== 'admin') {
-      caseQuery.isActive = true;
       const courseCaseIds = courses.flatMap((c: any) => c.caseIds || []);
-      caseQuery.id = { $in: courseCaseIds };
+      const onboardingCaseIds = (await OnboardingAssignment.find(
+        { userId: req.user._id } as any,
+        { 'graph.nodes.type': 1, 'graph.nodes.targetId': 1 } as any
+      ).lean<any[]>())
+        .flatMap((a: any) => a.graph?.nodes || [])
+        .filter((n: any) => n.type === 'case' && n.targetId)
+        .map((n: any) => n.targetId);
+      caseQuery.isActive = true;
+      caseQuery.$or = [
+        { sectionId: { $in: sectionIds } },
+        { sectionId: { $in: [null, ''] } },
+        { id: { $in: [...courseCaseIds, ...onboardingCaseIds] } }
+      ];
     }
     const cases = await Case.find(caseQuery).lean();
     

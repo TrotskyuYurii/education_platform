@@ -19,7 +19,7 @@
     "migrate:dry": "tsx scripts/migrations/runner.ts --dry-run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.1",
+    "@anthropic-ai/sdk": "^0.128.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/compression": "^1.8.1",
     "@vitejs/plugin-react": "^5.0.4",

@@ -43,6 +43,14 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
     allowedScopes: ['all']
   },
   {
+    code: 'system.settings.manage',
+    name: 'Керування налаштуваннями додатка',
+    category: 'system',
+    categoryLabel: 'Система та безпека',
+    description: 'Зміна глобальних налаштувань додатка у вкладці «Налаштування» (наприклад, показ висловлювань у тестах)',
+    allowedScopes: ['all']
+  },
+  {
     code: 'users.profile.view',
     name: 'Перегляд користувачів',
     category: 'users',

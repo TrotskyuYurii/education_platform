@@ -21,6 +21,7 @@ import {
   Send,
   AlertCircle
 } from 'lucide-react';
+import { UserSearchSelect } from './UserSearchSelect';
 import { 
   LearningAssignment, 
   AssignmentStats, 
@@ -42,6 +43,29 @@ interface UserOption {
   email?: string;
   departmentId?: string;
   departments?: string[];
+}
+
+/** Сервер віддає щонайбільше стільки користувачів за запит. */
+const USERS_PAGE_LIMIT = 1000;
+
+/**
+ * Усі користувачі сторінками: інакше після першої тисячі людей частину
+ * співробітників не можна було б знайти й обрати у формі призначення.
+ * Повертає null, якщо перша ж сторінка не завантажилась.
+ */
+async function fetchAllUsers(): Promise<UserOption[] | null> {
+  const all: UserOption[] = [];
+  for (let skip = 0; skip < USERS_PAGE_LIMIT * 50; skip += USERS_PAGE_LIMIT) {
+    const res = await fetch(`/api/admin/users?limit=${USERS_PAGE_LIMIT}&skip=${skip}`);
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) return skip === 0 ? null : all;
+    const data = await res.json();
+    const batch: UserOption[] = Array.isArray(data.users) ? data.users : [];
+    all.push(...batch);
+    const total = typeof data.total === 'number' ? data.total : all.length;
+    if (batch.length < USERS_PAGE_LIMIT || all.length >= total) break;
+  }
+  return all;
 }
 
 export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses, sections }) => {
@@ -109,8 +133,8 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
 
   const fetchUsersAndDepts = async () => {
     try {
-      const [res, deptRes] = await Promise.all([
-        fetch('/api/admin/users'),
+      const [allUsers, deptRes] = await Promise.all([
+        fetchAllUsers(),
         fetch('/api/v2/org/departments').catch(() => null)
       ]);
       const depts = new Set<string>();
@@ -127,28 +151,24 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
         }
       }
 
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (Array.isArray(data.users)) {
-          setUsers(data.users);
-          data.users.forEach((u: any) => {
-            if (u.departmentId) {
-              const name = typeof u.departmentId === 'object' ? u.departmentId?.name : null;
+      if (allUsers) {
+        setUsers(allUsers);
+        allUsers.forEach((u: any) => {
+          if (u.departmentId) {
+            const name = typeof u.departmentId === 'object' ? u.departmentId?.name : null;
+            if (name && typeof name === 'string' && name.trim()) {
+              depts.add(name.trim());
+            }
+          }
+          if (Array.isArray(u.departments)) {
+            u.departments.forEach((d: any) => {
+              const name = typeof d === 'string' ? d : d?.name;
               if (name && typeof name === 'string' && name.trim()) {
                 depts.add(name.trim());
               }
-            }
-            if (Array.isArray(u.departments)) {
-              u.departments.forEach((d: any) => {
-                const name = typeof d === 'string' ? d : d?.name;
-                if (name && typeof name === 'string' && name.trim()) {
-                  depts.add(name.trim());
-                }
-              });
-            }
-          });
-        }
+            });
+          }
+        });
       }
       setDepartments(Array.from(depts).filter(Boolean).sort((a, b) => a.localeCompare(b, 'uk')));
     } catch (err) {
@@ -824,22 +844,16 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
               {/* Target Selector */}
               {targetScope === 'single' && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="assignment-user-search" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Оберіть співробітника *
                   </label>
-                  <select
+                  <UserSearchSelect
+                    inputId="assignment-user-search"
+                    users={users}
                     value={selectedUserId}
-                    onChange={e => setSelectedUserId(e.target.value)}
-                    required
-                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">-- Оберіть користувача --</option>
-                    {users.map(u => (
-                      <option key={u._id} value={u._id}>
-                        {u.fullName || u.username} ({u.email || u.username})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedUserId}
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Почніть вводити частину ПІБ, email або логіна — список відфільтрується.</p>
                 </div>
               )}
 

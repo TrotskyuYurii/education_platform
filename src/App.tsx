@@ -4,10 +4,12 @@ import { LoginScreen } from './components/LoginScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { useAuth } from './context/AuthContext';
 import { AiImportJobsProvider } from './context/AiImportJobsContext';
+import { AppSettingsProvider } from './context/AppSettingsContext';
 import { AiImportProgressWidget } from './components/AiImportProgressWidget';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
 import { trackNavigation } from './utils/activityTracker';
+import type { CaseRunResult } from './components/CaseSimulator';
 
 // Вкладки вантажаться на вимогу: разом вони тягнуть recharts, @xyflow, html2pdf
 // та react-markdown — кілька мегабайт, які на старті потрібні лише одній вкладці.
@@ -23,7 +25,6 @@ const Dashboard = lazy(() => import('./components/Dashboard/Dashboard').then(m =
 const AboutApp = lazy(() => import('./components/AboutApp').then(m => ({ default: m.AboutApp })));
 const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
 const MyDay = lazy(() => import('./components/MyDay').then(m => ({ default: m.MyDay })));
-const PeopleDirectory = lazy(() => import('./components/People/PeopleDirectory').then(m => ({ default: m.PeopleDirectory })));
 const MyOnboarding = lazy(() => import('./components/Onboarding/MyOnboarding').then(m => ({ default: m.MyOnboarding })));
 const NotificationSettingsModal = lazy(() => import('./components/NotificationSettingsModal').then(m => ({ default: m.NotificationSettingsModal })));
 
@@ -57,7 +58,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<AppTab>(() => {
     try {
       const saved = localStorage.getItem('viatec_current_tab') as AppTab;
-      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'onboarding', 'people', 'signoff', 'management', 'about', 'dashboard'].includes(saved)) {
+      if (saved && ['myday', 'catalog', 'manual', 'quiz', 'cases', 'onboarding', 'signoff', 'management', 'about', 'dashboard'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -104,10 +105,15 @@ function MainApp() {
   const [activeQuizCourseId, setActiveQuizCourseId] = useState<string | undefined>(undefined);
   const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
   const [selectedSectionId, setSelectedSectionId] = useState<string | undefined>(undefined);
-  const [activeCasesToRun, setActiveCasesToRun] = useState<any[]>([]);
+  const [activeCasesToRun, setActiveCasesToRunState] = useState<any[]>([]);
+  // Курс, з якого запущено кейси: результат потрапляє в історію під його назвою.
+  const [activeCasesCourseId, setActiveCasesCourseId] = useState<string | undefined>(undefined);
+  const setActiveCasesToRun = (list: any[], courseId?: string) => {
+    setActiveCasesToRunState(list);
+    setActiveCasesCourseId(courseId);
+  };
   const [caseSimulatorMode, setCaseSimulatorMode] = useState<'list' | 'run'>('run');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [analyticsFocusUserId, setAnalyticsFocusUserId] = useState<string | null>(null);
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
   // Коли керівник/HR відкриває маршрут конкретного співробітника зі звіту,
   // вкладка «Онбординг» показує його проходження замість власного.
@@ -432,6 +438,43 @@ function MainApp() {
     });
   };
 
+  /**
+   * Результат кейсів іде в історію окремим видом спроби (mode: 'cases'). Він не
+   * впливає на найкращий бал тесту, підпис ознайомлення чи сертифікати — це
+   * тренажер, а не атестація.
+   */
+  const handleRecordCases = (result: CaseRunResult) => {
+    const percentage = result.total > 0 ? Math.round((result.score / result.total) * 100) : 0;
+    const course = activeCasesCourseId ? courses.find(c => c.id === activeCasesCourseId) : undefined;
+    const caseDepartments = new Set(
+      result.caseIds
+        .map(id => cases.find(c => c.id === id)?.sectionId)
+        .map(secId => sections.find(s => s.id === secId)?.department)
+        .filter(Boolean)
+    );
+    const department = course?.department
+      || (caseDepartments.size === 1 ? (Array.from(caseDepartments)[0] as string) : undefined);
+    const scoreRec = {
+      score: result.score,
+      total: result.total,
+      percentage,
+      mode: 'cases',
+      department,
+      courseId: course?.id,
+      startedAt: result.startedAt,
+      durationSec: result.durationSec,
+      date: new Date().toISOString()
+    };
+    saveProgressToDb(undefined, scoreRec);
+    setProgress(prev => ({
+      ...prev,
+      quizHistory: [
+        { ...scoreRec, date: new Date().toLocaleDateString('uk-UA') },
+        ...prev.quizHistory
+      ]
+    }));
+  };
+
   const handleSaveProfile = async (profile: UserProgress['employeeInfo']): Promise<void> => {
     const res = await fetch('/api/progress', {
       method: 'POST',
@@ -490,6 +533,7 @@ function MainApp() {
   }
 
   return (
+    <AppSettingsProvider>
     <AiImportJobsProvider enabled={hasPermission('admin.access')} onJobFinished={fetchContent}>
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       
@@ -634,7 +678,8 @@ function MainApp() {
             onToggleReadSection={handleToggleReadSection}
             onStartQuiz={handleStartQuiz}
             onStartCases={(courseCases) => {
-              setActiveCasesToRun(courseCases);
+              setActiveCasesToRun(courseCases, activeCourseId);
+              setCaseSimulatorMode('run');
               setCurrentTab('cases');
             }}
             onBackToCatalog={() => setCurrentTab('catalog')}
@@ -643,8 +688,12 @@ function MainApp() {
 
         {currentTab === 'cases' && (
           <CaseSimulator
+            // Новий набір кейсів — нова серія, а не продовження попередньої
+            key={`${caseSimulatorMode}:${activeCasesCourseId || ''}:${activeCasesToRun.map(c => c.id).join(',')}`}
             cases={activeCasesToRun}
+            sections={sections}
             startAsList={caseSimulatorMode === 'list'}
+            onRecordResult={handleRecordCases}
             onFinishCases={() => setCurrentTab('manual')}
           />
         )}
@@ -667,7 +716,7 @@ function MainApp() {
                 const instructionIds = activeCourse.instructionIds || [];
                 const courseCases = cases.filter(c => c.isActive !== false && c.sectionId && instructionIds.includes(c.sectionId));
                 if (courseCases.length > 0) {
-                  setActiveCasesToRun(courseCases);
+                  setActiveCasesToRun(courseCases, courseId);
                   setCaseSimulatorMode('run');
                   setCurrentTab('cases');
                 } else {
@@ -712,15 +761,6 @@ function MainApp() {
           />
         )}
 
-        {currentTab === 'people' && (
-          <PeopleDirectory
-            onViewAnalytics={(userId) => {
-              setAnalyticsFocusUserId(userId);
-              setCurrentTab('dashboard');
-            }}
-          />
-        )}
-
         {currentTab === 'dashboard' && (
           <Dashboard
             progress={{
@@ -730,7 +770,6 @@ function MainApp() {
             sections={sections}
             courses={courses}
             currentUser={user}
-            initialSelectedUserId={analyticsFocusUserId}
           />
         )}
 
@@ -837,5 +876,6 @@ function MainApp() {
       <AiImportProgressWidget />
     </div>
     </AiImportJobsProvider>
+    </AppSettingsProvider>
   );
 }

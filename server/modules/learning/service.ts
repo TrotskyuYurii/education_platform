@@ -278,8 +278,10 @@ export class ProgressService {
       .map((r: any) => r.sectionId)
       .filter(id => validSectionIds.has(id));
 
-    const bestScore = attempts.length > 0 
-      ? Math.max(...attempts.map((a: any) => a.percentage || 0)) 
+    // Найкращий результат — лише за тестами: кейси атестацією не є.
+    const testAttempts = attempts.filter((a: any) => a.mode !== 'cases');
+    const bestScore = testAttempts.length > 0 
+      ? Math.max(...testAttempts.map((a: any) => a.percentage || 0)) 
       : 0;
     const totalAnswers = attempts.reduce((sum: number, a: any) => sum + (a.total || 0), 0);
 
@@ -298,7 +300,7 @@ export class ProgressService {
 
       return {
         readSectionIds: validReadIds,
-        quizCompleted: attempts.length > 0,
+        quizCompleted: testAttempts.length > 0,
         bestScore,
         totalQuestionsAnswered: totalAnswers,
         employeeInfo: ack ? {
@@ -397,6 +399,13 @@ export class ProgressService {
       date: testScore.date ? new Date(testScore.date) : new Date()
     });
 
+    // Кейси — тренажер, а не атестація: їх результат лише потрапляє в історію,
+    // але не закриває призначення й не видає сертифікат.
+    if (attempt.mode === 'cases') {
+      await this.syncToLegacy(userObjectId);
+      return attempt;
+    }
+
     // Auto-complete assignments for passed course or test
     if (testScore.percentage >= 80) {
       if (testScore.courseId) {
@@ -486,7 +495,7 @@ export class ProgressService {
     if (wantsToSign) {
       // A compliance signature is only valid once the employee has actually passed
       // the qualification quiz — enforce this server-side, not just in the UI.
-      const attempts = await QuizAttempt.find({ userId: userObjectId });
+      const attempts = await QuizAttempt.find({ userId: userObjectId, mode: { $ne: 'cases' } });
       const bestScore = attempts.length > 0 ? Math.max(...attempts.map(a => a.percentage || 0)) : 0;
       if (bestScore < ACKNOWLEDGMENT_PASS_THRESHOLD) {
         throw new Error(
@@ -676,8 +685,9 @@ export class ProgressService {
       const userCerts = certsMap.get(uid) || [];
       const ack = acksMap.get(uid);
 
-      const bestScore = userAttempts.length > 0 
-        ? Math.max(...userAttempts.map(a => a.percentage || 0)) 
+      const userTestAttempts = userAttempts.filter(a => a.mode !== 'cases');
+      const bestScore = userTestAttempts.length > 0 
+        ? Math.max(...userTestAttempts.map(a => a.percentage || 0)) 
         : 0;
       const totalAnswers = userAttempts.reduce((sum, a) => sum + (a.total || 0), 0);
       const readCount = Math.min(userReads.size, totalSectionsCount);
@@ -808,7 +818,7 @@ export class ProgressService {
       let existingScore: number | undefined = undefined;
       if (data.targetType === 'course') {
         const cert = await CertificateRecord.findOne({ userId: uid, courseId: data.targetId, status: 'active' });
-        const passedQuiz = await QuizAttempt.findOne({ userId: uid, courseId: data.targetId, passed: true }).sort({ percentage: -1 });
+        const passedQuiz = await QuizAttempt.findOne({ userId: uid, courseId: data.targetId, passed: true, mode: { $ne: 'cases' } }).sort({ percentage: -1 });
         isAlreadyCompleted = !!(cert || passedQuiz);
         if (passedQuiz) existingScore = passedQuiz.percentage;
       } else {

@@ -34,6 +34,10 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
 }) => {
   // Helper to get title for history items
   const getItemTitle = (history: QuizHistoryItem) => {
+    if (history.mode === 'cases') {
+      const c = history.courseId ? courses.find(course => course.id === history.courseId) : undefined;
+      return c?.title ? `Практичні кейси: ${c.title}` : 'Практичні кейси';
+    }
     if (history.courseId) {
       const c = courses.find(course => course.id === history.courseId);
       if (c?.title) return c.title;

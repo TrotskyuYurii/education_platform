@@ -1,6 +1,8 @@
 import fs from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
 import mammoth from 'mammoth';
+import { z } from 'zod';
+import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import {
   savePendingUpload,
   createTempExtractionDir,
@@ -12,6 +14,35 @@ import { convertDocxWithImages } from './docxImages.js';
 import { buildInstructionPrompt, buildAdditionalQuestionsPrompt } from '../../shared/instructionPrompt.js';
 
 const AI_MODEL = 'claude-opus-5';
+
+/**
+ * Якщо захисні фільтри моделі відхилять запит, API саме перезапускає його на
+ * рекомендованій запасній моделі (її підбирають за причиною відмови) у межах
+ * того самого виклику. Адмін отримує результат замість помилки.
+ */
+const FALLBACK_PARAMS = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const };
+
+/** Текст відповіді; блоки `fallback` (межі перемикання моделей) пропускаємо. */
+function responseText(message: Anthropic.Beta.BetaMessage): string {
+  return message.content
+    .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === 'text')
+    .map(block => block.text)
+    .join('');
+}
+
+/**
+ * Відмова всього ланцюжка (і основної, і запасної моделі) — показуємо людське
+ * пояснення. Якщо відповіла запасна модель, лишаємо слід у журналі сервера.
+ */
+function checkRefusal(message: Anthropic.Beta.BetaMessage, refusalText: string) {
+  if (message.stop_reason === 'refusal') {
+    throw new InstructionGenerationError(refusalText, 400);
+  }
+  const fallbackRan = (message.usage.iterations ?? []).some(entry => entry.type === 'fallback_message');
+  if (fallbackRan) {
+    console.info(`AI request was declined by ${AI_MODEL} and served by fallback model ${message.model}`);
+  }
+}
 
 /** Скріншот, витягнутий з оригіналу документа. */
 export interface ExtractedDocumentImage {
@@ -203,20 +234,19 @@ export async function generateInstructionFromDocument(params: {
   // Повний текст інструкції разом із великим банком питань (20–30) не вміщається
   // у 16 тис. токенів, а довша відповідь потребує стрімінгу, щоб не впертися в
   // HTTP-тайм-аут.
-  const response = await anthropic.messages
+  const response = await anthropic.beta.messages
     .stream({
       model: AI_MODEL,
       max_tokens: 64000,
+      ...FALLBACK_PARAMS,
       messages: [
         { role: 'user', content: [documentBlock, { type: 'text', text: aiPromptGuide }] }
       ]
     })
     .finalMessage();
 
-  const markdownText = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+  checkRefusal(response, 'ШІ відмовився обробляти цей документ. Перевірте його вміст або спробуйте інший файл.');
+  const markdownText = responseText(response);
 
   return {
     markdown: markdownText,
@@ -257,18 +287,103 @@ export async function generateAdditionalQuestions(params: {
 
   const count = Math.max(1, Math.min(MAX_ADDITIONAL_QUESTIONS, Math.floor(params.count) || 10));
   const anthropic = new Anthropic({ apiKey });
-  const response = await anthropic.messages
+  const response = await anthropic.beta.messages
     .stream({
       model: AI_MODEL,
       max_tokens: 32000,
+      ...FALLBACK_PARAMS,
       messages: [
         { role: 'user', content: buildAdditionalQuestionsPrompt({ ...params, count }) }
       ]
     })
     .finalMessage();
 
-  return response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+  checkRefusal(response, 'ШІ відмовився складати питання за цією інструкцією.');
+  return responseText(response);
+}
+
+/** Кейс, запропонований ШІ, — ще не збережений; адмін переглядає його у формі. */
+const GeneratedCaseSchema = z.object({
+  title: z.string(),
+  scenario: z.string(),
+  options: z.array(z.object({
+    text: z.string(),
+    isCorrect: z.boolean(),
+    feedback: z.string()
+  }))
+});
+
+export type GeneratedCase = z.infer<typeof GeneratedCaseSchema>;
+
+/**
+ * Складає практичний кейс за текстом інструкції: ситуацію з роботи та 3–4
+ * варіанти дій, з яких рівно один правильний. У базу нічого не пишемо —
+ * результат підставляється у форму створення кейсу.
+ */
+export async function generateCaseFromInstruction(params: {
+  instructionTitle: string;
+  instructionMarkdown: string;
+  /** Побажання адміністратора: тема, складність, тип клієнта тощо. */
+  hint?: string;
+  /** Назви кейсів, які вже є до цієї інструкції, — щоб не повторюватись. */
+  existingTitles?: string[];
+}): Promise<GeneratedCase> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new InstructionGenerationError('ANTHROPIC_API_KEY is not configured on the server.', 500);
+  }
+  if (!params.instructionMarkdown.trim()) {
+    throw new InstructionGenerationError('Інструкція не містить тексту, з якого можна скласти кейс.', 400);
+  }
+
+  const existing = (params.existingTitles || []).filter(Boolean);
+  const prompt = [
+    `Нижче — текст робочої інструкції «${params.instructionTitle}».`,
+    '',
+    '<instruction>',
+    params.instructionMarkdown,
+    '</instruction>',
+    '',
+    'Склади один практичний кейс для тренування співробітників за цією інструкцією.',
+    'Кейс — це реалістична робоча ситуація, у якій співробітник має обрати, як діяти.',
+    '',
+    'Вимоги:',
+    '- Пиши українською мовою.',
+    '- title: коротка назва ситуації (до 80 символів).',
+    '- scenario: опис обставин на 3–6 речень — хто звертається, що сталося, які деталі важливі. Без підказки, яка відповідь правильна.',
+    '- options: 3–4 варіанти дій, рівно один з isCorrect = true. Хибні варіанти мають бути правдоподібними — типовими помилками, яких припускаються на практиці.',
+    '- feedback для кожного варіанта: 1–3 речення, чому дія правильна або що саме вона порушує, з посиланням на конкретне правило інструкції.',
+    '- Спирайся лише на те, що є в інструкції; не вигадуй правил, яких у ній немає.',
+    params.hint?.trim() ? `- Побажання адміністратора щодо кейсу: ${params.hint.trim()}` : '',
+    existing.length > 0 ? `- До цієї інструкції вже є кейси: ${existing.map(t => `«${t}»`).join(', ')}. Придумай іншу ситуацію.` : ''
+  ].filter(line => line !== '').join('\n');
+
+  const anthropic = new Anthropic({ apiKey });
+  const response = await anthropic.beta.messages.parse({
+    model: AI_MODEL,
+    max_tokens: 16000,
+    ...FALLBACK_PARAMS,
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { format: betaZodOutputFormat(GeneratedCaseSchema) }
+  });
+
+  checkRefusal(response, 'ШІ відмовився складати кейс за цією інструкцією. Спробуйте змінити побажання.');
+  if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
+    throw new InstructionGenerationError('ШІ повернув неповну відповідь. Спробуйте ще раз.', 500);
+  }
+
+  const generated = response.parsed_output;
+  const options = generated.options
+    .filter(o => o.text.trim())
+    .slice(0, 6);
+  // Схема не гарантує «рівно один правильний»: якщо ШІ позначив кілька, правильним лишається перший.
+  const firstCorrect = options.findIndex(o => o.isCorrect);
+  if (options.length < 2 || firstCorrect === -1) {
+    throw new InstructionGenerationError('ШІ склав кейс без правильної відповіді. Спробуйте ще раз.', 500);
+  }
+  return {
+    title: generated.title.trim(),
+    scenario: generated.scenario.trim(),
+    options: options.map((o, i) => ({ ...o, isCorrect: i === firstCorrect }))
+  };
 }

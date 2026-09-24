@@ -295,7 +295,7 @@ export const MyDay: React.FC<MyDayProps> = ({
       const cRead = cSecs.filter(s => readSet.has(s.id)).length;
       const percent = Math.round((cRead / cSecs.length) * 100);
       const nextUnread = cSecs.find(s => !readSet.has(s.id));
-      const isPassed = (progress.quizHistory || []).some(h => (h.courseId === c.id || h.sectionId === c.id) && h.percentage >= (c.quizPassScorePercent || 80));
+      const isPassed = (progress.quizHistory || []).some(h => h.mode !== 'cases' && (h.courseId === c.id || h.sectionId === c.id) && h.percentage >= (c.quizPassScorePercent || 80));
 
       if ((cRead > 0 && cRead < cSecs.length) || (cRead === cSecs.length && !isPassed)) {
         inProgressList.push({

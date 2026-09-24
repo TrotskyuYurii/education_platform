@@ -2,21 +2,27 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Eye,
   EyeOff,
-  Search,
   Plus,
   Users,
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
   Edit2,
-  X,
-  CheckCircle2,
   Loader2
 } from 'lucide-react';
 import { InstructionSection } from '../../types';
 import { MaterialEditDialog } from './MaterialEditDialog';
+import {
+  SortHeader,
+  FILTER_CLASS,
+  TH_CLASS,
+  compareText,
+  useTableState,
+  paginate,
+  TableSearch,
+  ResetFiltersButton,
+  TableFrame,
+  TablePagination,
+  TableNotice,
+  StatusBadge
+} from './AdminTable';
 
 /**
  * Вкладка «Користувачі» розділу адміністрування.
@@ -41,10 +47,8 @@ interface UserManagementProps {
 
 /** Сервер віддає щонайбільше стільки користувачів за запит. */
 const USERS_PAGE_LIMIT = 1000;
-const PAGE_SIZES = [25, 50, 100];
 
 type SortKey = 'name' | 'department' | 'position' | 'manager' | 'status' | 'createdAt';
-type SortDir = 'asc' | 'desc';
 
 interface UserRow {
   user: any;
@@ -128,15 +132,7 @@ const UserTableRow = React.memo<{ row: UserRow; isSelected: boolean; onSelect: (
         )}
       </td>
       <td className="px-3 py-2.5 align-top">
-        {row.isActive ? (
-          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-            Активний
-          </span>
-        ) : (
-          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200">
-            Вимкнено
-          </span>
-        )}
+        <StatusBadge active={row.isActive} />
       </td>
       <td className="px-3 py-2.5 align-top text-xs text-slate-500 whitespace-nowrap hidden lg:table-cell">
         {row.createdAt ? new Date(row.createdAt).toLocaleDateString('uk-UA') : '—'}
@@ -156,36 +152,6 @@ const UserTableRow = React.memo<{ row: UserRow; isSelected: boolean; onSelect: (
   );
 });
 UserTableRow.displayName = 'UserTableRow';
-
-/** Заголовок колонки, за якою можна сортувати. */
-const SortHeader: React.FC<{
-  label: string;
-  sortKey: SortKey;
-  sort: { key: SortKey; dir: SortDir };
-  onSort: (key: SortKey) => void;
-  className?: string;
-}> = ({ label, sortKey, sort, onSort, className = '' }) => {
-  const active = sort.key === sortKey;
-  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ChevronUp : ChevronDown;
-  return (
-    <th
-      scope="col"
-      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={`px-3 py-2.5 text-left ${className}`}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider text-[10px] ${
-          active ? 'text-purple-700' : 'text-slate-500 hover:text-slate-800'
-        }`}
-      >
-        {label}
-        <Icon className={`w-3 h-3 ${active ? '' : 'opacity-50'}`} />
-      </button>
-    </th>
-  );
-};
 
 /** Спільний для обох форм перелік чекбоксів з ролями RBAC. */
 const RoleCheckboxes: React.FC<{
@@ -256,16 +222,41 @@ const PasswordInput: React.FC<{
   );
 };
 
+/**
+ * Поле «Повторіть пароль» з підказкою під ним: пароль змінюється лише тоді,
+ * коли обидва введення збігаються — так одруківка не заблокує людині вхід.
+ */
+const PasswordConfirmField: React.FC<{
+  password: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  required?: boolean;
+}> = ({ password, value, onChange, disabled, required }) => {
+  const mismatch = !disabled && value !== '' && value !== password;
+  const matches = !disabled && password !== '' && value === password;
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-700 mb-1">
+        Повторіть пароль {required && !disabled ? '*' : ''}
+      </label>
+      <PasswordInput value={value} onChange={onChange} disabled={disabled} required={required && !disabled} />
+      {mismatch && <p className="text-[11px] font-medium text-rose-600 mt-1">Паролі не збігаються</p>}
+      {matches && <p className="text-[11px] font-medium text-emerald-600 mt-1">Паролі збігаються</p>}
+    </div>
+  );
+};
+
 const SELECT_CLASS = 'w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500';
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500';
 const LABEL_CLASS = 'block text-xs font-semibold text-slate-700 mb-1';
-const FILTER_CLASS = 'px-2.5 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500';
 
 const blankNewUser = () => ({
   fullName: '',
   email: '',
   username: '',
   password: '',
+  passwordConfirm: '',
   authMethod: 'password',
   role: 'user',
   roleKeys: ['employee'],
@@ -291,9 +282,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  // Дату додавання зручніше одразу бачити від найновіших
+  const { sort, onSort: handleSort, page, setPage, pageSize, setPageSize } = useTableState<SortKey>(
+    { key: 'name', dir: 'asc' },
+    [search, departmentFilter, roleFilter, statusFilter],
+    ['createdAt']
+  );
 
   /**
    * Сервер віддає не більше тисячі користувачів за раз, тож довантажуємо
@@ -410,12 +404,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
     });
 
     const dir = sort.dir === 'asc' ? 1 : -1;
-    const text = (a: string, b: string) => {
-      // Порожні значення завжди внизу, незалежно від напрямку
-      if (!a && b) return 1;
-      if (a && !b) return -1;
-      return a.localeCompare(b, 'uk') * dir;
-    };
+    const text = (a: string, b: string) => compareText(a, b, sort.dir);
     list.sort((a, b) => {
       switch (sort.key) {
         case 'department': return text(a.departmentName, b.departmentName) || text(a.name || a.email, b.name || b.email);
@@ -429,22 +418,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
     return list;
   }, [rows, search, departmentFilter, roleFilter, statusFilter, sort]);
 
-  // Будь-яка зміна фільтрів повертає на першу сторінку
-  useEffect(() => { setPage(0); }, [search, departmentFilter, roleFilter, statusFilter, sort, pageSize]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
-  const pageRows = filteredRows.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  const { pageCount, safePage, pageRows } = paginate(filteredRows, page, pageSize);
 
   const activeCount = useMemo(() => rows.filter(r => r.isActive).length, [rows]);
   const hasFilters = search.trim() !== '' || departmentFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all';
-
-  const handleSort = useCallback((key: SortKey) => {
-    setSort(prev => prev.key === key
-      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-      // Дату додавання зручніше одразу бачити від найновіших
-      : { key, dir: key === 'createdAt' ? 'desc' : 'asc' });
-  }, []);
 
   const handleSelectUser = useCallback((u: any) => {
     const normalizedDepts = Array.isArray(u.departments)
@@ -471,8 +448,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
 
   const handleUpdateUser = async () => {
     if (!selectedUser) return;
-    setSaving(true);
     setFormError(null);
+    const changesPassword = selectedUser.authMethod !== 'otp' && Boolean(selectedUser.newPassword || selectedUser.newPasswordConfirm);
+    if (changesPassword && selectedUser.newPassword !== selectedUser.newPasswordConfirm) {
+      setFormError('Паролі не збігаються. Введіть новий пароль двічі однаково.');
+      return;
+    }
+    setSaving(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
         method: 'PUT',
@@ -491,7 +473,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
           hireDate: selectedUser.hireDate,
           isActive: selectedUser.isActive,
           authMethod: selectedUser.authMethod,
-          password: selectedUser.newPassword || undefined
+          password: changesPassword ? selectedUser.newPassword : undefined
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -517,6 +499,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
 
     if (!newUser.password && newUser.authMethod !== 'otp') {
       setFormError('Пароль є обов\'язковим полем');
+      return;
+    }
+
+    if (newUser.authMethod !== 'otp' && newUser.password !== newUser.passwordConfirm) {
+      setFormError('Паролі не збігаються. Введіть пароль двічі однаково.');
       return;
     }
 
@@ -581,28 +568,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
         </button>
       </div>
 
-      {notice && (
-        <div className="flex items-center gap-2 p-3 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span className="grow">{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Сховати" className="text-emerald-600 hover:text-emerald-900">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {notice && <TableNotice tone="success" text={notice} onClose={() => setNotice(null)} />}
 
       {/* Панель пошуку та фільтрів */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative grow min-w-[220px] max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Пошук: ПІБ, email, посада, керівник…"
-            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500"
-          />
-        </div>
+        <TableSearch value={search} onChange={setSearch} placeholder="Пошук: ПІБ, email, посада, керівник…" />
         <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className={FILTER_CLASS} aria-label="Фільтр за підрозділом">
           <option value="all">Усі підрозділи</option>
           <option value="none">Без підрозділу</option>
@@ -618,13 +588,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
           <option value="inactive">Вимкнені</option>
         </select>
         {hasFilters && (
-          <button
-            type="button"
-            onClick={() => { setSearch(''); setDepartmentFilter('all'); setRoleFilter('all'); setStatusFilter('all'); }}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-2"
-          >
-            Скинути
-          </button>
+          <ResetFiltersButton onClick={() => { setSearch(''); setDepartmentFilter('all'); setRoleFilter('all'); setStatusFilter('all'); }} />
         )}
         <div className="grow" />
         <span className="text-xs text-slate-500 flex items-center gap-1.5">
@@ -636,83 +600,41 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
       </div>
 
       {/* Таблиця */}
-      <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
-        <div className="overflow-x-auto max-h-[min(720px,calc(100vh-18rem))] overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-              <tr>
-                <SortHeader label="Співробітник" sortKey="name" sort={sort} onSort={handleSort} />
-                <SortHeader label="Підрозділ" sortKey="department" sort={sort} onSort={handleSort} />
-                <SortHeader label="Посада" sortKey="position" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
-                <SortHeader label="Керівник" sortKey="manager" sort={sort} onSort={handleSort} className="hidden xl:table-cell" />
-                <th scope="col" className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] text-slate-500">Ролі</th>
-                <th scope="col" className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] text-slate-500 hidden md:table-cell">Вхід</th>
-                <SortHeader label="Статус" sortKey="status" sort={sort} onSort={handleSort} />
-                <SortHeader label="Додано" sortKey="createdAt" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
-                <th scope="col" className="px-3 py-2.5"><span className="sr-only">Дії</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {pageRows.map(row => (
-                <UserTableRow
-                  key={row.user._id}
-                  row={row}
-                  isSelected={selectedUser?._id === row.user._id}
-                  onSelect={handleSelectUser}
-                />
-              ))}
-            </tbody>
-          </table>
-
-          {pageRows.length === 0 && (
-            <div className="py-12 text-center text-sm text-slate-500">
-              {loadingUsers ? (
-                <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Завантаження користувачів…</span>
-              ) : hasFilters ? 'За цими умовами користувачів не знайдено.' : 'Користувачів ще немає.'}
-            </div>
-          )}
-        </div>
-
-        {/* Сторінки */}
-        {filteredRows.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
-            <label className="flex items-center gap-2">
-              Рядків на сторінці:
-              <select
-                value={pageSize}
-                onChange={e => setPageSize(Number(e.target.value))}
-                className="px-2 py-1 bg-white border border-slate-300 rounded-lg font-semibold outline-none"
-              >
-                {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            <div className="flex items-center gap-2">
-              <span>
-                {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filteredRows.length)} з {filteredRows.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage(safePage - 1)}
-                disabled={safePage === 0}
-                className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 transition"
-                aria-label="Попередня сторінка"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="font-semibold">{safePage + 1} / {pageCount}</span>
-              <button
-                type="button"
-                onClick={() => setPage(safePage + 1)}
-                disabled={safePage >= pageCount - 1}
-                className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 transition"
-                aria-label="Наступна сторінка"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <TableFrame
+        head={<>
+          <SortHeader label="Співробітник" sortKey="name" sort={sort} onSort={handleSort} />
+          <SortHeader label="Підрозділ" sortKey="department" sort={sort} onSort={handleSort} />
+          <SortHeader label="Посада" sortKey="position" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
+          <SortHeader label="Керівник" sortKey="manager" sort={sort} onSort={handleSort} className="hidden xl:table-cell" />
+          <th scope="col" className={TH_CLASS}>Ролі</th>
+          <th scope="col" className={`${TH_CLASS} hidden md:table-cell`}>Вхід</th>
+          <SortHeader label="Статус" sortKey="status" sort={sort} onSort={handleSort} />
+          <SortHeader label="Додано" sortKey="createdAt" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
+          <th scope="col" className="px-3 py-2.5"><span className="sr-only">Дії</span></th>
+        </>}
+        empty={pageRows.length === 0 && (loadingUsers ? (
+          <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Завантаження користувачів…</span>
+        ) : hasFilters ? 'За цими умовами користувачів не знайдено.' : 'Користувачів ще немає.')}
+        footer={
+          <TablePagination
+            total={filteredRows.length}
+            page={safePage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            onPage={setPage}
+            onPageSize={setPageSize}
+          />
+        }
+      >
+        {pageRows.map(row => (
+          <UserTableRow
+            key={row.user._id}
+            row={row}
+            isSelected={selectedUser?._id === row.user._id}
+            onSelect={handleSelectUser}
+          />
+        ))}
+      </TableFrame>
 
       {/* Редагування користувача */}
       <MaterialEditDialog
@@ -861,6 +783,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
               />
             </div>
 
+            {selectedUser.authMethod !== 'otp' && (selectedUser.newPassword || selectedUser.newPasswordConfirm) && (
+              <PasswordConfirmField
+                password={selectedUser.newPassword || ''}
+                value={selectedUser.newPasswordConfirm || ''}
+                onChange={value => setSelectedUser({ ...selectedUser, newPasswordConfirm: value })}
+                required
+              />
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Доступ до підрозділів</label>
               <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
@@ -970,6 +901,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
             required={newUser.authMethod !== 'otp'}
           />
         </div>
+
+        <PasswordConfirmField
+          password={newUser.password}
+          value={newUser.passwordConfirm || ''}
+          onChange={value => setNewUser({ ...newUser, passwordConfirm: value })}
+          disabled={newUser.authMethod === 'otp'}
+          required
+        />
 
         <RoleCheckboxes
           roles={roles}

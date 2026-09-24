@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CaseSimulation } from '../types';
+import React, { useRef, useState } from 'react';
+import { CaseSimulation, InstructionSection } from '../types';
 import { 
   Briefcase, 
   MessageSquare, 
@@ -8,34 +8,92 @@ import {
   ShieldAlert, 
   ArrowRight, 
   RotateCcw,
-  User,
-  Sparkles
+  BookOpen
 } from 'lucide-react';
+
+/** Підсумок проходження: скільки кейсів розв'язано правильно з першої спроби. */
+export interface CaseRunResult {
+  score: number;
+  total: number;
+  caseIds: string[];
+  startedAt: string;
+  durationSec: number;
+}
 
 interface CaseSimulatorProps {
   cases: CaseSimulation[];
+  /** Інструкції — щоб показати, до якого регламенту належить кейс. */
+  sections?: InstructionSection[];
   onFinishCases?: () => void;
+  /** Викликається один раз, коли співробітник дійшов до кінця серії кейсів. */
+  onRecordResult?: (result: CaseRunResult) => void;
   startAsList?: boolean;
 }
 
-export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCases, startAsList = false }) => {
+export const CaseSimulator: React.FC<CaseSimulatorProps> = ({
+  cases,
+  sections = [],
+  onFinishCases,
+  onRecordResult,
+  startAsList = false
+}) => {
   const [activeCaseIndex, setActiveCaseIndex] = useState<number>(startAsList ? -1 : 0);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  // Відповіді поточної серії: id кейсу → чи правильно з першої спроби.
+  const answersRef = useRef<Map<string, boolean>>(new Map());
+  const startedAtRef = useRef<Date>(new Date());
 
   const currentCase = activeCaseIndex >= 0 ? cases[activeCaseIndex] : null;
   const chosenOption = currentCase?.options.find((o) => o.id === selectedOptionId);
+  const currentSection = currentCase?.sectionId ? sections.find(s => s.id === currentCase.sectionId) : undefined;
+
+  const startSeries = (index: number) => {
+    answersRef.current = new Map();
+    startedAtRef.current = new Date();
+    setSelectedOptionId(null);
+    setActiveCaseIndex(index);
+  };
+
+  const handleSelectOption = (optionId: string) => {
+    if (selectedOptionId || !currentCase) return;
+    setSelectedOptionId(optionId);
+    const option = currentCase.options.find(o => o.id === optionId);
+    answersRef.current.set(currentCase.id, Boolean(option?.isCorrect));
+  };
+
+  const recordResult = () => {
+    const answers = answersRef.current;
+    if (!onRecordResult || answers.size === 0) return;
+    const finishedAt = new Date();
+    onRecordResult({
+      score: Array.from(answers.values()).filter(Boolean).length,
+      total: answers.size,
+      caseIds: Array.from(answers.keys()),
+      startedAt: startedAtRef.current.toISOString(),
+      durationSec: Math.max(0, Math.round((finishedAt.getTime() - startedAtRef.current.getTime()) / 1000))
+    });
+    answersRef.current = new Map();
+  };
 
   const handleNextCase = () => {
     setSelectedOptionId(null);
     if (activeCaseIndex < cases.length - 1) {
       setActiveCaseIndex((prev) => prev + 1);
+      return;
+    }
+    recordResult();
+    if (startAsList) {
+      // Із каталогу повертаємось до каталогу, а не до інструкцій
+      setActiveCaseIndex(-1);
     } else if (onFinishCases) {
       onFinishCases();
     }
   };
 
   const handleReset = () => {
-    setActiveCaseIndex(startAsList ? -1 : 0);
+    if (startAsList) setActiveCaseIndex(-1);
+    else startSeries(0);
+    answersRef.current = new Map();
     setSelectedOptionId(null);
   };
 
@@ -70,7 +128,7 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
             {cases.map((c, idx) => (
               <button
                 key={c.id}
-                onClick={() => setActiveCaseIndex(idx)}
+                onClick={() => startSeries(idx)}
                 className="text-left flex flex-col sm:flex-row gap-4 p-5 rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm transition"
               >
                 <div className="flex-1">
@@ -118,7 +176,7 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
                 </span>
               </div>
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
-                Симулятор робочих ситуацій на касі
+                Симулятор робочих ситуацій
               </h2>
             </div>
           </div>
@@ -137,11 +195,15 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
         
         <div className="border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 uppercase">
-              Роль: {currentCase.role === 'cashier' ? 'Касир' : currentCase.role === 'manager' ? 'Менеджер' : 'Бухгалтер'}
-            </span>
-          </div>
+          {currentSection && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700">
+                <BookOpen className="w-3.5 h-3.5" />
+                {currentSection.title}
+                {currentSection.department && <span className="text-blue-500 font-normal">· {currentSection.department}</span>}
+              </span>
+            </div>
+          )}
           <h3 className="text-lg sm:text-xl font-bold text-slate-900">
             {currentCase.title}
           </h3>
@@ -179,7 +241,7 @@ export const CaseSimulator: React.FC<CaseSimulatorProps> = ({ cases, onFinishCas
               return (
                 <button
                   key={opt.id}
-                  onClick={() => !selectedOptionId && setSelectedOptionId(opt.id)}
+                  onClick={() => handleSelectOption(opt.id)}
                   disabled={selectedOptionId !== null}
                   className={`w-full text-left p-4 rounded-xl border transition flex items-start justify-between gap-3 ${style}`}
                 >

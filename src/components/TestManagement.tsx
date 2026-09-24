@@ -10,6 +10,7 @@ import {
   FIELD_INPUT_CLASS,
   FIELD_LABEL_CLASS
 } from './Admin/MaterialEditDialog';
+import { CaseAiGenerator } from './Admin/CaseAiGenerator';
 import { UserManagement } from './Admin/UserManagement';
 import { useAuth } from '../context/AuthContext';
 import { useAiImportJobs } from '../context/AiImportJobsContext';
@@ -40,6 +41,7 @@ const AssignmentSettings = lazy(() => import('./Admin/AssignmentSettings').then(
 const NotificationTemplates = lazy(() => import('./Admin/NotificationTemplates').then(m => ({ default: m.NotificationTemplates })));
 const SystemLogPanel = lazy(() => import('./Admin/SystemLogPanel').then(m => ({ default: m.SystemLogPanel })));
 const UserActivityPanel = lazy(() => import('./Admin/UserActivityPanel').then(m => ({ default: m.UserActivityPanel })));
+const AppSettingsPanel = lazy(() => import('./Admin/AppSettingsPanel').then(m => ({ default: m.AppSettingsPanel })));
 
 /** Спільна заглушка на час підвантаження чанка панелі. */
 const PanelFallback = () => (
@@ -71,6 +73,8 @@ import {
   ChevronDown,
   Building2,
   ShieldCheck,
+  SlidersHorizontal,
+  Wrench,
   X,
   Eye,
   EyeOff,
@@ -120,7 +124,7 @@ interface TestManagementProps {
   initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings';
 
 /** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
 const blankCourse = () => ({
@@ -153,6 +157,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   initialTab
 }) => {
   const { hasPermission, isAdministrator } = useAuth();
+  // Глобальні налаштування додатка — окреме право, яке можна видати й не адміністраторам
+  const canManageSettings = hasPermission('system.settings.manage');
   // Пакетна ШІ-обробка виконується у фоні: адмінка лише ставить файли в чергу.
   const { enqueueFiles, isEnqueuing, activeJobs } = useAiImportJobs();
 
@@ -317,7 +323,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -1014,7 +1020,17 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       <span>Аналітика</span>
                     </button>
                   )}
+                </div>
+              </div>
 
+              {/* Group 3: Адміністрування — журнали й глобальні налаштування */}
+              {(canViewLogs || isAdministrator || canManageSettings) && (
+              <div className="pt-4 border-t border-slate-200">
+                <div className="flex items-center gap-1.5 px-2 mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Адміністрування</span>
+                </div>
+                <div className="flex flex-col gap-1">
                   {canViewLogs && (
                     <button
                       onClick={() => setActiveTab('systemlog')}
@@ -1050,8 +1066,23 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       <span>Журнал дій</span>
                     </button>
                   )}
+
+                  {canManageSettings && (
+                    <button
+                      onClick={() => setActiveTab('settings')}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                        activeTab === 'settings'
+                          ? 'bg-purple-100 text-purple-800 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <span>Налаштування</span>
+                    </button>
+                  )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         )}
@@ -1671,7 +1702,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               <div className="border-b border-slate-100 pb-4">
                 <h3 className="text-lg font-bold text-slate-900">Управління практичними кейсами</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  Створюйте сценарії для практичного тренування. Ви зможете прив'язати їх до конкретних курсів на вкладці "Курси".
+                  Створюйте сценарії для практичного тренування. Кейс прив'язується до інструкції: співробітник бачить його, якщо має доступ до цієї інструкції, а в курсі, де ввімкнено «Практичні кейси», з'являються кейси всіх його інструкцій. Кейс також можна додати кроком онбордингу.
                 </p>
               </div>
 
@@ -1794,6 +1825,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'analytics' && <AnalyticsReports courses={courses} />}
           {activeTab === 'systemlog' && <SystemLogPanel />}
           {activeTab === 'activity' && isAdministrator && <UserActivityPanel />}
+          {activeTab === 'settings' && canManageSettings && <AppSettingsPanel />}
 
           {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
           {activeTab === 'knowledge' && (
@@ -1886,17 +1918,11 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           }
         }}
       >
-        <FormField label="Назва кейсу" required>
-          <input
-            type="text"
-            value={editingCase ? editingCase?.title : newCase.title}
-            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
-            placeholder="Напр. Розгніваний клієнт на касі"
-            className={FIELD_INPUT_CLASS}
-          />
-        </FormField>
-
-        <FormField label="Прив'язка до інструкції" required>
+        <FormField
+          label="Прив'язка до інструкції"
+          required
+          hint="Кейс бачать ті, кому доступна ця інструкція; у курсах з увімкненими кейсами він з'явиться серед практичних завдань."
+        >
           <select
             value={editingCase ? editingCase?.sectionId || '' : newCase.sectionId || ''}
             onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, sectionId: e.target.value }) : setNewCase({ ...newCase, sectionId: e.target.value })}
@@ -1907,6 +1933,24 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
               <option key={sec.id} value={sec.id}>{sec.title}</option>
             ))}
           </select>
+        </FormField>
+
+        {!editingCase && (
+          <CaseAiGenerator
+            sectionId={newCase.sectionId || ''}
+            hasContent={Boolean(newCase.title?.trim() || newCase.scenario?.trim() || (newCase.options || []).some((o: any) => o.text?.trim()))}
+            onGenerated={draft => setNewCase((prev: any) => ({ ...prev, title: draft.title, scenario: draft.scenario, options: draft.options }))}
+          />
+        )}
+
+        <FormField label="Назва кейсу" required>
+          <input
+            type="text"
+            value={editingCase ? editingCase?.title : newCase.title}
+            onChange={e => editingCase ? setEditingCase((prev: any) => !prev ? null : { ...prev, title: e.target.value }) : setNewCase({ ...newCase, title: e.target.value })}
+            placeholder="Напр. Розгніваний клієнт на касі"
+            className={FIELD_INPUT_CLASS}
+          />
         </FormField>
 
         <FormField label="Сценарій (опис ситуації)" required>
@@ -2176,6 +2220,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
             checked={editingCourse?.useCases || false}
             onChange={checked => setEditingCourse((prev: any) => !prev ? null : { ...prev, useCases: checked })}
             label="Використовувати практичні кейси"
+            hint="Після завершення курсу з'явиться кнопка «Практичні кейси» з кейсами, прив'язаними до інструкцій курсу."
           />
           <FormCheckbox
             checked={editingCourse?.isProgressive || false}

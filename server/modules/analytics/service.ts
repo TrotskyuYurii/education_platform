@@ -163,7 +163,8 @@ export const AnalyticsService = {
       return { avgScore: 0, totalAttempts: 0, passRate: 0, avgDurationSec: null, distribution: [] };
     }
 
-    const match: any = { ...dateRangeMatch('date', filters.dateFrom, filters.dateTo) };
+    // Звіт про тести: проходження кейсів-тренажерів сюди не входять.
+    const match: any = { ...dateRangeMatch('date', filters.dateFrom, filters.dateTo), mode: { $ne: 'cases' } };
     if (filters.courseId) match.courseId = filters.courseId;
     if (userIds !== 'all') match.userId = { $in: userIds };
 
