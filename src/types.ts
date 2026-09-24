@@ -151,6 +151,8 @@ export interface Course {
   quizMaxAttempts?: number;
   /** Скільки питань із банку показувати за одну спробу. */
   quizQuestionCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface InstructionSection {
@@ -207,6 +209,9 @@ export interface InstructionSection {
   reviewedBy?: string;
   reviewNotes?: string;
   isActive?: boolean;
+  createdAt?: string;
+  /** Остання зміна змісту (нова редакція, публікація). */
+  updatedAt?: string;
 }
 
 export interface QuizQuestion {

@@ -83,7 +83,10 @@ const courseSchema = new mongoose.Schema({
   version: { type: String, default: '1.0' },
   status: { type: String, enum: ['draft', 'in_review', 'published', 'archived'], default: 'published' },
   isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  // Коли востаннє змінено зміст — для позначки «Оновлено» в каталозі.
+  // Службові зміни (перегляди, теки, увімкнення) цю дату не зсувають.
+  updatedAt: { type: Date }
 });
 
 const caseSchema = new mongoose.Schema({
@@ -100,7 +103,10 @@ const caseSchema = new mongoose.Schema({
   // Тека адміністративного переліку: суто організаційна, на доступ не впливає
   folderId: { type: String, default: null, index: true },
   isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  // Коли востаннє змінено зміст — для позначки «Оновлено» в каталозі.
+  // Службові зміни (перегляди, теки, увімкнення) цю дату не зсувають.
+  updatedAt: { type: Date }
 });
 
 const sectionSchema = new mongoose.Schema({
@@ -175,7 +181,10 @@ const sectionSchema = new mongoose.Schema({
   reviewNotes: { type: String },
   isActive: { type: Boolean, default: true },
   viewsCount: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  // Коли востаннє змінено зміст — для позначки «Оновлено» в каталозі.
+  // Службові зміни (перегляди, теки, увімкнення) цю дату не зсувають.
+  updatedAt: { type: Date }
 });
 
 const questionSchema = new mongoose.Schema({

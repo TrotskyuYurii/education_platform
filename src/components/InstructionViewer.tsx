@@ -21,6 +21,8 @@ import {
   FolderTree,
   GitBranch
 } from 'lucide-react';
+import { FreshnessBadgeChip, MaterialDateLabel } from './MaterialFreshnessBadge';
+import { getMaterialFreshness } from '../../shared/materialFreshness';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { RichTextWithImages } from './RichTextWithImages';
@@ -163,8 +165,9 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
               </div>
               <div>
                 <div className={`text-sm font-semibold leading-tight mb-1 ${isActive ? 'text-blue-900' : 'text-slate-700'}`}>{sec.title}</div>
-                <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-500">
                   <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {sec.readTimeMin} хв</span>
+                  <FreshnessBadgeChip badge={getMaterialFreshness(sec, { isCompleted: isRead }).badge} />
                 </div>
               </div>
             </button>
@@ -273,6 +276,18 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
               <span className="inline-flex px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold uppercase tracking-wider">
                 Час: {activeSection.readTimeMin} хв
               </span>
+              {(() => {
+                const freshness = getMaterialFreshness(activeSection, { isCompleted: !!isCompleted });
+                return (
+                  <>
+                    <FreshnessBadgeChip badge={freshness.badge} size="md" />
+                    <MaterialDateLabel
+                      freshness={freshness}
+                      className="px-2.5 py-1 rounded-md bg-slate-50 text-slate-600 border border-slate-200 text-[10px] font-bold uppercase tracking-wider"
+                    />
+                  </>
+                );
+              })()}
             </div>
 
             {/* Title Block */}

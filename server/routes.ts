@@ -975,7 +975,8 @@ apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) 
       quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
       quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined,
       // null, а не undefined: інакше очищене поле не скинеться до типового значення
-      quizQuestionCount: parseQuestionCount(quizQuestionCount) ?? null
+      quizQuestionCount: parseQuestionCount(quizQuestionCount) ?? null,
+      updatedAt: new Date()
     };
     if (isActive !== undefined) {
       updateData.isActive = !!isActive;
@@ -1047,7 +1048,8 @@ apiRouter.put('/admin/instructions/:id/full', requireAuth, requireAdmin, async (
     // Get current section to check if version needs incrementing
     const existingSection = await Section.findOne({ id: instructionId });
     
-    let updatePayload = { ...section };
+    // Зміст інструкції змінено — співробітники побачать позначку «Оновлено»
+    let updatePayload = { ...section, updatedAt: new Date() };
     const previousVersionNumber = existingSection?.versionNumber || 1;
     let targetVersionNumber = previousVersionNumber;
 
@@ -1262,7 +1264,7 @@ apiRouter.put('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) =>
     const { title, sectionId, scenario, options, isActive } = req.body;
     const updatedCase = await Case.findOneAndUpdate(
       { id: req.params.id } as any,
-      { title, sectionId, scenario, options, isActive } as any,
+      { title, sectionId, scenario, options, isActive, updatedAt: new Date() } as any,
       { new: true } as any
     );
     res.json({ success: true, case: updatedCase });

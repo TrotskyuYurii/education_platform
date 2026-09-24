@@ -1,6 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Search,
+  Plus,
+  Users,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
+  X,
+  CheckCircle2,
+  Loader2
+} from 'lucide-react';
 import { InstructionSection } from '../../types';
+import { MaterialEditDialog } from './MaterialEditDialog';
 
 /**
  * Вкладка «Користувачі» розділу адміністрування.
@@ -10,6 +26,10 @@ import { InstructionSection } from '../../types';
  * три тисячі рядків адмінки. Винесена окремо, вона перемальовує лише себе, а
  * свої довідники (користувачі, ролі, посади, локації) тягне з мережі тільки
  * коли вкладку справді відкрили.
+ *
+ * Перелік — таблиця на всю ширину з пошуком, фільтрами, сортуванням і
+ * сторінками: картками поруч із формою сотні співробітників не проглянеш.
+ * Створення й редагування відкриваються окремим вікном, як і для матеріалів.
  */
 
 interface UserManagementProps {
@@ -19,79 +39,153 @@ interface UserManagementProps {
   departments: any[];
 }
 
-interface UserListItemProps {
+/** Сервер віддає щонайбільше стільки користувачів за запит. */
+const USERS_PAGE_LIMIT = 1000;
+const PAGE_SIZES = [25, 50, 100];
+
+type SortKey = 'name' | 'department' | 'position' | 'manager' | 'status' | 'createdAt';
+type SortDir = 'asc' | 'desc';
+
+interface UserRow {
   user: any;
-  isSelected: boolean;
-  /** Готова назва підрозділу — щоб рядок не шукав її сам і лишався memo-придатним. */
-  departmentName: string | null;
-  /** Підписи ролей з готовою ознакою адміністратора: рядок нічого не доглядає сам. */
+  name: string;
+  email: string;
+  departmentName: string;
+  positionTitle: string;
+  managerName: string;
+  roleKeys: string[];
   roleBadges: { key: string; label: string; isAdmin: boolean }[];
-  onSelect: (user: any) => void;
+  isActive: boolean;
+  createdAt: number;
+  /** Рядок для пошуку, зібраний один раз. */
+  haystack: string;
 }
 
+const refId = (value: any): string => {
+  if (!value) return '';
+  return String(typeof value === 'object' ? value._id || '' : value);
+};
+
+const userLabel = (u: any) =>
+  u?.fullName ? `${u.fullName} (${u.email || u.username})` : (u?.email || u?.username || '');
+
 /**
- * Рядок списку користувачів.
+ * Рядок таблиці.
  *
- * memo тут дає реальний виграш саме тому, що всі пропси — примітиви, готові
- * рядки або незмінні посилання, а onSelect стабільний через useCallback. При
- * редагуванні форми праворуч жоден рядок не перемальовується; без memo їх
- * перемальовувалось би стільки, скільки користувачів у компанії.
+ * memo тут дає реальний виграш саме тому, що всі пропси — готові рядки або
+ * незмінні посилання, а onSelect стабільний через useCallback. Набір тексту в
+ * пошуку чи у формі не перемальовує рядки, що лишилися на сторінці.
  */
-const UserListItem = React.memo<UserListItemProps>(({
-  user,
+const UserTableRow = React.memo<{ row: UserRow; isSelected: boolean; onSelect: (user: any) => void }>(({
+  row,
   isSelected,
-  departmentName,
-  roleBadges,
   onSelect
 }) => {
-  const displayName = user.fullName
-    ? `${user.fullName} (${user.email || user.username})`
-    : (user.email || user.username);
-
+  const { user } = row;
   return (
-    <div
+    <tr
       onClick={() => onSelect(user)}
-      className={`p-3.5 rounded-xl border cursor-pointer transition ${isSelected ? 'border-purple-500 bg-purple-50/70 shadow-xs' : 'border-slate-200 bg-white hover:border-purple-300'}`}
+      className={`cursor-pointer transition ${
+        isSelected ? 'bg-purple-50' : 'hover:bg-slate-50'
+      } ${row.isActive ? '' : 'text-slate-400'}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="font-semibold text-slate-900 text-sm">{displayName}</div>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {roleBadges.map(badge => (
-              <span
-                key={badge.key}
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
-                  badge.isAdmin
-                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                    : 'bg-slate-100 text-slate-700 border border-slate-200'
-                }`}
-              >
-                {badge.label}
-              </span>
-            ))}
-          </div>
+      <td className="px-3 py-2.5 align-top">
+        <div className={`font-semibold text-sm ${row.isActive ? 'text-slate-900' : 'text-slate-500'}`}>
+          {row.name || <span className="italic text-slate-400">Без ПІБ</span>}
         </div>
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-xs border-t border-slate-100 pt-2">
-        <span className="text-slate-500">
-          {user.departmentId ? (
-            <span>Відділ: <strong className="text-slate-700">{departmentName || 'Призначено'}</strong></span>
-          ) : (
-            <span>Підрозділів: {Array.isArray(user.departments) ? user.departments.length : 0}</span>
-          )}
-        </span>
+        <div className="text-xs text-slate-500 truncate max-w-[260px]">{row.email}</div>
+      </td>
+      <td className="px-3 py-2.5 align-top text-xs text-slate-700">
+        {row.departmentName || <span className="text-slate-400">—</span>}
+      </td>
+      <td className="px-3 py-2.5 align-top text-xs text-slate-700 hidden lg:table-cell">
+        {row.positionTitle || <span className="text-slate-400">—</span>}
+      </td>
+      <td className="px-3 py-2.5 align-top text-xs text-slate-700 hidden xl:table-cell">
+        {row.managerName || <span className="text-slate-400">—</span>}
+      </td>
+      <td className="px-3 py-2.5 align-top">
+        <div className="flex flex-wrap gap-1">
+          {row.roleBadges.map(badge => (
+            <span
+              key={badge.key}
+              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap ${
+                badge.isAdmin
+                  ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+              }`}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
+      </td>
+      <td className="px-3 py-2.5 align-top text-xs hidden md:table-cell whitespace-nowrap">
         {user.authMethod === 'otp' ? (
-          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-            ✉️ Email-код (8 знаків)
+          <span className="font-semibold text-emerald-700">✉️ Email-код</span>
+        ) : (
+          <span className="text-slate-500">Пароль</span>
+        )}
+      </td>
+      <td className="px-3 py-2.5 align-top">
+        {row.isActive ? (
+          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Активний
           </span>
         ) : (
-          <span className="text-slate-400 font-medium">Прямий вхід без коду</span>
+          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200">
+            Вимкнено
+          </span>
         )}
-      </div>
-    </div>
+      </td>
+      <td className="px-3 py-2.5 align-top text-xs text-slate-500 whitespace-nowrap hidden lg:table-cell">
+        {row.createdAt ? new Date(row.createdAt).toLocaleDateString('uk-UA') : '—'}
+      </td>
+      <td className="px-3 py-2.5 align-top text-right">
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onSelect(user); }}
+          className="p-1.5 text-slate-500 hover:text-purple-700 hover:bg-purple-100 rounded-lg transition"
+          title="Редагувати користувача"
+          aria-label={`Редагувати ${row.name || row.email}`}
+        >
+          <Edit2 className="w-4 h-4" />
+        </button>
+      </td>
+    </tr>
   );
 });
-UserListItem.displayName = 'UserListItem';
+UserTableRow.displayName = 'UserTableRow';
+
+/** Заголовок колонки, за якою можна сортувати. */
+const SortHeader: React.FC<{
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: SortDir };
+  onSort: (key: SortKey) => void;
+  className?: string;
+}> = ({ label, sortKey, sort, onSort, className = '' }) => {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ChevronUp : ChevronDown;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`px-3 py-2.5 text-left ${className}`}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider text-[10px] ${
+          active ? 'text-purple-700' : 'text-slate-500 hover:text-slate-800'
+        }`}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${active ? '' : 'opacity-50'}`} />
+      </button>
+    </th>
+  );
+};
 
 /** Спільний для обох форм перелік чекбоксів з ролями RBAC. */
 const RoleCheckboxes: React.FC<{
@@ -129,27 +223,101 @@ const RoleCheckboxes: React.FC<{
   </div>
 );
 
+/** Поле пароля з кнопкою «показати». */
+const PasswordInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  required?: boolean;
+}> = ({ value, onChange, disabled, required }) => {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={visible ? 'text' : 'password'}
+        required={required}
+        disabled={disabled}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="••••••••"
+        autoComplete="new-password"
+        className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setVisible(v => !v)}
+        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
+        title={visible ? 'Приховати пароль' : 'Показати пароль'}
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+};
+
 const SELECT_CLASS = 'w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500';
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-500';
 const LABEL_CLASS = 'block text-xs font-semibold text-slate-700 mb-1';
+const FILTER_CLASS = 'px-2.5 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500';
+
+const blankNewUser = () => ({
+  fullName: '',
+  email: '',
+  username: '',
+  password: '',
+  authMethod: 'password',
+  role: 'user',
+  roleKeys: ['employee'],
+  departmentId: '',
+  managerId: ''
+});
 
 export const UserManagement: React.FC<UserManagementProps> = ({ sections, departments }) => {
   const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
   const [roles, setRoles] = useState<any[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
-  const [newUser, setNewUser] = useState<any>({ email: '', username: '', password: '', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
-  const [userMsg, setUserMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [newUser, setNewUser] = useState<any>(blankNewUser);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
+  // Пошук, фільтри, сортування й сторінки таблиці
+  const [search, setSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+
+  /**
+   * Сервер віддає не більше тисячі користувачів за раз, тож довантажуємо
+   * сторінками, доки не отримаємо всіх — інакше частина людей просто не
+   * потрапила б ні в таблицю, ні у вибір керівника.
+   */
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/users');
-      const data = await res.json();
-      if (res.ok) setUsers(data.users);
-    } catch (err) {}
+      const all: any[] = [];
+      for (let skip = 0; skip < USERS_PAGE_LIMIT * 50; skip += USERS_PAGE_LIMIT) {
+        const res = await fetch(`/api/admin/users?limit=${USERS_PAGE_LIMIT}&skip=${skip}`);
+        const data = await res.json();
+        if (!res.ok) break;
+        const batch: any[] = data.users || [];
+        all.push(...batch);
+        const total = typeof data.total === 'number' ? data.total : all.length;
+        if (batch.length < USERS_PAGE_LIMIT || all.length >= total) break;
+      }
+      setUsers(all);
+    } catch (err) {
+      /* лишаємо попередній перелік */
+    } finally {
+      setLoadingUsers(false);
+    }
   }, []);
 
   // Довідники вантажаться при монтуванні вкладки, а не при відкритті адмінки:
@@ -169,8 +337,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
     load('/api/v2/org/locations', data => setLocations(Array.isArray(data) ? data : []));
   }, [fetchUsers]);
 
-  // Довідники як Map: інакше кожен рядок списку шукав би назву підрозділу та
-  // підпис ролі лінійним пошуком, тобто O(користувачі × підрозділи) на рендер.
+  // Довідники як Map: інакше кожен рядок шукав би назву підрозділу, посади та
+  // підпис ролі лінійним пошуком, тобто O(користувачі × довідник) на рендер.
   const departmentNameById = useMemo(() => {
     const map = new Map<string, string>();
     departments.forEach(d => {
@@ -180,47 +348,131 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
     return map;
   }, [departments]);
 
+  const positionTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    positions.forEach(p => { if (p?._id) map.set(String(p._id), p.title); });
+    return map;
+  }, [positions]);
+
   const roleTitleByKey = useMemo(() => {
     const map = new Map<string, string>();
     roles.forEach(r => { if (r?.key) map.set(r.key, r.title || r.key); });
     return map;
   }, [roles]);
 
-  /**
-   * Готові до рендеру рядки. Перерахунок прив'язаний лише до самих даних, тож
-   * правки у формі праворуч його не зачіпають — саме це й робить memo на
-   * UserListItem дієвим.
-   */
-  const userRows = useMemo(() => users.map(u => {
-    const rawDepId = typeof u.departmentId === 'object' && u.departmentId ? u.departmentId._id : u.departmentId;
+  /** Готові до рендеру рядки — перераховуються лише при зміні самих даних. */
+  const rows = useMemo<UserRow[]>(() => users.map(u => {
     const departmentName = typeof u.departmentId === 'object' && u.departmentId
-      ? (u.departmentId.name || null)
-      : (rawDepId ? (departmentNameById.get(String(rawDepId)) || null) : null);
-    const keys: string[] = u.roleKeys && u.roleKeys.length > 0 ? u.roleKeys : [u.role || 'employee'];
+      ? (u.departmentId.name || '')
+      : (departmentNameById.get(refId(u.departmentId)) || '');
+    const positionTitle = typeof u.positionId === 'object' && u.positionId
+      ? (u.positionId.title || '')
+      : (positionTitleById.get(refId(u.positionId)) || '');
+    const managerName = typeof u.managerId === 'object' && u.managerId
+      ? (u.managerId.fullName || u.managerId.email || u.managerId.username || '')
+      : '';
+    const roleKeys: string[] = u.roleKeys && u.roleKeys.length > 0 ? u.roleKeys : [u.role || 'employee'];
+    const roleBadges = roleKeys.map(k => ({ key: k, label: roleTitleByKey.get(k) || k, isAdmin: k === 'admin' }));
+    const name = u.fullName || '';
+    const email = u.email || u.username || '';
     return {
       user: u,
+      name,
+      email,
       departmentName,
-      roleBadges: keys.map(k => ({ key: k, label: roleTitleByKey.get(k) || k, isAdmin: k === 'admin' }))
+      positionTitle,
+      managerName,
+      roleKeys,
+      roleBadges,
+      isActive: u.isActive !== false,
+      createdAt: u.createdAt ? new Date(u.createdAt).getTime() : 0,
+      haystack: [name, email, departmentName, positionTitle, managerName, ...roleBadges.map(b => b.label)]
+        .join(' ')
+        .toLowerCase()
     };
-  }), [users, departmentNameById, roleTitleByKey]);
+  }), [users, departmentNameById, positionTitleById, roleTitleByKey]);
+
+  const departmentOptions = useMemo(
+    () => Array.from(new Set(rows.map(r => r.departmentName).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'uk')),
+    [rows]
+  );
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const list = rows.filter(r => {
+      if (query && !r.haystack.includes(query)) return false;
+      if (departmentFilter === 'none' && r.departmentName) return false;
+      if (departmentFilter !== 'all' && departmentFilter !== 'none' && r.departmentName !== departmentFilter) return false;
+      if (roleFilter !== 'all' && !r.roleKeys.includes(roleFilter)) return false;
+      if (statusFilter === 'active' && !r.isActive) return false;
+      if (statusFilter === 'inactive' && r.isActive) return false;
+      return true;
+    });
+
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const text = (a: string, b: string) => {
+      // Порожні значення завжди внизу, незалежно від напрямку
+      if (!a && b) return 1;
+      if (a && !b) return -1;
+      return a.localeCompare(b, 'uk') * dir;
+    };
+    list.sort((a, b) => {
+      switch (sort.key) {
+        case 'department': return text(a.departmentName, b.departmentName) || text(a.name || a.email, b.name || b.email);
+        case 'position': return text(a.positionTitle, b.positionTitle) || text(a.name || a.email, b.name || b.email);
+        case 'manager': return text(a.managerName, b.managerName) || text(a.name || a.email, b.name || b.email);
+        case 'status': return (Number(b.isActive) - Number(a.isActive)) * dir || text(a.name || a.email, b.name || b.email);
+        case 'createdAt': return (a.createdAt - b.createdAt) * dir;
+        default: return text(a.name || a.email, b.name || b.email);
+      }
+    });
+    return list;
+  }, [rows, search, departmentFilter, roleFilter, statusFilter, sort]);
+
+  // Будь-яка зміна фільтрів повертає на першу сторінку
+  useEffect(() => { setPage(0); }, [search, departmentFilter, roleFilter, statusFilter, sort, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = filteredRows.slice(safePage * pageSize, (safePage + 1) * pageSize);
+
+  const activeCount = useMemo(() => rows.filter(r => r.isActive).length, [rows]);
+  const hasFilters = search.trim() !== '' || departmentFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all';
+
+  const handleSort = useCallback((key: SortKey) => {
+    setSort(prev => prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      // Дату додавання зручніше одразу бачити від найновіших
+      : { key, dir: key === 'createdAt' ? 'desc' : 'asc' });
+  }, []);
 
   const handleSelectUser = useCallback((u: any) => {
-    const normalizedDeptId = typeof u.departmentId === 'object' && u.departmentId ? u.departmentId._id : u.departmentId;
-    const normalizedManagerId = typeof u.managerId === 'object' && u.managerId ? u.managerId._id : u.managerId;
     const normalizedDepts = Array.isArray(u.departments)
       ? u.departments.map((d: any) => typeof d === 'string' ? d : d?.name).filter(Boolean)
       : [];
+    setFormError(null);
+    setCreating(false);
     setSelectedUser({
       ...u,
-      departmentId: normalizedDeptId,
-      managerId: normalizedManagerId,
+      departmentId: refId(u.departmentId) || undefined,
+      managerId: refId(u.managerId) || undefined,
+      positionId: refId(u.positionId) || undefined,
+      locationId: refId(u.locationId) || undefined,
       departments: normalizedDepts
     });
   }, []);
 
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openCreate = () => {
+    setSelectedUser(null);
+    setNewUser(blankNewUser());
+    setFormError(null);
+    setCreating(true);
+  };
+
+  const handleUpdateUser = async () => {
     if (!selectedUser) return;
+    setSaving(true);
+    setFormError(null);
     try {
       const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
         method: 'PUT',
@@ -242,33 +494,33 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
           password: selectedUser.newPassword || undefined
         })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error);
-        return;
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Не вдалося оновити користувача');
+      setNotice(`Зміни для ${selectedUser.fullName || selectedUser.email} збережено.`);
       setSelectedUser(null);
       fetchUsers();
-    } catch (err) {
-      alert('Помилка оновлення користувача');
+    } catch (err: any) {
+      setFormError(err?.message || 'Помилка оновлення користувача');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUserMsg(null);
-    const cleanEmail = newUser.email.trim().toLowerCase();
+  const handleCreateUser = async () => {
+    setFormError(null);
+    const cleanEmail = (newUser.email || '').trim().toLowerCase();
 
     if (!cleanEmail.endsWith('@viatec.ua')) {
-      setUserMsg({ type: 'error', text: 'Email має бути виключно в домені @viatec.ua' });
+      setFormError('Email має бути виключно в домені @viatec.ua');
       return;
     }
 
     if (!newUser.password && newUser.authMethod !== 'otp') {
-      setUserMsg({ type: 'error', text: 'Пароль є обов\'язковим полем' });
+      setFormError('Пароль є обов\'язковим полем');
       return;
     }
 
+    setSaving(true);
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
@@ -285,374 +537,476 @@ export const UserManagement: React.FC<UserManagementProps> = ({ sections, depart
           managerId: newUser.managerId
         })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Не вдалося створити користувача');
 
-      setUserMsg({ type: 'success', text: `Користувача ${cleanEmail} успішно створено!` });
-      setNewUser({ fullName: '', email: '', username: '', password: '', authMethod: 'password', role: 'user', roleKeys: ['employee'], departmentId: '', managerId: '' });
+      setNotice(`Користувача ${cleanEmail} успішно створено!`);
+      setCreating(false);
+      setNewUser(blankNewUser());
       fetchUsers();
     } catch (err: any) {
-      setUserMsg({ type: 'error', text: err.message });
+      setFormError(err?.message || 'Помилка створення користувача');
+    } finally {
+      setSaving(false);
     }
   };
 
+  const closeDialog = () => {
+    setSelectedUser(null);
+    setCreating(false);
+    setFormError(null);
+  };
+
+  const managerOptions = (excludeId?: string) => users
+    .filter(u => u._id !== excludeId)
+    .map(u => ({ id: u._id, label: userLabel(u) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'uk'));
+
   return (
-    <div className="space-y-6">
-      <div className="border-b border-slate-100 pb-4">
-        <h3 className="text-lg font-bold text-slate-900">Керування користувачами</h3>
-        <p className="text-sm text-slate-500 mt-1">
-          Створення та редагування користувачів. Налаштування доступів до підрозділів та інструкцій.
-        </p>
+    <div className="space-y-5">
+      <div className="border-b border-slate-100 pb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Керування користувачами</h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Створення та редагування користувачів. Налаштування доступів до підрозділів та інструкцій.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 transition"
+        >
+          <Plus className="w-4 h-4" />
+          Створити користувача
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-6">
-        <div className="min-w-0">
-          <h4 className="font-semibold text-slate-800 mb-3">Список користувачів</h4>
-          <div className="space-y-2 max-h-[min(640px,calc(100vh-20rem))] overflow-y-auto pr-2">
-            {userRows.map(row => (
-              <UserListItem
-                key={row.user._id}
-                user={row.user}
-                isSelected={selectedUser?._id === row.user._id}
-                departmentName={row.departmentName}
-                roleBadges={row.roleBadges}
-                onSelect={handleSelectUser}
-              />
-            ))}
+      {notice && (
+        <div className="flex items-center gap-2 p-3 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="grow">{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Сховати" className="text-emerald-600 hover:text-emerald-900">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Панель пошуку та фільтрів */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative grow min-w-[220px] max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Пошук: ПІБ, email, посада, керівник…"
+            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+        <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className={FILTER_CLASS} aria-label="Фільтр за підрозділом">
+          <option value="all">Усі підрозділи</option>
+          <option value="none">Без підрозділу</option>
+          {departmentOptions.map(name => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={FILTER_CLASS} aria-label="Фільтр за роллю">
+          <option value="all">Усі ролі</option>
+          {roles.map(r => <option key={r.key} value={r.key}>{r.title || r.key}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={FILTER_CLASS} aria-label="Фільтр за статусом">
+          <option value="all">Будь-який статус</option>
+          <option value="active">Активні</option>
+          <option value="inactive">Вимкнені</option>
+        </select>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={() => { setSearch(''); setDepartmentFilter('all'); setRoleFilter('all'); setStatusFilter('all'); }}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-2"
+          >
+            Скинути
+          </button>
+        )}
+        <div className="grow" />
+        <span className="text-xs text-slate-500 flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5" />
+          {hasFilters ? `Знайдено ${filteredRows.length} з ${rows.length}` : `Усього ${rows.length}`}
+          <span className="text-slate-300">·</span>
+          активних {activeCount}
+        </span>
+      </div>
+
+      {/* Таблиця */}
+      <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+        <div className="overflow-x-auto max-h-[min(720px,calc(100vh-18rem))] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+              <tr>
+                <SortHeader label="Співробітник" sortKey="name" sort={sort} onSort={handleSort} />
+                <SortHeader label="Підрозділ" sortKey="department" sort={sort} onSort={handleSort} />
+                <SortHeader label="Посада" sortKey="position" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
+                <SortHeader label="Керівник" sortKey="manager" sort={sort} onSort={handleSort} className="hidden xl:table-cell" />
+                <th scope="col" className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] text-slate-500">Ролі</th>
+                <th scope="col" className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] text-slate-500 hidden md:table-cell">Вхід</th>
+                <SortHeader label="Статус" sortKey="status" sort={sort} onSort={handleSort} />
+                <SortHeader label="Додано" sortKey="createdAt" sort={sort} onSort={handleSort} className="hidden lg:table-cell" />
+                <th scope="col" className="px-3 py-2.5"><span className="sr-only">Дії</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {pageRows.map(row => (
+                <UserTableRow
+                  key={row.user._id}
+                  row={row}
+                  isSelected={selectedUser?._id === row.user._id}
+                  onSelect={handleSelectUser}
+                />
+              ))}
+            </tbody>
+          </table>
+
+          {pageRows.length === 0 && (
+            <div className="py-12 text-center text-sm text-slate-500">
+              {loadingUsers ? (
+                <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Завантаження користувачів…</span>
+              ) : hasFilters ? 'За цими умовами користувачів не знайдено.' : 'Користувачів ще немає.'}
+            </div>
+          )}
+        </div>
+
+        {/* Сторінки */}
+        {filteredRows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+            <label className="flex items-center gap-2">
+              Рядків на сторінці:
+              <select
+                value={pageSize}
+                onChange={e => setPageSize(Number(e.target.value))}
+                className="px-2 py-1 bg-white border border-slate-300 rounded-lg font-semibold outline-none"
+              >
+                {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <div className="flex items-center gap-2">
+              <span>
+                {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filteredRows.length)} з {filteredRows.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(safePage - 1)}
+                disabled={safePage === 0}
+                className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 transition"
+                aria-label="Попередня сторінка"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="font-semibold">{safePage + 1} / {pageCount}</span>
+              <button
+                type="button"
+                onClick={() => setPage(safePage + 1)}
+                disabled={safePage >= pageCount - 1}
+                className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 transition"
+                aria-label="Наступна сторінка"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+        )}
+      </div>
+
+      {/* Редагування користувача */}
+      <MaterialEditDialog
+        open={Boolean(selectedUser)}
+        onClose={closeDialog}
+        size="lg"
+        icon={<Edit2 className="w-4 h-4" />}
+        iconTone="bg-purple-50 text-purple-600 border-purple-100"
+        title="Редагування користувача"
+        subtitle={selectedUser ? (selectedUser.email || selectedUser.username) : undefined}
+        submitLabel="Зберегти зміни"
+        onSubmit={handleUpdateUser}
+        saving={saving}
+        error={formError}
+      >
+        {selectedUser && (
+          <>
+            <div>
+              <label className={LABEL_CLASS}>ПІБ співробітника</label>
+              <input
+                type="text"
+                value={selectedUser.fullName || ''}
+                onChange={e => setSelectedUser({ ...selectedUser, fullName: e.target.value })}
+                placeholder="напр. Іваненко Петро Васильович"
+                className={INPUT_CLASS}
+              />
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Email (@viatec.ua) *</label>
+              <input
+                type="email"
+                required
+                value={selectedUser.email || ''}
+                onChange={e => setSelectedUser({ ...selectedUser, email: e.target.value })}
+                className={INPUT_CLASS}
+              />
+            </div>
+
+            <RoleCheckboxes
+              roles={roles}
+              currentRoles={selectedUser.roleKeys || [selectedUser.role || 'employee']}
+              onChange={(roleKeys, role) => setSelectedUser({ ...selectedUser, roleKeys, role })}
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL_CLASS}>Основний підрозділ</label>
+                <select
+                  value={selectedUser.departmentId || ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, departmentId: e.target.value || undefined })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">Не обрано</option>
+                  {departments.map(d => (
+                    <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Керівник (Manager)</label>
+                <select
+                  value={selectedUser.managerId || ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, managerId: e.target.value || undefined })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">Без керівника</option>
+                  {managerOptions(selectedUser._id).map(o => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Посада</label>
+                <select
+                  value={selectedUser.positionId || ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, positionId: e.target.value || undefined })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">Не обрано</option>
+                  {positions.map(p => (
+                    <option key={p._id} value={p._id}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Локація</label>
+                <select
+                  value={selectedUser.locationId || ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, locationId: e.target.value || undefined })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">Не обрано</option>
+                  {locations.map(l => (
+                    <option key={l._id} value={l._id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Дата найму</label>
+                <input
+                  type="date"
+                  value={selectedUser.hireDate ? String(selectedUser.hireDate).slice(0, 10) : ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, hireDate: e.target.value || undefined })}
+                  className={SELECT_CLASS}
+                />
+              </div>
+
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedUser.isActive !== false}
+                    onChange={e => setSelectedUser({ ...selectedUser, isActive: e.target.checked })}
+                    className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  Активний співробітник
+                </label>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <label className={LABEL_CLASS}>Варіант авторизації</label>
+              <select
+                value={selectedUser.authMethod || 'password'}
+                onChange={e => setSelectedUser({ ...selectedUser, authMethod: e.target.value })}
+                className={INPUT_CLASS}
+              >
+                <option value="password">Стандартний логін (email) та пароль</option>
+                <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>
+                Новий пароль {selectedUser.authMethod === 'otp' ? '(не використовується)' : '(залиште порожнім, щоб не змінювати)'}
+              </label>
+              <PasswordInput
+                value={selectedUser.newPassword || ''}
+                onChange={value => setSelectedUser({ ...selectedUser, newPassword: value })}
+                disabled={selectedUser.authMethod === 'otp'}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Доступ до підрозділів</label>
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
+                {departments.map(d => (
+                  <label key={d._id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedUser.departments?.includes(d.name) || false}
+                      onChange={e => {
+                        const deps = selectedUser.departments || [];
+                        setSelectedUser({
+                          ...selectedUser,
+                          departments: e.target.checked ? [...deps, d.name] : deps.filter((x: string) => x !== d.name)
+                        });
+                      }}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-xs text-slate-700">{d.name}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">Якщо обрано "Всі підрозділи", користувач бачитиме інструкції всіх підрозділів.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Обмеження за інструкціями (опціонально)</label>
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
+                {sections.map(s => (
+                  <label key={s.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedUser.allowedInstructionIds?.includes(s.id) || false}
+                      onChange={e => {
+                        const allowed = selectedUser.allowedInstructionIds || [];
+                        setSelectedUser({
+                          ...selectedUser,
+                          allowedInstructionIds: e.target.checked ? [...allowed, s.id] : allowed.filter((x: string) => x !== s.id)
+                        });
+                      }}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-xs text-slate-700">{s.title} <span className="text-slate-400">({s.department})</span></span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </MaterialEditDialog>
+
+      {/* Створення користувача */}
+      <MaterialEditDialog
+        open={creating}
+        onClose={closeDialog}
+        size="lg"
+        icon={<Plus className="w-4 h-4" />}
+        iconTone="bg-purple-50 text-purple-600 border-purple-100"
+        title="Створити нового користувача"
+        submitLabel="Створити користувача"
+        onSubmit={handleCreateUser}
+        saving={saving}
+        error={formError}
+      >
+        <div>
+          <label className={LABEL_CLASS}>ПІБ співробітника</label>
+          <input
+            type="text"
+            value={newUser.fullName || ''}
+            onChange={e => setNewUser({ ...newUser, fullName: e.target.value })}
+            className={INPUT_CLASS}
+            placeholder="напр. Іваненко Петро Васильович"
+          />
+        </div>
+        <div>
+          <label className={LABEL_CLASS}>Корпоративний Email (@viatec.ua) *</label>
+          <input
+            type="email"
+            required
+            value={newUser.email}
+            onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+            className={INPUT_CLASS}
+            placeholder="user@viatec.ua"
+          />
+          <p className="text-[11px] text-slate-500 mt-1">Email використовується як логін для входу в систему.</p>
+        </div>
+
+        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <label className={LABEL_CLASS}>Варіант авторизації</label>
+          <select
+            value={newUser.authMethod || 'password'}
+            onChange={e => setNewUser({ ...newUser, authMethod: e.target.value })}
+            className={INPUT_CLASS}
+          >
+            <option value="password">Стандартний логін (email) та пароль</option>
+            <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
+          </select>
         </div>
 
         <div>
-          {selectedUser ? (
-            <form onSubmit={handleUpdateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-slate-900 text-sm">Редагування користувача</h4>
-                <span className="text-xs text-purple-700 font-mono bg-purple-100 px-2 py-0.5 rounded">
-                  {selectedUser.email || selectedUser.username}
-                </span>
-              </div>
-
-              <div>
-                <label className={LABEL_CLASS}>ПІБ співробітника</label>
-                <input
-                  type="text"
-                  value={selectedUser.fullName || ''}
-                  onChange={e => setSelectedUser({ ...selectedUser, fullName: e.target.value })}
-                  placeholder="напр. Іваненко Петро Васильович"
-                  className={INPUT_CLASS}
-                />
-              </div>
-
-              <div>
-                <label className={LABEL_CLASS}>Email (@viatec.ua) *</label>
-                <input
-                  type="email"
-                  required
-                  value={selectedUser.email || ''}
-                  onChange={e => setSelectedUser({ ...selectedUser, email: e.target.value })}
-                  className={INPUT_CLASS}
-                />
-              </div>
-
-              <RoleCheckboxes
-                roles={roles}
-                currentRoles={selectedUser.roleKeys || [selectedUser.role || 'employee']}
-                onChange={(roleKeys, role) => setSelectedUser({ ...selectedUser, roleKeys, role })}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL_CLASS}>Основний підрозділ</label>
-                  <select
-                    value={typeof selectedUser.departmentId === 'object' ? (selectedUser.departmentId?._id || '') : (selectedUser.departmentId || '')}
-                    onChange={e => setSelectedUser({ ...selectedUser, departmentId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Не обрано</option>
-                    {departments.map(d => (
-                      <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={LABEL_CLASS}>Керівник (Manager)</label>
-                  <select
-                    value={typeof selectedUser.managerId === 'object' ? (selectedUser.managerId?._id || '') : (selectedUser.managerId || '')}
-                    onChange={e => setSelectedUser({ ...selectedUser, managerId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Без керівника</option>
-                    {users.filter(u => u._id !== selectedUser._id).map(u => (
-                      <option key={u._id} value={u._id}>
-                        {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL_CLASS}>Посада</label>
-                  <select
-                    value={typeof selectedUser.positionId === 'object' ? (selectedUser.positionId?._id || '') : (selectedUser.positionId || '')}
-                    onChange={e => setSelectedUser({ ...selectedUser, positionId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Не обрано</option>
-                    {positions.map(p => (
-                      <option key={p._id} value={p._id}>{p.title}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={LABEL_CLASS}>Локація</label>
-                  <select
-                    value={typeof selectedUser.locationId === 'object' ? (selectedUser.locationId?._id || '') : (selectedUser.locationId || '')}
-                    onChange={e => setSelectedUser({ ...selectedUser, locationId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Не обрано</option>
-                    {locations.map(l => (
-                      <option key={l._id} value={l._id}>{l.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={LABEL_CLASS}>Дата найму</label>
-                  <input
-                    type="date"
-                    value={selectedUser.hireDate ? String(selectedUser.hireDate).slice(0, 10) : ''}
-                    onChange={e => setSelectedUser({ ...selectedUser, hireDate: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  />
-                </div>
-
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedUser.isActive !== false}
-                      onChange={e => setSelectedUser({ ...selectedUser, isActive: e.target.checked })}
-                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    Активний співробітник
-                  </label>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-slate-200">
-                <label className={LABEL_CLASS}>Варіант авторизації</label>
-                <select
-                  value={selectedUser.authMethod || 'password'}
-                  onChange={e => setSelectedUser({ ...selectedUser, authMethod: e.target.value })}
-                  className={INPUT_CLASS}
-                >
-                  <option value="password">Стандартний логін (email) та пароль</option>
-                  <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className={LABEL_CLASS}>
-                  Новий пароль {selectedUser.authMethod === 'otp' ? '(не використовується)' : '(залиште порожнім, щоб не змінювати)'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showEditPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    disabled={selectedUser.authMethod === 'otp'}
-                    value={selectedUser.newPassword || ''}
-                    onChange={e => setSelectedUser({ ...selectedUser, newPassword: e.target.value })}
-                    className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
-                  />
-                  <button
-                    type="button"
-                    disabled={selectedUser.authMethod === 'otp'}
-                    onClick={() => setShowEditPassword(!showEditPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
-                    title={showEditPassword ? 'Приховати пароль' : 'Показати пароль'}
-                  >
-                    {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Доступ до підрозділів</label>
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
-                  {departments.map(d => (
-                    <label key={d._id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedUser.departments?.includes(d.name) || false}
-                        onChange={e => {
-                          const deps = selectedUser.departments || [];
-                          if (e.target.checked) {
-                            setSelectedUser({ ...selectedUser, departments: [...deps, d.name] });
-                          } else {
-                            setSelectedUser({ ...selectedUser, departments: deps.filter((x: string) => x !== d.name) });
-                          }
-                        }}
-                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      <span className="text-xs text-slate-700">{d.name}</span>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">Якщо обрано "Всі підрозділи", користувач бачитиме інструкції всіх підрозділів.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Обмеження за інструкціями (опціонально)</label>
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto p-2.5 bg-white border border-slate-200 rounded-xl">
-                  {sections.map(s => (
-                    <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedUser.allowedInstructionIds?.includes(s.id) || false}
-                        onChange={e => {
-                          const allowed = selectedUser.allowedInstructionIds || [];
-                          if (e.target.checked) {
-                            setSelectedUser({ ...selectedUser, allowedInstructionIds: [...allowed, s.id] });
-                          } else {
-                            setSelectedUser({ ...selectedUser, allowedInstructionIds: allowed.filter((x: string) => x !== s.id) });
-                          }
-                        }}
-                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      <span className="text-xs text-slate-700">{s.title} <span className="text-slate-400">({s.department})</span></span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <button type="submit" className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-xs transition">
-                  Зберегти зміни
-                </button>
-                <button type="button" onClick={() => setSelectedUser(null)} className="flex-1 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition">
-                  Скасувати
-                </button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={handleCreateUser} className="space-y-4 p-5 border border-slate-200 rounded-2xl bg-slate-50">
-              <h4 className="font-bold text-slate-900 text-sm">Створити нового користувача</h4>
-              {userMsg && (
-                <div className={`p-3 rounded-xl text-xs font-medium ${userMsg.type === 'error' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                  {userMsg.text}
-                </div>
-              )}
-              <div>
-                <label className={LABEL_CLASS}>ПІБ співробітника</label>
-                <input
-                  type="text"
-                  value={newUser.fullName || ''}
-                  onChange={e => setNewUser({ ...newUser, fullName: e.target.value })}
-                  className={INPUT_CLASS}
-                  placeholder="напр. Іваненко Петро Васильович"
-                />
-              </div>
-              <div>
-                <label className={LABEL_CLASS}>Корпоративний Email (@viatec.ua) *</label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                  className={INPUT_CLASS}
-                  placeholder="user@viatec.ua"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Email використовується як логін для входу в систему.
-                </p>
-              </div>
-              <div>
-                <label className={LABEL_CLASS}>
-                  Пароль {newUser.authMethod === 'otp' ? '(не використовується)' : '*'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    required={newUser.authMethod !== 'otp'}
-                    disabled={newUser.authMethod === 'otp'}
-                    value={newUser.password}
-                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                    className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-slate-100 disabled:text-slate-500"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    disabled={newUser.authMethod === 'otp'}
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none disabled:opacity-50"
-                    title={showNewPassword ? 'Приховати пароль' : 'Показати пароль'}
-                  >
-                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-slate-200">
-                <label className={LABEL_CLASS}>Варіант авторизації</label>
-                <select
-                  value={(newUser as any).authMethod || 'password'}
-                  onChange={e => setNewUser({ ...newUser, authMethod: e.target.value } as any)}
-                  className={INPUT_CLASS}
-                >
-                  <option value="password">Стандартний логін (email) та пароль</option>
-                  <option value="otp">Логін та 8-значний випадковий ключ (Email)</option>
-                </select>
-              </div>
-
-              <RoleCheckboxes
-                roles={roles}
-                currentRoles={newUser.roleKeys || [newUser.role || 'employee']}
-                onChange={(roleKeys, role) => setNewUser({ ...newUser, roleKeys, role })}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL_CLASS}>Основний підрозділ</label>
-                  <select
-                    value={newUser.departmentId || ''}
-                    onChange={e => setNewUser({ ...newUser, departmentId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Не обрано</option>
-                    {departments.map(d => (
-                      <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={LABEL_CLASS}>Керівник (Manager)</label>
-                  <select
-                    value={newUser.managerId || ''}
-                    onChange={e => setNewUser({ ...newUser, managerId: e.target.value || undefined })}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Без керівника</option>
-                    {users.map(u => (
-                      <option key={u._id} value={u._id}>
-                        {u.fullName ? `${u.fullName} (${u.email || u.username})` : (u.email || u.username)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-semibold text-xs transition">
-                Створити користувача
-              </button>
-            </form>
-          )}
+          <label className={LABEL_CLASS}>
+            Пароль {newUser.authMethod === 'otp' ? '(не використовується)' : '*'}
+          </label>
+          <PasswordInput
+            value={newUser.password}
+            onChange={value => setNewUser({ ...newUser, password: value })}
+            disabled={newUser.authMethod === 'otp'}
+            required={newUser.authMethod !== 'otp'}
+          />
         </div>
-      </div>
+
+        <RoleCheckboxes
+          roles={roles}
+          currentRoles={newUser.roleKeys || [newUser.role || 'employee']}
+          onChange={(roleKeys, role) => setNewUser({ ...newUser, roleKeys, role })}
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={LABEL_CLASS}>Основний підрозділ</label>
+            <select
+              value={newUser.departmentId || ''}
+              onChange={e => setNewUser({ ...newUser, departmentId: e.target.value || undefined })}
+              className={SELECT_CLASS}
+            >
+              <option value="">Не обрано</option>
+              {departments.map(d => (
+                <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Керівник (Manager)</label>
+            <select
+              value={newUser.managerId || ''}
+              onChange={e => setNewUser({ ...newUser, managerId: e.target.value || undefined })}
+              className={SELECT_CLASS}
+            >
+              <option value="">Без керівника</option>
+              {managerOptions().map(o => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </MaterialEditDialog>
     </div>
   );
 };

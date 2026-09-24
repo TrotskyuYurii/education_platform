@@ -22,10 +22,13 @@ import {
   ChevronRight,
   X,
   FolderTree,
-  GitBranch
+  GitBranch,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { MyAssignmentsWidget } from './MyAssignmentsWidget';
+import { FreshnessBadgeChip, MaterialDateLabel } from './MaterialFreshnessBadge';
+import { getMaterialFreshness, materialChangedAt, FRESH_MATERIAL_DAYS } from '../../shared/materialFreshness';
 
 interface CourseCatalogProps {
   certificates?: Array<{ courseId: string; courseTitle: string; issuedAt: string; expiresAt: string; }>;
@@ -60,6 +63,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
   const [selectedSpaceId, setSelectedSpaceId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeView, setActiveView] = useState<'all' | 'courses' | 'instructions'>('all');
+  const [onlyFresh, setOnlyFresh] = useState(false);
   const [activeNotifIdx, setActiveNotifIdx] = useState<number>(0);
   const [isNewsModalOpen, setIsNewsModalOpen] = useState<boolean>(false);
 
@@ -103,7 +107,9 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
         version: c.version || '1.0',
         status: c.status || 'published',
         sections: cSections,
-        totalReadTime: cSections.reduce((acc, s) => acc + (s.readTimeMin || 0), 0)
+        totalReadTime: cSections.reduce((acc, s) => acc + (s.readTimeMin || 0), 0),
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt
       };
     });
 
@@ -133,21 +139,36 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
       version: sec.version || '1.0',
       status: sec.status || 'published',
       sections: [sec],
-      totalReadTime: sec.readTimeMin || 0
+      totalReadTime: sec.readTimeMin || 0,
+      createdAt: sec.createdAt,
+      updatedAt: sec.updatedAt
     }));
 
-    let combined = [...cItems, ...sItems];
-    
+    let combined = [...cItems, ...sItems].map(item => {
+      const isCompleted = item.sections.length > 0 && item.sections.every(s => readSectionIds.includes(s.id));
+      // Курс вважається оновленим, коли змінилась будь-яка його інструкція
+      const freshness = getMaterialFreshness(item, {
+        isCompleted,
+        extraChanges: item.isCourse ? item.sections.map(s => materialChangedAt(s)) : []
+      });
+      return { ...item, isCompleted, freshness };
+    });
+
     if (activeView === 'courses') combined = combined.filter(i => i.isCourse);
     if (activeView === 'instructions') combined = combined.filter(i => !i.isCourse);
 
     return combined;
-  }, [sections, courses, selectedDepartment, selectedSpaceId, searchQuery, activeView]);
+  }, [sections, courses, selectedDepartment, selectedSpaceId, searchQuery, activeView, readSectionIds]);
+
+  const freshCount = useMemo(() => filteredItems.filter(i => i.freshness.badge).length, [filteredItems]);
+  const visibleItems = useMemo(
+    () => (onlyFresh ? filteredItems.filter(i => i.freshness.badge) : filteredItems),
+    [filteredItems, onlyFresh]
+  );
 
   const renderCompactRow = (item: any) => {
     // calculate progress
-    const courseReadSections = item.sections.filter((s: any) => readSectionIds.includes(s.id));
-    const isCompleted = item.sections.length > 0 && courseReadSections.length === item.sections.length;
+    const { isCompleted, freshness } = item;
     const itemSpace = spaces.find(sp => sp.id === item.spaceId);
     
     return (
@@ -159,6 +180,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h4 className="text-base font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{item.title}</h4>
+              <FreshnessBadgeChip badge={freshness.badge} />
               {item.isCourse && (
                 <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md">
                   Курс
@@ -187,6 +209,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
               <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">{item.department}</span>
               {item.isCourse && <span>• {item.sections.length} інструкцій</span>}
               <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {item.totalReadTime} хв</span>
+              <MaterialDateLabel freshness={freshness} className={freshness.badge === 'updated' ? 'text-amber-700' : ''} />
             </div>
           </div>
         </div>
@@ -510,15 +533,37 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Нові та оновлені матеріали */}
+              <button
+                onClick={() => setOnlyFresh(v => !v)}
+                aria-pressed={onlyFresh}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold border transition ${
+                  onlyFresh
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-200'
+                }`}
+                title={`Матеріали, додані або змінені за останні ${FRESH_MATERIAL_DAYS} днів`}
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles className={`w-4 h-4 ${onlyFresh ? 'text-white' : 'text-emerald-600'}`} />
+                  Нові та оновлені
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  onlyFresh ? 'bg-emerald-700 text-white' : freshCount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {freshCount}
+                </span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Main List */}
         <div className="flex-1">
-          {filteredItems.length > 0 ? (
+          {visibleItems.length > 0 ? (
             <div className="flex flex-col">
-              {filteredItems.map(renderCompactRow)}
+              {visibleItems.map(renderCompactRow)}
             </div>
           ) : (
             <div className="py-16 text-center bg-white border border-slate-200 rounded-3xl border-dashed">
@@ -529,6 +574,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
                   setSearchQuery('');
                   setSelectedDepartment('all');
                   setActiveView('all');
+                  setOnlyFresh(false);
                 }}
                 className="mt-4 px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-sm font-bold transition"
               >

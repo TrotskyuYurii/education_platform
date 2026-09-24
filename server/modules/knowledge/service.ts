@@ -379,6 +379,7 @@ export class KnowledgeService {
       versionNumber: nextVerNum,
       status: newStatus,
       changeLog: changeSummary,
+      updatedAt: new Date(),
       lastReviewedAt: new Date(),
       reviewedBy: user?._id || undefined
     });
@@ -466,6 +467,7 @@ export class KnowledgeService {
     section.versionNumber = nextVerNum;
     section.status = historical.status || 'published';
     section.changeLog = `Відновлено зміст з версії v${historical.version}`;
+    section.updatedAt = new Date();
     section.lastReviewedAt = new Date();
     section.reviewedBy = user?._id;
 
@@ -527,6 +529,8 @@ export class KnowledgeService {
 
     const oldStatus = section.status || 'published';
     section.status = status;
+    // Публікація чернетки — для співробітників це поява нового змісту
+    if (status === 'published' && oldStatus !== 'published') section.updatedAt = new Date();
     section.reviewNotes = reviewNotes || '';
     section.lastReviewedAt = new Date();
     section.reviewedBy = user?._id;
