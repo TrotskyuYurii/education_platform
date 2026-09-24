@@ -1,4 +1,6 @@
-import { MaterialList, MaterialRow } from './Admin/MaterialList';
+import { MaterialRow } from './Admin/MaterialList';
+import { MaterialFolderTree } from './Admin/MaterialFolderTree';
+import { useMaterialFolders } from '../hooks/useMaterialFolders';
 import { MaterialPreviewDialog, MaterialPreviewTarget } from './Admin/MaterialPreviewDialog';
 import {
   MaterialEditDialog,
@@ -364,6 +366,20 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
    */
   const [previewTarget, setPreviewTarget] = useState<MaterialPreviewTarget | null>(null);
 
+  /**
+   * Дерева тек для трьох переліків матеріалів.
+   *
+   * Тека зберігається полем `folderId` на самому матеріалі, тож після переносу
+   * потрібно перечитати контент — для цього кожне дерево отримує `onRefresh`
+   * вкладки, інакше рядок лишався б на старому місці до перезавантаження.
+   */
+  const refreshMaterials = React.useCallback(async () => {
+    if (onRefresh) await onRefresh();
+  }, [onRefresh]);
+  const instructionFolders = useMaterialFolders('instruction', refreshMaterials);
+  const courseFolders = useMaterialFolders('course', refreshMaterials);
+  const caseFolders = useMaterialFolders('case', refreshMaterials);
+
   const handleSaveMarkdown = async (md: string) => {
     try {
       const { sections: newSections, questions: newQuestions } = parseMarkdown(md);
@@ -472,6 +488,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       id: sec.id,
       title: sec.title,
       department: sec.department || 'Загальний',
+      folderId: sec.folderId || null,
       isActive: sec.isActive !== undefined ? sec.isActive : true,
       questionCount: questionCountBySection.get(sec.id) || 0
     }));
@@ -1322,11 +1339,16 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </div>
               )}
 
-              <MaterialList
-                isEmpty={groupedCourses.length === 0}
+              <MaterialFolderTree
+                controller={instructionFolders}
+                storageKey="admin-material-folders-instruction"
+                itemNoun="інструкції"
                 empty="База інструкцій порожня."
-              >
-                {groupedCourses.map((inst) => (
+                items={groupedCourses.map((inst) => ({
+                  id: inst.id,
+                  folderId: inst.folderId,
+                  searchText: `${inst.title} ${inst.department} ${inst.id}`,
+                  node: (
                   <MaterialRow
                     key={inst.id}
                     icon={<FileText className="w-4 h-4" />}
@@ -1470,8 +1492,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       </>
                     }
                   />
-                ))}
-              </MaterialList>
+                  )
+                }))}
+              />
             </div>
           )}
 
@@ -1502,13 +1525,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </button>
               </div>
 
-              <MaterialList
-                isEmpty={courses.length === 0}
+              <MaterialFolderTree
+                controller={courseFolders}
+                storageKey="admin-material-folders-course"
+                itemNoun="курси"
                 empty="Немає створених курсів."
-              >
-                {courses.map((course) => {
+                items={courses.map((course) => {
                   const currentCourseId = course.id || course._id;
-                  return (
+                  return {
+                    id: currentCourseId,
+                    folderId: course.folderId,
+                    searchText: `${course.title} ${course.department || ''}`,
+                    node: (
                   <MaterialRow
                     key={currentCourseId}
                     icon={<BookOpen className="w-4 h-4" />}
@@ -1592,9 +1620,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       </>
                     }
                   />
-                  );
+                    )
+                  };
                 })}
-              </MaterialList>
+              />
             </div>
           )}
 
@@ -1625,14 +1654,19 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
               <div className="space-y-3">
                 <h4 className="text-md font-bold text-slate-900">Існуючі кейси ({cases.length})</h4>
-                <MaterialList
-                  isEmpty={cases.length === 0}
+                <MaterialFolderTree
+                  controller={caseFolders}
+                  storageKey="admin-material-folders-case"
+                  itemNoun="кейси"
                   empty="Немає створених кейсів."
-                >
-                  {cases.map(c => {
+                  items={cases.map(c => {
                     const currentCaseId = c.id || c._id;
                     const isConfirming = deletingCaseId === currentCaseId;
-                    return (
+                    return {
+                      id: currentCaseId,
+                      folderId: c.folderId,
+                      searchText: `${c.title} ${c.scenario || ''}`,
+                      node: (
                       <MaterialRow
                         key={currentCaseId}
                         icon={<Briefcase className="w-4 h-4" />}
@@ -1692,9 +1726,10 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           </>
                         }
                       />
-                    );
+                      )
+                    };
                   })}
-                </MaterialList>
+                />
               </div>
             </div>
           )}

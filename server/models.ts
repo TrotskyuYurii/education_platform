@@ -76,6 +76,8 @@ const courseSchema = new mongoose.Schema({
   quizPassScorePercent: { type: Number, default: 80 },
   quizMaxAttempts: { type: Number },
   spaceId: { type: String, default: 'space-general' },
+  // Тека адміністративного переліку: суто організаційна, на доступ не впливає
+  folderId: { type: String, default: null, index: true },
   version: { type: String, default: '1.0' },
   status: { type: String, enum: ['draft', 'in_review', 'published', 'archived'], default: 'published' },
   isActive: { type: Boolean, default: true },
@@ -93,6 +95,8 @@ const caseSchema = new mongoose.Schema({
     isCorrect: Boolean,
     feedback: String
   }],
+  // Тека адміністративного переліку: суто організаційна, на доступ не впливає
+  folderId: { type: String, default: null, index: true },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
@@ -158,6 +162,8 @@ const sectionSchema = new mongoose.Schema({
   }],
   rawMarkdown: { type: String, default: '' },
   spaceId: { type: String, default: 'space-general' },
+  // Тека адміністративного переліку: суто організаційна, на доступ не впливає
+  folderId: { type: String, default: null, index: true },
   version: { type: String, default: '1.0' },
   versionNumber: { type: Number, default: 1 },
   status: { type: String, enum: ['draft', 'in_review', 'published', 'archived'], default: 'published' },
@@ -246,3 +252,4 @@ export const Case = mongoose.models.Case || mongoose.model('Case', caseSchema);
 
 export const Role = mongoose.models.Role || mongoose.model('Role', roleSchema);
 export { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.js';
+export { MaterialFolder } from './modules/folders/models.js';

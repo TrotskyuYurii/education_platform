@@ -22,6 +22,29 @@ export interface DocumentAssetMeta {
   source?: string;
 }
 
+/** Тип матеріалів, для яких ведеться окреме дерево тек в адмініструванні. */
+export type MaterialFolderKind = 'instruction' | 'course' | 'case';
+
+/**
+ * Тека переліку матеріалів в розділі «Адміністрування».
+ *
+ * Організаційний шар над пласким списком: на права доступу, підрозділи та
+ * простори знань не впливає, служить лише для розкладання матеріалів.
+ */
+export interface MaterialFolder {
+  _id?: string;
+  id: string;
+  name: string;
+  kind: MaterialFolderKind;
+  /** id батьківської теки або null для кореневого рівня. */
+  parentId: string | null;
+  color?: string;
+  description?: string;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface KnowledgeSpace {
   _id?: string;
   id: string;
@@ -113,6 +136,8 @@ export interface Course {
   department: string;
   instructionIds: string[];
   caseIds?: string[];
+  /** Тека в адміністративному переліку курсів. */
+  folderId?: string | null;
   useCases?: boolean;
   hasCertificate?: boolean;
   certificateValidityYears?: number;
@@ -170,6 +195,8 @@ export interface InstructionSection {
   /** Transient: тека зі скріншотами, витягнутими з оригіналу під час аналізу */
   assetsToken?: string;
   spaceId?: string;
+  /** Тека в адміністративному переліку інструкцій. */
+  folderId?: string | null;
   version?: string;
   versionNumber?: number;
   status?: DocumentStatus;
@@ -209,6 +236,8 @@ export interface CaseSimulation {
     feedback: string;
     legalOrSystemBasis?: string;
   }[];
+  /** Тека в адміністративному переліку кейсів. */
+  folderId?: string | null;
   isActive?: boolean;
 }
 

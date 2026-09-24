@@ -90,6 +90,7 @@ import { KnowledgeSpace, InstructionVersion } from './modules/knowledge/models.j
 import { searchRouter } from './modules/search/routes.js';
 import { onboardingRouter } from './modules/onboarding/routes.js';
 import { systemRouter } from './modules/system/routes.js';
+import { foldersRouter } from './modules/folders/routes.js';
 import { OnboardingService } from './modules/onboarding/service.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
@@ -108,6 +109,7 @@ apiRouter.use('/v2/knowledge', requireAuth, knowledgeRouter);
 apiRouter.use('/search', requireAuth, searchRouter);
 apiRouter.use('/v2/onboarding', requireAuth, onboardingRouter);
 apiRouter.use('/v2/system', requireAuth, systemRouter);
+apiRouter.use('/v2/folders', requireAuth, foldersRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
