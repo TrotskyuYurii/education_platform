@@ -17,8 +17,10 @@ import {
   ChevronRight,
   Users,
   CalendarDays,
-  X
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
+import { ACTIVITY_TYPE_LABELS, activityPageLabel, describeActivity, shortUserAgent } from '../../../shared/activityLabels';
 
 type ActivityType =
   | 'LOGIN'
@@ -57,81 +59,19 @@ interface ActivityStats {
 }
 
 const TYPE_META: Record<ActivityType, { label: string; icon: React.ElementType; chip: string }> = {
-  LOGIN: { label: 'Вхід', icon: LogIn, chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  LOGIN_FAILED: { label: 'Невдалий вхід', icon: ShieldAlert, chip: 'bg-rose-50 text-rose-700 border-rose-200' },
-  OTP_SENT: { label: 'Код входу', icon: KeyRound, chip: 'bg-sky-50 text-sky-700 border-sky-200' },
-  LOGOUT: { label: 'Вихід', icon: LogOut, chip: 'bg-slate-100 text-slate-700 border-slate-200' },
-  SESSION_EXPIRED: { label: 'Вихід через бездіяльність', icon: TimerOff, chip: 'bg-amber-50 text-amber-700 border-amber-200' },
-  NAVIGATE: { label: 'Перехід', icon: MousePointerClick, chip: 'bg-blue-50 text-blue-700 border-blue-200' },
-  MATERIAL_VIEW: { label: 'Перегляд матеріалу', icon: BookOpen, chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  QUIZ_ATTEMPT: { label: 'Тестування', icon: Award, chip: 'bg-purple-50 text-purple-700 border-purple-200' },
-  ACKNOWLEDGEMENT_SIGNED: { label: 'Підпис ознайомлення', icon: PenLine, chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+  LOGIN: { label: ACTIVITY_TYPE_LABELS.LOGIN, icon: LogIn, chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  LOGIN_FAILED: { label: ACTIVITY_TYPE_LABELS.LOGIN_FAILED, icon: ShieldAlert, chip: 'bg-rose-50 text-rose-700 border-rose-200' },
+  OTP_SENT: { label: ACTIVITY_TYPE_LABELS.OTP_SENT, icon: KeyRound, chip: 'bg-sky-50 text-sky-700 border-sky-200' },
+  LOGOUT: { label: ACTIVITY_TYPE_LABELS.LOGOUT, icon: LogOut, chip: 'bg-slate-100 text-slate-700 border-slate-200' },
+  SESSION_EXPIRED: { label: ACTIVITY_TYPE_LABELS.SESSION_EXPIRED, icon: TimerOff, chip: 'bg-amber-50 text-amber-700 border-amber-200' },
+  NAVIGATE: { label: ACTIVITY_TYPE_LABELS.NAVIGATE, icon: MousePointerClick, chip: 'bg-blue-50 text-blue-700 border-blue-200' },
+  MATERIAL_VIEW: { label: ACTIVITY_TYPE_LABELS.MATERIAL_VIEW, icon: BookOpen, chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  QUIZ_ATTEMPT: { label: ACTIVITY_TYPE_LABELS.QUIZ_ATTEMPT, icon: Award, chip: 'bg-purple-50 text-purple-700 border-purple-200' },
+  ACKNOWLEDGEMENT_SIGNED: { label: ACTIVITY_TYPE_LABELS.ACKNOWLEDGEMENT_SIGNED, icon: PenLine, chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
 };
 
-// Назви розділів такі самі, як у меню, щоб адміністратор упізнавав їх одразу.
-const PAGE_LABELS: Record<string, string> = {
-  myday: 'Мій день',
-  catalog: 'Навчальні матеріали',
-  manual: 'Навчальні матеріали (перегляд)',
-  quiz: 'Тестування (Квіз)',
-  cases: 'Кейси',
-  onboarding: 'Онбординг',
-  people: 'Люди',
-  signoff: 'Підтвердження',
-  dashboard: 'Профіль',
-  about: 'Про додаток'
-};
-
-const ADMIN_PAGE_LABELS: Record<string, string> = {
-  list: 'Інструкції',
-  courses: 'Курси',
-  cases: 'Кейси',
-  knowledge: 'База знань',
-  assignments: 'Призначення',
-  onboarding: 'Онбординг',
-  help: 'Допомога / Шаблон',
-  users: 'Користувачі',
-  roles: 'Ролі та права',
-  organization: 'Організація',
-  notifications: 'Сповіщення',
-  analytics: 'Аналітика',
-  systemlog: 'Журнал',
-  activity: 'Журнал дій'
-};
-
-// Незнайомий ключ показуємо як є — новий розділ не зламає журнал.
-const pageLabel = (page?: string): string => {
-  if (!page) return '—';
-  if (page.startsWith('management:')) {
-    const sub = page.slice('management:'.length);
-    return `Адміністрування → ${ADMIN_PAGE_LABELS[sub] || sub}`;
-  }
-  return PAGE_LABELS[page] || page;
-};
-
-const describe = (item: ActivityItem): string => {
-  if (item.type === 'NAVIGATE') return `Перейшов у розділ «${pageLabel(item.page)}»`;
-  if (item.type === 'MATERIAL_VIEW') return `Відкрив матеріал «${item.title || '—'}»`;
-  return item.title || TYPE_META[item.type]?.label || item.type;
-};
-
-/** Коротко: браузер і система — повний рядок є в деталях. */
-const shortUserAgent = (ua?: string): string => {
-  if (!ua) return '';
-  const browser = /Edg\//.test(ua) ? 'Edge'
-    : /OPR\//.test(ua) ? 'Opera'
-    : /Chrome\//.test(ua) ? 'Chrome'
-    : /Firefox\//.test(ua) ? 'Firefox'
-    : /Safari\//.test(ua) ? 'Safari'
-    : 'Браузер';
-  const os = /Windows/.test(ua) ? 'Windows'
-    : /Android/.test(ua) ? 'Android'
-    : /iPhone|iPad/.test(ua) ? 'iOS'
-    : /Mac OS X/.test(ua) ? 'macOS'
-    : /Linux/.test(ua) ? 'Linux'
-    : '';
-  return os ? `${browser}, ${os}` : browser;
-};
+const pageLabel = activityPageLabel;
+const describe = describeActivity;
 
 /** 'YYYY-MM-DD' у локальному часі — саме такий формат чекає <input type="date"> і сервер. */
 const toDayString = (date: Date): string => {
@@ -171,6 +111,7 @@ export const UserActivityPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const [userFilter, setUserFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -182,16 +123,24 @@ export const UserActivityPanel: React.FC = () => {
   // Швидке перемикання фільтрів запускає кілька запитів — показуємо лише останній.
   const requestSeq = useRef(0);
 
+  /** Ті самі фільтри для екрана і для файлу — вивантажується рівно те, що показано. */
+  const filterParams = useCallback(() => {
+    const params = new URLSearchParams({ type: typeFilter });
+    if (userFilter !== 'all') params.set('userId', userFilter);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (appliedSearch) params.set('search', appliedSearch);
+    return params;
+  }, [typeFilter, userFilter, from, to, appliedSearch]);
+
   const fetchActivity = useCallback(async () => {
     const seq = ++requestSeq.current;
     setError(null);
     setRefreshing(true);
     try {
-      const params = new URLSearchParams({ type: typeFilter, page: String(page), limit: '50' });
-      if (userFilter !== 'all') params.set('userId', userFilter);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      if (appliedSearch) params.set('search', appliedSearch);
+      const params = filterParams();
+      params.set('page', String(page));
+      params.set('limit', '50');
 
       const res = await fetch(`/api/v2/activity?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
@@ -211,7 +160,36 @@ export const UserActivityPanel: React.FC = () => {
         setRefreshing(false);
       }
     }
-  }, [typeFilter, userFilter, from, to, appliedSearch, page]);
+  }, [filterParams, page]);
+
+  // Через fetch, а не window.open: так помилку сервера («забагато записів»)
+  // можна показати на сторінці, а не відкривати вкладку з голим JSON.
+  const exportXlsx = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v2/activity/export?${filterParams().toString()}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Не вдалося вивантажити журнал');
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || 'activity-log.xlsx';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      setError(err.message || 'Помилка вивантаження журналу');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     fetchActivity();
@@ -264,13 +242,24 @@ export const UserActivityPanel: React.FC = () => {
             Доступно лише адміністраторам. Записи зберігаються обмежений час і видаляються автоматично.
           </p>
         </div>
-        <button
-          onClick={fetchActivity}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 disabled:opacity-50 shrink-0"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Оновити
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={exportXlsx}
+            disabled={exporting || loading || total === 0}
+            title="Вивантажити всі події за обраний період і фільтри у файл Excel"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+            {exporting ? 'Готуємо файл…' : 'Вивантажити в Excel'}
+          </button>
+          <button
+            onClick={fetchActivity}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Оновити
+          </button>
+        </div>
       </div>
 
       {/* Today stats */}
