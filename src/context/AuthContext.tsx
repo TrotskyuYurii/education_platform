@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useIdleTimeout, clearSharedActivity } from '../hooks/useIdleTimeout';
 import { SessionTimeoutModal } from '../components/SessionTimeoutModal';
+import { resetNavigationTracking } from '../utils/activityTracker';
 
 export type PermissionScope = 'self' | 'team' | 'department' | 'all';
 
@@ -48,6 +49,8 @@ interface AuthContextType {
   logout: (reason?: LogoutReason) => Promise<void>;
   hasPermission: (permission: string, minScope?: PermissionScope) => boolean;
   canManage: boolean;
+  /** Саме роль «Адміністратор» (не делеговане право) — для розділів, які не можна видати іншим ролям. */
+  isAdministrator: boolean;
   primaryRoleLabel: string;
   refreshUser: () => Promise<void>;
   /** Сесію щойно завершено через бездіяльність — екран входу пояснює це людині. */
@@ -120,8 +123,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearSharedActivity();
     setSessionExpired(reason === 'idle');
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      // Причину виходу сервер записує в журнал дій (вихід / бездіяльність).
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
     } finally {
+      resetNavigationTracking();
       setUser(null);
     }
   }, []);
@@ -168,6 +177,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     )
   );
 
+  const isAdministrator = Boolean(
+    user && (user.role === 'admin' || user.isAdmin || user.roleKeys?.includes('admin'))
+  );
+
   const primaryRoleLabel = (() => {
     if (!user) return '';
     if (user.role === 'admin' || user.isAdmin || user.roleKeys?.includes('admin')) {
@@ -188,6 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout, 
       hasPermission, 
       canManage, 
+      isAdministrator,
       primaryRoleLabel,
       refreshUser: fetchCurrentUser,
       sessionExpired,

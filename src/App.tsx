@@ -7,6 +7,7 @@ import { AiImportJobsProvider } from './context/AiImportJobsContext';
 import { AiImportProgressWidget } from './components/AiImportProgressWidget';
 import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchResultItem } from './types';
 import { Info, Search } from 'lucide-react';
+import { trackNavigation } from './utils/activityTracker';
 
 // Вкладки вантажаться на вимогу: разом вони тягнуть recharts, @xyflow, html2pdf
 // та react-markdown — кілька мегабайт, які на старті потрібні лише одній вкладці.
@@ -67,6 +68,12 @@ function MainApp() {
     try {
       localStorage.setItem('viatec_current_tab', currentTab);
     } catch {}
+  }, [currentTab]);
+
+  // Журнал дій: куди переходив користувач. Адміністрування записує свої
+  // підрозділи саме (management:users тощо), тож тут його пропускаємо.
+  useEffect(() => {
+    if (currentTab !== 'management') trackNavigation(currentTab);
   }, [currentTab]);
   
   const [sections, setSections] = useState<InstructionSection[]>([]);

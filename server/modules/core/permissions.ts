@@ -12,6 +12,23 @@ export const resolveUserRoleKeys = (user: any): string[] => {
   return ['employee'];
 };
 
+export const isAdministrator = (user: any): boolean =>
+  Boolean(user) && (user.role === 'admin' || resolveUserRoleKeys(user).includes('admin'));
+
+/**
+ * Доступ лише для ролі «Адміністратор» — без права, яке можна видати іншій ролі
+ * через матрицю. Для даних, що стосуються стеження за людьми (журнал дій),
+ * навмисно не даємо делегувати перегляд керівникам чи HR.
+ */
+export const requireAdminRole = (req: Request, res: Response, next: NextFunction) => {
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!isAdministrator(user)) {
+    return res.status(403).json({ error: 'Доступ дозволено лише користувачам з роллю «Адміністратор»' });
+  }
+  next();
+};
+
 export const requirePermission = (permission: string, minScope?: PermissionScope) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {

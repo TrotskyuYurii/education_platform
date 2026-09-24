@@ -14,6 +14,7 @@ import { UserManagement } from './Admin/UserManagement';
 import { useAuth } from '../context/AuthContext';
 import { useAiImportJobs } from '../context/AiImportJobsContext';
 import { useSystemLogAlarm } from '../hooks/useSystemLogAlarm';
+import { trackNavigation } from '../utils/activityTracker';
 import React, { useState, useRef, useMemo, Suspense, lazy } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { buildAiPromptGuide, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
@@ -36,6 +37,7 @@ const KnowledgeSettings = lazy(() => import('./Admin/KnowledgeSettings').then(m 
 const AssignmentSettings = lazy(() => import('./Admin/AssignmentSettings').then(m => ({ default: m.AssignmentSettings })));
 const NotificationTemplates = lazy(() => import('./Admin/NotificationTemplates').then(m => ({ default: m.NotificationTemplates })));
 const SystemLogPanel = lazy(() => import('./Admin/SystemLogPanel').then(m => ({ default: m.SystemLogPanel })));
+const UserActivityPanel = lazy(() => import('./Admin/UserActivityPanel').then(m => ({ default: m.UserActivityPanel })));
 
 /** Спільна заглушка на час підвантаження чанка панелі. */
 const PanelFallback = () => (
@@ -79,7 +81,8 @@ import {
   ScrollText,
   Plus,
   Paperclip,
-  Rocket
+  Rocket,
+  Footprints
 } from 'lucide-react';
 
 /** Що сервер зробив зі скріншотами документа під час імпорту. */
@@ -115,7 +118,7 @@ interface TestManagementProps {
   initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity';
 
 /** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
 const blankCourse = () => ({
@@ -146,7 +149,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   onOpenOnboardingAssignment,
   initialTab
 }) => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdministrator } = useAuth();
   // Пакетна ШІ-обробка виконується у фоні: адмінка лише ставить файли в чергу.
   const { enqueueFiles, isEnqueuing, activeJobs } = useAiImportJobs();
 
@@ -311,7 +314,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -338,6 +341,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       } catch {}
     }
   }, [activeTab, isSetupMode]);
+
+  // Журнал дій: який саме підрозділ адміністрування відкривали.
+  // import/export — лише проміжні стани, що одразу перемикаються на «Інструкції».
+  React.useEffect(() => {
+    if (activeTab !== 'import' && activeTab !== 'export') trackNavigation(`management:${activeTab}`);
+  }, [activeTab]);
 
   React.useEffect(() => {
     if (activeTab === 'import') {
@@ -1019,6 +1028,21 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           {logSummary.unresolvedErrors}
                         </span>
                       )}
+                    </button>
+                  )}
+
+                  {/* Лише роль «Адміністратор»: право на перегляд не делегується іншим ролям. */}
+                  {isAdministrator && (
+                    <button
+                      onClick={() => setActiveTab('activity')}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                        activeTab === 'activity'
+                          ? 'bg-purple-100 text-purple-800 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <Footprints className="w-4 h-4" />
+                      <span>Журнал дій</span>
                     </button>
                   )}
                 </div>
@@ -1755,6 +1779,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'notifications' && <NotificationTemplates />}
           {activeTab === 'analytics' && <AnalyticsReports courses={courses} />}
           {activeTab === 'systemlog' && <SystemLogPanel />}
+          {activeTab === 'activity' && isAdministrator && <UserActivityPanel />}
 
           {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
           {activeTab === 'knowledge' && (

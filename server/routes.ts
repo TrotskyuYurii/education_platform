@@ -91,6 +91,8 @@ import { searchRouter } from './modules/search/routes.js';
 import { onboardingRouter } from './modules/onboarding/routes.js';
 import { systemRouter } from './modules/system/routes.js';
 import { foldersRouter } from './modules/folders/routes.js';
+import { activityRouter } from './modules/activity/routes.js';
+import { ActivityService } from './modules/activity/service.js';
 import { OnboardingService } from './modules/onboarding/service.js';
 
 // Temporarily map old requireAdmin to new permission system for backward compatibility
@@ -110,6 +112,7 @@ apiRouter.use('/search', requireAuth, searchRouter);
 apiRouter.use('/v2/onboarding', requireAuth, onboardingRouter);
 apiRouter.use('/v2/system', requireAuth, systemRouter);
 apiRouter.use('/v2/folders', requireAuth, foldersRouter);
+apiRouter.use('/v2/activity', requireAuth, activityRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -131,6 +134,7 @@ apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
     } as any);
 
     if (!user) {
+      ActivityService.capture({ type: 'LOGIN_FAILED', userLabel: loginIdentifier, title: 'Невідомий обліковий запис', req });
       return res.status(401).json({ error: 'Користувача з таким email не знайдено або невірний пароль' });
     }
 
@@ -156,6 +160,7 @@ apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
       await user.save();
 
       const emailResult = await sendAuthCodeEmail(user.email, code, expiresInMinutes);
+      ActivityService.capture({ type: 'OTP_SENT', user, title: 'Код входу надіслано на пошту', req });
 
       return res.json({
         requireEmailCode: true,
@@ -172,11 +177,13 @@ apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
+      ActivityService.capture({ type: 'LOGIN_FAILED', user, title: 'Невірний пароль', req });
       return res.status(401).json({ error: 'Невірний email або пароль' });
     }
 
     // If requireEmailCode is false or we're using password auth (Option 1)
     issueSessionCookie(res, user);
+    ActivityService.capture({ type: 'LOGIN', user, title: 'Вхід за паролем', req });
     
     res.json({ 
       session: sessionPolicy(),
@@ -222,6 +229,7 @@ apiRouter.post('/auth/verify-code', verifyCodeRateLimiter, async (req, res) => {
 
     const cleanInputCode = code.trim().toUpperCase();
     if (user.authCode.toUpperCase() !== cleanInputCode) {
+      ActivityService.capture({ type: 'LOGIN_FAILED', user, title: 'Невірний код із пошти', req });
       return res.status(400).json({ error: 'Невірний код авторизації. Перевірте пошту та спробуйте ще раз.' });
     }
 
@@ -231,6 +239,7 @@ apiRouter.post('/auth/verify-code', verifyCodeRateLimiter, async (req, res) => {
     await user.save();
 
     issueSessionCookie(res, user);
+    ActivityService.capture({ type: 'LOGIN', user, title: 'Вхід за кодом із пошти', req });
 
     res.json({
       session: sessionPolicy(),
@@ -280,7 +289,27 @@ apiRouter.post('/auth/resend-code', resendCodeRateLimiter, async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/logout', (req, res) => {
+apiRouter.post('/auth/logout', async (req, res) => {
+  // Маршрут без requireAuth: вихід через бездіяльність приходить, коли токен
+  // якраз протух. Для журналу достатньо знати, чий він, тож строк не перевіряємо.
+  try {
+    const token = req.cookies?.[SESSION_COOKIE_NAME];
+    if (token) {
+      const decoded: any = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+      const user = await User.findOne({ _id: decoded.userId } as any);
+      if (user) {
+        const idle = req.body?.reason === 'idle';
+        ActivityService.capture({
+          type: idle ? 'SESSION_EXPIRED' : 'LOGOUT',
+          user,
+          title: idle ? 'Автоматичний вихід через бездіяльність' : 'Вихід із системи',
+          req
+        });
+      }
+    }
+  } catch {
+    // Зламаний токен — просто виходимо без запису.
+  }
   clearSessionCookie(res);
   res.json({ success: true });
 });
@@ -1247,7 +1276,19 @@ apiRouter.get('/content', requireAuth, async (req: any, res) => {
 // employee opens an instruction section. No response body needed beyond ok.
 apiRouter.post('/sections/:id/view', requireAuth, async (req: any, res) => {
   try {
-    await Section.updateOne({ id: req.params.id } as any, { $inc: { viewsCount: 1 } });
+    const section: any = await Section.findOneAndUpdate(
+      { id: req.params.id } as any,
+      { $inc: { viewsCount: 1 } },
+      { projection: { title: 1 } }
+    ).lean();
+    ActivityService.capture({
+      type: 'MATERIAL_VIEW',
+      user: req.user,
+      page: 'manual',
+      title: section?.title || req.params.id,
+      details: { sectionId: req.params.id },
+      req
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to record view' });
@@ -1274,6 +1315,9 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     if (employeeInfo) {
       try {
         await ProgressService.saveAcknowledgment(req.user._id, employeeInfo);
+        if (employeeInfo.isSigned) {
+          ActivityService.capture({ type: 'ACKNOWLEDGEMENT_SIGNED', user: req.user, page: 'signoff', title: 'Підписано ознайомлення', req });
+        }
       } catch (ackErr: any) {
         // Validation failure (e.g. quiz not yet passed) — surface the real reason to the client
         return res.status(400).json({ error: ackErr.message || 'Не вдалося зберегти підпис' });
@@ -1281,6 +1325,20 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     }
     if (testScore) {
       await ProgressService.recordAttempt(req.user._id, testScore);
+      const isCases = testScore.mode === 'cases';
+      ActivityService.capture({
+        type: 'QUIZ_ATTEMPT',
+        user: req.user,
+        page: isCases ? 'cases' : 'quiz',
+        title: `${isCases ? 'Кейси' : 'Тест'}: ${testScore.score || 0} з ${testScore.total || 0} (${testScore.percentage || 0}%)`,
+        details: {
+          courseId: testScore.courseId || undefined,
+          sectionId: testScore.sectionId || undefined,
+          percentage: testScore.percentage || 0,
+          passed: (testScore.percentage || 0) >= 80
+        },
+        req
+      });
     }
 
     const progress = await ProgressService.getUserProgress(req.user._id);

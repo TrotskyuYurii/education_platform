@@ -36,3 +36,15 @@ export const resendCodeRateLimiter = rateLimit({
   keyGenerator: keyByIpAndIdentifier('email'),
   message: { error: 'Забагато запитів нового коду. Спробуйте ще раз через 15 хвилин.' }
 });
+
+// Журнал дій: браузер шле подію на кожен перехід між розділами. Ліміт з
+// великим запасом для живої людини, але не дає скрипту засмітити журнал.
+// Ключ — користувач (маршрут стоїть за requireAuth), а не IP офісу.
+export const activityTrackRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => (req.user?._id ? `user:${req.user._id}` : ipKeyGenerator(req.ip)),
+  message: { error: 'Забагато подій журналу. Спробуйте пізніше.' }
+});
