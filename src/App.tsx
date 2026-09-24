@@ -358,7 +358,15 @@ function MainApp() {
     setCurrentTab('manual');
   };
 
-  const handleRecordScore = (score: number, total: number, modeName: string, department?: string, courseId?: string, sectionId?: string) => {
+  const handleRecordScore = (
+    score: number,
+    total: number,
+    modeName: string,
+    department?: string,
+    courseId?: string,
+    sectionId?: string,
+    timing?: { startedAt: string; durationSec: number }
+  ) => {
     const percentage = Math.round((score / total) * 100);
     const scoreRec = {
       score,
@@ -368,6 +376,8 @@ function MainApp() {
       department,
       courseId,
       sectionId,
+      startedAt: timing?.startedAt,
+      durationSec: timing?.durationSec,
       date: new Date().toISOString()
     };
     

@@ -11,6 +11,14 @@ import {
 } from './models.js';
 import { NotificationService } from '../notifications/service.js';
 import { OnboardingService } from '../onboarding/service.js';
+import { sanitizeDurationSec } from '../../../shared/attemptDuration.js';
+
+/** Дата з браузера або undefined, якщо прийшло щось непридатне. */
+function validDate(value: unknown): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value as string);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
 
 // Minimum quiz score required before an employee is allowed to sign the compliance
 // acknowledgment sheet (matches the qualification threshold shown throughout the UI).
@@ -283,7 +291,9 @@ export class ProgressService {
         sectionId: a.sectionId,
         courseId: a.courseId,
         department: a.department || 'Загальний',
-        mode: a.mode
+        mode: a.mode,
+        startedAt: a.startedAt ? new Date(a.startedAt).toISOString() : undefined,
+        durationSec: typeof a.durationSec === 'number' ? a.durationSec : undefined
       }));
 
       return {
@@ -382,6 +392,8 @@ export class ProgressService {
       total: testScore.total || 0,
       percentage: testScore.percentage || 0,
       passed: (testScore.percentage || 0) >= 80,
+      startedAt: validDate(testScore.startedAt),
+      durationSec: sanitizeDurationSec(testScore.durationSec),
       date: testScore.date ? new Date(testScore.date) : new Date()
     });
 

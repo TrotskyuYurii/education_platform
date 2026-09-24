@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Award, Loader2 } from 'lucide-react';
+import { formatDuration } from '../../../shared/attemptDuration';
 import { FilterBar } from './FilterBar';
 import { ExportButtons } from './ExportButtons';
 import { TestResultsData, ReportFilters } from './types';
@@ -42,7 +43,7 @@ export const TestResultsReport: React.FC<TestResultsReportProps> = ({ courses })
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
               <div className="text-2xl font-bold text-slate-900">{data.avgScore}%</div>
               <div className="text-xs text-slate-500 mt-1">Середній бал</div>
@@ -54,6 +55,10 @@ export const TestResultsReport: React.FC<TestResultsReportProps> = ({ courses })
             <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
               <div className="text-2xl font-bold text-slate-900">{data.totalAttempts}</div>
               <div className="text-xs text-slate-500 mt-1">Всього спроб</div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
+              <div className="text-2xl font-bold text-slate-900">{formatDuration(data.avgDurationSec)}</div>
+              <div className="text-xs text-slate-500 mt-1">Середній час проходження</div>
             </div>
           </div>
 
@@ -68,7 +73,14 @@ export const TestResultsReport: React.FC<TestResultsReportProps> = ({ courses })
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v: any) => [v, 'Спроб']} />
+                  <Tooltip
+                    cursor={{ fill: '#f1f5f9' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(v: any, _name: any, item: any) => [
+                      `${v}${item?.payload?.avgDurationSec != null ? ` · середній час ${formatDuration(item.payload.avgDurationSec)}` : ''}`,
+                      'Спроб'
+                    ]}
+                  />
                   <Bar dataKey="count" name="Кількість спроб" radius={[4, 4, 0, 0]} maxBarSize={80}>
                     {data.distribution.map((d, i) => (
                       <Cell key={i} fill={RANGE_COLORS[d.range] || '#8b5cf6'} />

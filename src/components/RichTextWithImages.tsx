@@ -1,7 +1,42 @@
 import React from 'react';
-import { ImageIcon, Maximize2 } from 'lucide-react';
+import { ImageIcon, Maximize2, PlayCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { YouTubeEmbed } from './YouTubeEmbed';
+import { YouTubeVideo, parseVideoLine, parseYouTubeUrl } from '../../shared/youtube';
+
+type Segment =
+  | { type: 'text'; text: string }
+  | { type: 'image'; imageUrl: string; alt: string }
+  | { type: 'video'; video: YouTubeVideo; title?: string };
+
+/**
+ * Виокремлює рядки, що цілком складаються з посилання на YouTube: такі рядки
+ * показуються вбудованим плеєром. Решта тексту йде далі як Markdown.
+ * Рядки всередині блоків коду не чіпаємо.
+ */
+function splitVideos(content: string): Segment[] {
+  const segments: Segment[] = [];
+  let buffer: string[] = [];
+  let inFence = false;
+  const flush = () => {
+    const text = buffer.join('\n');
+    if (text.trim()) segments.push({ type: 'text', text });
+    buffer = [];
+  };
+  for (const line of content.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const found = inFence ? null : parseVideoLine(line);
+    if (found) {
+      flush();
+      segments.push({ type: 'video', video: found.video, title: found.title });
+    } else {
+      buffer.push(line);
+    }
+  }
+  flush();
+  return segments;
+}
 
 interface RichTextWithImagesProps {
   contentHtml?: string;
@@ -47,6 +82,23 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
 
   // Зображення всередині Markdown (таблиці, списки тощо) також мають відкриватися у великому вигляді
   const markdownComponents = {
+    // Зовнішні посилання відкриваються в новій вкладці, щоб не закривати інструкцію;
+    // посилання на YouTube посеред речення позначаються значком відео.
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      const isExternal = typeof href === 'string' && /^https?:\/\//i.test(href);
+      const isVideo = isExternal && parseYouTubeUrl(href) !== null;
+      return (
+        <a
+          href={href}
+          {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          className={isVideo ? 'inline-flex items-center gap-1' : undefined}
+          title={isVideo ? 'Відкрити відео на YouTube' : undefined}
+        >
+          {isVideo && <PlayCircle className="w-4 h-4 text-rose-600 shrink-0 inline" />}
+          {children}
+        </a>
+      );
+    },
     img: ({ src, alt }: { src?: string; alt?: string }) => {
       const url = normalizeImageUrl(typeof src === 'string' ? src : undefined);
       if (!url) return null;
@@ -62,80 +114,91 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
     }
   };
 
-  // We need to parse out images and text segments so we can render images properly
-  const segments: { type: 'text' | 'image', text?: string, imageUrl?: string, alt?: string }[] = [];
+  // Спершу — відео на окремих рядках, потім у текстових шматках шукаємо зображення
+  const segments: Segment[] = [];
+  const splitImages = (chunk: string) => {
+    // We need to parse out images and text segments so we can render images properly
   
-  // Advanced regex to catch images inside Markdown or HTML tags
-  // 1. ![alt](/api/sections/.../img-001.png | assets/img-001.png | https://... | data:image/...)
-  // 2. <img src="url" ... />
-  // 3. **Зображення:** url
-  // 4. Standalone data:image/... url (успадковані інструкції з Base64)
-  const IMAGE_URL = 'data:image\\/[^;]+;base64,[\\s\\S]*?|https?:\\/\\/[^\\s)"\']+|[./A-Za-z0-9_-][^\\s)"\']*\\.(?:png|jpe?g|webp|gif|svg|bmp)';
-  const combinedRegex = new RegExp(
-    `(!\\[([\\s\\S]*?)\\]\\(\\s*(${IMAGE_URL})\\s*\\)` +
-    `|<img\\s+[^>]*src=["']\\s*(${IMAGE_URL})["'][^>]*>` +
-    `|\\*\\*Зображення:\\*\\*\\s*(${IMAGE_URL})` +
-    `|(data:image\\/(?:png|jpeg|jpg|webp|gif|svg\\+xml);base64,[A-Za-z0-9+/=\\s]{40,}))`,
-    'gi'
-  );
+    // Advanced regex to catch images inside Markdown or HTML tags
+    // 1. ![alt](/api/sections/.../img-001.png | assets/img-001.png | https://... | data:image/...)
+    // 2. <img src="url" ... />
+    // 3. **Зображення:** url
+    // 4. Standalone data:image/... url (успадковані інструкції з Base64)
+    const IMAGE_URL = 'data:image\\/[^;]+;base64,[\\s\\S]*?|https?:\\/\\/[^\\s)"\']+|[./A-Za-z0-9_-][^\\s)"\']*\\.(?:png|jpe?g|webp|gif|svg|bmp)';
+    const combinedRegex = new RegExp(
+      `(!\\[([\\s\\S]*?)\\]\\(\\s*(${IMAGE_URL})\\s*\\)` +
+      `|<img\\s+[^>]*src=["']\\s*(${IMAGE_URL})["'][^>]*>` +
+      `|\\*\\*Зображення:\\*\\*\\s*(${IMAGE_URL})` +
+      `|(data:image\\/(?:png|jpeg|jpg|webp|gif|svg\\+xml);base64,[A-Za-z0-9+/=\\s]{40,}))`,
+      'gi'
+    );
   
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
 
-  while ((match = combinedRegex.exec(content)) !== null) {
-    const matchIndex = match.index;
+    while ((match = combinedRegex.exec(chunk)) !== null) {
+      const matchIndex = match.index;
     
-    if (matchIndex > lastIndex) {
-      const textBefore = content.substring(lastIndex, matchIndex);
-      if (textBefore.trim()) {
-        segments.push({ type: 'text', text: textBefore });
+      if (matchIndex > lastIndex) {
+        const textBefore = chunk.substring(lastIndex, matchIndex);
+        if (textBefore.trim()) {
+          segments.push({ type: 'text', text: textBefore });
+        }
+      }
+
+      const fullMatch = match[0];
+      let extractedUrl = '';
+      let extractedAlt = 'Скріншот інструкції';
+
+      if (fullMatch.startsWith('![')) {
+        // Markdown: ![alt](url)
+        extractedAlt = match[2] ? match[2].trim() : 'Скріншот';
+        extractedUrl = match[3] ? match[3].trim() : '';
+      } else if (fullMatch.toLowerCase().startsWith('<img')) {
+        // HTML <img src="..." alt="..." />
+        const srcMatch = fullMatch.match(new RegExp(`src=["']\\s*(${IMAGE_URL})["']`, 'i'));
+        extractedUrl = srcMatch ? srcMatch[1].trim() : '';
+        const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
+        if (altMatch) extractedAlt = altMatch[1].trim();
+      } else if (fullMatch.startsWith('**Зображення:**')) {
+        extractedUrl = match[4] ? match[4].trim() : '';
+        extractedAlt = 'Скріншот';
+      } else if (match[5]) {
+        // Standalone base64
+        extractedUrl = match[5].trim();
+        extractedAlt = 'Скріншот';
+      }
+
+      // ![Назва](посилання на YouTube) посеред тексту — теж відео, а не зображення
+      const inlineVideo = parseYouTubeUrl(extractedUrl);
+      const cleaned = inlineVideo ? null : normalizeImageUrl(extractedUrl);
+      if (inlineVideo) {
+        segments.push({ type: 'video', video: inlineVideo, title: extractedAlt !== 'Скріншот' ? extractedAlt : undefined });
+      } else if (cleaned) {
+        segments.push({
+          type: 'image',
+          imageUrl: cleaned,
+          alt: extractedAlt
+        });
+      }
+
+      lastIndex = matchIndex + fullMatch.length;
+    }
+
+    if (lastIndex < chunk.length) {
+      const remainingText = chunk.substring(lastIndex);
+      if (remainingText.trim()) {
+        segments.push({ type: 'text', text: remainingText });
       }
     }
-
-    const fullMatch = match[0];
-    let extractedUrl = '';
-    let extractedAlt = 'Скріншот інструкції';
-
-    if (fullMatch.startsWith('![')) {
-      // Markdown: ![alt](url)
-      extractedAlt = match[2] ? match[2].trim() : 'Скріншот';
-      extractedUrl = match[3] ? match[3].trim() : '';
-    } else if (fullMatch.toLowerCase().startsWith('<img')) {
-      // HTML <img src="..." alt="..." />
-      const srcMatch = fullMatch.match(new RegExp(`src=["']\\s*(${IMAGE_URL})["']`, 'i'));
-      extractedUrl = srcMatch ? srcMatch[1].trim() : '';
-      const altMatch = fullMatch.match(/alt=["']([^"']*)["']/i);
-      if (altMatch) extractedAlt = altMatch[1].trim();
-    } else if (fullMatch.startsWith('**Зображення:**')) {
-      extractedUrl = match[4] ? match[4].trim() : '';
-      extractedAlt = 'Скріншот';
-    } else if (match[5]) {
-      // Standalone base64
-      extractedUrl = match[5].trim();
-      extractedAlt = 'Скріншот';
-    }
-
-    const cleaned = normalizeImageUrl(extractedUrl);
-    if (cleaned) {
-      segments.push({
-        type: 'image',
-        imageUrl: cleaned,
-        alt: extractedAlt
-      });
-    }
-
-    lastIndex = matchIndex + fullMatch.length;
+  };
+  for (const seg of splitVideos(content)) {
+    if (seg.type === 'text') splitImages(seg.text);
+    else segments.push(seg);
   }
 
-  if (lastIndex < content.length) {
-    const remainingText = content.substring(lastIndex);
-    if (remainingText.trim()) {
-      segments.push({ type: 'text', text: remainingText });
-    }
-  }
-
-  // If no images matched, render with standard Markdown
-  if (segments.length === 0) {
+  // Якщо ні зображень, ні відео немає — звичайний Markdown одним блоком
+  if (segments.every(seg => seg.type === 'text')) {
     return (
       <div className={`markdown-body ${className}`}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -156,6 +219,10 @@ export const RichTextWithImages: React.FC<RichTextWithImagesProps> = ({
               </ReactMarkdown>
             </div>
           );
+        }
+
+        if (seg.type === 'video') {
+          return <YouTubeEmbed key={idx} video={seg.video} title={seg.title} />;
         }
 
         if (seg.type === 'image' && seg.imageUrl) {

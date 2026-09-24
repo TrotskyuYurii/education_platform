@@ -23,6 +23,10 @@ const quizAttemptSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   percentage: { type: Number, required: true },
   passed: { type: Boolean, default: false },
+  // Коли спробу розпочато і скільки секунд вона тривала (від старту до завершення).
+  // У спроб, записаних до появи цих полів, їх немає.
+  startedAt: { type: Date },
+  durationSec: { type: Number },
   date: { type: Date, default: Date.now, index: true }
 }, {
   timestamps: true

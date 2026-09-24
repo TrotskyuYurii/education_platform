@@ -85,7 +85,8 @@ const REPORT_COLUMNS: Record<string, ExportColumn[]> = {
   ],
   'test-results': [
     { key: 'range', header: 'Діапазон балів' },
-    { key: 'count', header: 'Кількість спроб' }
+    { key: 'count', header: 'Кількість спроб' },
+    { key: 'avgDuration', header: 'Середній час проходження' }
   ]
 };
 

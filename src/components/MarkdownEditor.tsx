@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Bold, Italic, List, Heading, Image as ImageIcon, Save, X } from 'lucide-react';
+import { Bold, Italic, List, Heading, Image as ImageIcon, Save, X, Youtube } from 'lucide-react';
+import { parseYouTubeUrl } from '../../shared/youtube';
 
 interface MarkdownEditorProps {
   initialValue: string;
@@ -15,6 +16,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, in
   const [uploadError, setUploadError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Форма вставки відео YouTube під панеллю інструментів
+  const [videoFormOpen, setVideoFormOpen] = useState(false);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoTitle, setVideoTitle] = useState('');
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   const insertText = (before: string, after: string = '') => {
     const textarea = textareaRef.current;
@@ -72,6 +78,24 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, in
     }
   };
 
+  /**
+   * Відео вставляється окремим рядком-посиланням Markdown: у переглядачі такий
+   * рядок стає вбудованим плеєром, а в самому .md лишається звичайним посиланням.
+   */
+  const handleInsertVideo = () => {
+    const video = parseYouTubeUrl(videoUrl);
+    if (!video) {
+      setVideoError('Це не схоже на посилання на відео YouTube. Скопіюйте адресу відео з браузера або кнопки «Поділитися».');
+      return;
+    }
+    const title = videoTitle.trim().replace(/[\[\]]/g, '') || 'Відео';
+    insertText(`\n[${title}](${videoUrl.trim()})\n`);
+    setVideoFormOpen(false);
+    setVideoUrl('');
+    setVideoTitle('');
+    setVideoError(null);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
       <div className="bg-white w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -103,6 +127,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, in
               <ImageIcon className="w-4 h-4" />
               {isUploading ? 'Завантаження…' : 'Додати зображення'}
             </button>
+            <button
+              onClick={() => { setVideoFormOpen(v => !v); setVideoError(null); }}
+              className={`p-2 rounded transition flex items-center gap-1.5 font-medium text-xs ${videoFormOpen ? 'bg-rose-100 text-rose-700' : 'text-rose-600 hover:bg-rose-50'}`}
+              title="Вставити відео YouTube — у інструкції воно показується вбудованим плеєром"
+            >
+              <Youtube className="w-4 h-4" />
+              Відео YouTube
+            </button>
             <input 
               type="file" 
               accept="image/*" 
@@ -129,6 +161,39 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ initialValue, in
             </button>
           </div>
         </div>
+
+        {videoFormOpen && (
+          <div className="px-4 py-3 bg-rose-50/60 border-b border-rose-100 flex flex-wrap items-center gap-2">
+            <input
+              type="url"
+              value={videoUrl}
+              onChange={e => { setVideoUrl(e.target.value); setVideoError(null); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInsertVideo(); } }}
+              placeholder="https://www.youtube.com/watch?v=… або https://youtu.be/…"
+              className="grow min-w-[260px] px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-200 bg-white"
+              autoFocus
+            />
+            <input
+              type="text"
+              value={videoTitle}
+              onChange={e => setVideoTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInsertVideo(); } }}
+              placeholder="Підпис до відео (необов'язково)"
+              className="w-64 px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-200 bg-white"
+            />
+            <button
+              onClick={handleInsertVideo}
+              disabled={!videoUrl.trim()}
+              className="px-3 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition disabled:opacity-40"
+            >
+              Вставити
+            </button>
+            <p className="w-full text-[11px] text-slate-500">
+              Відео вставиться в місце курсора окремим рядком. Щоб почати з певної хвилини, скопіюйте посилання «з позначкою часу» (наприклад, …?t=90).
+            </p>
+            {videoError && <p className="w-full text-xs font-semibold text-rose-700">{videoError}</p>}
+          </div>
+        )}
 
         {uploadError && (
           <div className="px-4 py-2 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">

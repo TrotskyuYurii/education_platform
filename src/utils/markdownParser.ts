@@ -1,4 +1,5 @@
 import { InstructionSection, QuizQuestion, RoleFilter } from '../types';
+import { isYouTubeUrl } from '../../shared/youtube';
 
 /**
  * Еталонний шаблон Markdown-файлу, що містить усі можливі структурні елементи інструкції та тестів.
@@ -149,7 +150,9 @@ export function extractImagesFromMarkdown(text: string): { cleanedText: string; 
 
   // 1. Markdown images: ![alt](url) — файл, http(s) або (для старих інструкцій) Base64
   const mdImgRegex = new RegExp(`!\\[([\\s\\S]*?)\\]\\(\\s*(${IMAGE_URL_PATTERN})\\s*\\)`, 'gi');
-  cleaned = cleaned.replace(mdImgRegex, (_, alt, url) => {
+  cleaned = cleaned.replace(mdImgRegex, (whole, alt, url) => {
+    // ![Назва](посилання на YouTube) — це відео: лишаємо в тексті, де воно стане плеєром
+    if (isYouTubeUrl(url)) return whole;
     const cleanedUrl = cleanBase64Url(url);
     if (cleanedUrl) {
       images.push({ alt: (alt || '').trim() || 'Скріншот', url: cleanedUrl });

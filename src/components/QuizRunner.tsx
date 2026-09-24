@@ -25,6 +25,7 @@ import {
   shuffleQuestionOptions,
   mergeRecentQuestionIds
 } from '../../shared/quizSampling';
+import { formatDuration } from '../../shared/attemptDuration';
 
 /**
  * Які питання співробітник бачив нещодавно — щоб наступна спроба почалася з
@@ -58,7 +59,15 @@ interface QuizRunnerProps {
   allSections: InstructionSection[];
   courses?: any[];
   quizHistory?: any[];
-  onRecordScore: (score: number, total: number, modeName: string, department?: string, courseId?: string, sectionId?: string) => void;
+  onRecordScore: (
+    score: number,
+    total: number,
+    modeName: string,
+    department?: string,
+    courseId?: string,
+    sectionId?: string,
+    timing?: { startedAt: string; durationSec: number }
+  ) => void;
   onNavigateToSignoff: () => void;
   onBackToManual: () => void;
   onStartCases?: (courseId: string) => void;
@@ -174,6 +183,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
    */
   const [questionsToRun, setQuestionsToRun] = useState<QuizQuestion[]>([]);
 
+  /** Коли розпочато поточну спробу та скільки вона тривала — для запису в історію. */
+  const [attemptStartedAt, setAttemptStartedAt] = useState<number | null>(null);
+  const [attemptDurationSec, setAttemptDurationSec] = useState<number | null>(null);
+
   const currentQ = questionsToRun[currentIndex];
 
   const handleSelectOption = (optionIndex: number) => {
@@ -222,6 +235,8 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     }).map(q => shuffleQuestionOptions(q));
     rememberShownQuestions(user?.id, picked.map(q => q.id));
     setQuestionsToRun(picked);
+    setAttemptStartedAt(Date.now());
+    setAttemptDurationSec(null);
     setUserAnswers({});
     setCurrentIndex(0);
     setQuizSubmitted(false);
@@ -238,6 +253,15 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
 
   const handleFinishQuiz = () => {
     setQuizSubmitted(true);
+    const finishedAt = Date.now();
+    const startedAt = attemptStartedAt ?? finishedAt;
+    let durationSec = Math.max(0, Math.round((finishedAt - startedAt) / 1000));
+    // При автоматичному завершенні таймер міг «переспати» у фоновій вкладці —
+    // тривалість не може перевищувати сам ліміт часу.
+    if (currentTargetCourse?.quizTimeLimitMin) {
+      durationSec = Math.min(durationSec, currentTargetCourse.quizTimeLimitMin * 60);
+    }
+    setAttemptDurationSec(durationSec);
     // calculate score
     let correctCount = 0;
     questionsToRun.forEach((q, idx) => {
@@ -263,7 +287,8 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       modeLabel, 
       selectedDepartment !== 'all' ? selectedDepartment : undefined,
       targetCourseId,
-      targetSectionId
+      targetSectionId,
+      { startedAt: new Date(startedAt).toISOString(), durationSec }
     );
   };
 
@@ -702,6 +727,12 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
               Ваш результат: {percentage}% ({correctCount} з {totalCount})
             </h2>
+            {attemptDurationSec !== null && (
+              <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                <Clock className="w-3.5 h-3.5" />
+                Час проходження: {formatDuration(attemptDurationSec)}
+              </p>
+            )}
             <p className="text-slate-600 mt-2 text-sm sm:text-base max-w-md mx-auto">
               {isPassed 
                 ? 'Вітаємо! Ви продемонстрували відмінні знання регламенту повернення товарів за стандартом компанії.' 

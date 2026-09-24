@@ -20,7 +20,9 @@ export interface TestResultsData {
   avgScore: number;
   totalAttempts: number;
   passRate: number;
-  distribution: { range: string; count: number }[];
+  /** Середній час проходження, с; null — жодна спроба ще не мала тривалості. */
+  avgDurationSec: number | null;
+  distribution: { range: string; count: number; avgDurationSec?: number | null }[];
 }
 
 export interface ExpiringCertificate {

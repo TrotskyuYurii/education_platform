@@ -3,6 +3,7 @@ import { User, Section } from '../../models.js';
 import { LearningAssignment, Acknowledgment, QuizAttempt, CertificateRecord } from '../learning/models.js';
 import { SearchQueryLog } from './models.js';
 import { scopeFilter } from '../core/permissions.js';
+import { formatDuration } from '../../../shared/attemptDuration.js';
 
 export interface ReportFilters {
   departmentId?: string;
@@ -159,7 +160,7 @@ export const AnalyticsService = {
   async getTestResults(viewer: any, filters: ReportFilters) {
     const userIds = await resolveScopedUserIds(viewer, 'analytics.report.view', filters.departmentId);
     if (Array.isArray(userIds) && userIds.length === 0) {
-      return { avgScore: 0, totalAttempts: 0, passRate: 0, distribution: [] };
+      return { avgScore: 0, totalAttempts: 0, passRate: 0, avgDurationSec: null, distribution: [] };
     }
 
     const match: any = { ...dateRangeMatch('date', filters.dateFrom, filters.dateTo) };
@@ -171,10 +172,11 @@ export const AnalyticsService = {
       {
         $facet: {
           overall: [
-            { $group: { _id: null, avgScore: { $avg: '$percentage' }, totalAttempts: { $sum: 1 }, passedCount: { $sum: { $cond: ['$passed', 1, 0] } } } }
+            // $avg пропускає спроби без тривалості (записані до її появи)
+            { $group: { _id: null, avgScore: { $avg: '$percentage' }, avgDurationSec: { $avg: '$durationSec' }, totalAttempts: { $sum: 1 }, passedCount: { $sum: { $cond: ['$passed', 1, 0] } } } }
           ],
           distribution: [
-            { $bucket: { groupBy: '$percentage', boundaries: [0, 60, 80, 101], default: 'other', output: { count: { $sum: 1 } } } }
+            { $bucket: { groupBy: '$percentage', boundaries: [0, 60, 80, 101], default: 'other', output: { count: { $sum: 1 }, avgDurationSec: { $avg: '$durationSec' } } } }
           ]
         }
       }
@@ -184,13 +186,20 @@ export const AnalyticsService = {
     const bucketLabels: Record<string, string> = { '0': '0-59%', '60': '60-79%', '80': '80-100%' };
     const distribution = [0, 60, 80].map(boundary => {
       const bucket = facetResult.distribution.find((b: any) => b._id === boundary);
-      return { range: bucketLabels[String(boundary)], count: bucket?.count || 0 };
+      const avgDurationSec = typeof bucket?.avgDurationSec === 'number' ? Math.round(bucket.avgDurationSec) : null;
+      return {
+        range: bucketLabels[String(boundary)],
+        count: bucket?.count || 0,
+        avgDurationSec,
+        avgDuration: formatDuration(avgDurationSec)
+      };
     });
 
     return {
       avgScore: Math.round(overall.avgScore || 0),
       totalAttempts: overall.totalAttempts,
       passRate: overall.totalAttempts > 0 ? Math.round((overall.passedCount / overall.totalAttempts) * 100) : 0,
+      avgDurationSec: typeof overall.avgDurationSec === 'number' ? Math.round(overall.avgDurationSec) : null,
       distribution
     };
   },

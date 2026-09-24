@@ -33,6 +33,7 @@ import {
   describeAiError
 } from './services/aiInstructionGenerator.js';
 import { normalizeQuestions, buildSectionMarkdownForAi, QuestionValidationError } from './services/questionBank.js';
+import { sanitizeDurationSec, formatDuration } from '../shared/attemptDuration.js';
 import { importInstructions } from './services/instructionImport.js';
 import {
   AiImportJob,
@@ -1397,15 +1398,18 @@ apiRouter.post('/progress', requireAuth, async (req: any, res) => {
     }
     if (testScore) {
       await ProgressService.recordAttempt(req.user._id, testScore);
+      const durationSec = sanitizeDurationSec(testScore.durationSec);
       const isCases = testScore.mode === 'cases';
       ActivityService.capture({
         type: 'QUIZ_ATTEMPT',
         user: req.user,
         page: isCases ? 'cases' : 'quiz',
-        title: `${isCases ? 'Кейси' : 'Тест'}: ${testScore.score || 0} з ${testScore.total || 0} (${testScore.percentage || 0}%)`,
+        title: `${isCases ? 'Кейси' : 'Тест'}: ${testScore.score || 0} з ${testScore.total || 0} (${testScore.percentage || 0}%)`
+          + (durationSec !== undefined ? `, ${formatDuration(durationSec)}` : ''),
         details: {
           courseId: testScore.courseId || undefined,
           sectionId: testScore.sectionId || undefined,
+          durationSec,
           percentage: testScore.percentage || 0,
           passed: (testScore.percentage || 0) >= 80
         },

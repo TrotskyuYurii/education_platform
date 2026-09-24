@@ -270,6 +270,9 @@ export interface UserProgress {
     courseId?: string;
     department?: string;
     mode?: string;
+    /** Коли розпочато спробу і скільки секунд вона тривала (немає у старих спроб). */
+    startedAt?: string;
+    durationSec?: number;
   }>;
   notifications?: Array<{
     id: string;

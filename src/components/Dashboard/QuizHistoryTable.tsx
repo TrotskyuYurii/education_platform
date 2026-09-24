@@ -1,5 +1,6 @@
 import React from 'react';
 import { History } from 'lucide-react';
+import { formatDuration } from '../../../shared/attemptDuration';
 
 interface QuizHistoryItem {
   date: string;
@@ -10,6 +11,8 @@ interface QuizHistoryItem {
   courseId?: string;
   department?: string;
   mode?: string;
+  startedAt?: string;
+  durationSec?: number;
 }
 
 interface QuizHistoryTableProps {
@@ -66,6 +69,13 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
     });
   }, [quizHistory]);
 
+  // Середнє лише за спробами, де тривалість записано
+  const avgDurationSec = React.useMemo(() => {
+    const timed = quizHistory.filter(h => typeof h.durationSec === 'number');
+    if (timed.length === 0) return null;
+    return Math.round(timed.reduce((sum, h) => sum + (h.durationSec as number), 0) / timed.length);
+  }, [quizHistory]);
+
   return (
     <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
       <div className="flex items-center justify-between">
@@ -78,6 +88,9 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
         {quizHistory.length > 0 && (
           <span className="text-xs text-slate-500">
             Всього спроб: <strong>{quizHistory.length}</strong>
+            {avgDurationSec !== null && (
+              <> · Середній час: <strong>{formatDuration(avgDurationSec)}</strong></>
+            )}
           </span>
         )}
       </div>
@@ -96,6 +109,7 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
                 <th className="py-3 px-4">Підрозділ</th>
                 <th className="py-3 px-4">Тип</th>
                 <th className="py-3 px-4 text-center">Правильних</th>
+                <th className="py-3 px-4 text-right">Тривалість</th>
                 <th className="py-3 px-4 text-right">Результат</th>
               </tr>
             </thead>
@@ -141,6 +155,12 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
                     </td>
                     <td className="py-3 px-4 text-center font-bold">
                       {item.score} / {item.total}
+                    </td>
+                    <td
+                      className="py-3 px-4 text-right whitespace-nowrap text-slate-600"
+                      title={item.durationSec === undefined ? 'Тривалість не фіксувалась для цієї спроби' : undefined}
+                    >
+                      {formatDuration(item.durationSec)}
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-bold text-xs ${
