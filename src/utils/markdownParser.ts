@@ -196,6 +196,70 @@ export function extractImagesFromMarkdown(text: string): { cleanedText: string; 
 }
 
 /**
+ * Розбирає блоки «### ПИТАННЯ:» з Markdown. Використовується і під час імпорту
+ * інструкції, і коли ШІ догенеровує питання до вже наявної інструкції.
+ */
+export function parseQuestionBlocks(
+  md: string,
+  meta: { sectionId: string; department: string; role: RoleFilter; pageReference: string; idPrefix: string }
+): QuizQuestion[] {
+  const { sectionId, department, role, pageReference, idPrefix } = meta;
+  const questions: QuizQuestion[] = [];
+  const questionBlocks = md.split(/(?=### ПИТАННЯ:\s*)/i).filter(b => /^### ПИТАННЯ:/i.test(b.trim()));
+
+  questionBlocks.forEach((qBlock, qIdx) => {
+    const qLines = qBlock.split('\n');
+    const headerLine = qLines[0] || '';
+    const questionText = headerLine.replace(/^### ПИТАННЯ:\s*/i, '').trim();
+    if (!questionText) return;
+
+    let difficulty: 'easy' | 'medium' | 'hard' = 'medium';
+    const diffMatch = qBlock.match(/\*\*Складність:\*\*\s*(easy|medium|hard)/i);
+    if (diffMatch) difficulty = diffMatch[1].toLowerCase() as any;
+
+    let context: string | undefined;
+    const ctxMatch = qBlock.match(/\*\*Контекст:\*\*\s*(.+)/i);
+    if (ctxMatch) context = ctxMatch[1].trim();
+
+    let sourceDocPage = pageReference;
+    const srcMatch = qBlock.match(/\*\*(?:Першоджерело|Сторінка):\*\*\s*(.+)/i);
+    if (srcMatch) sourceDocPage = srcMatch[1].trim();
+
+    let explanation = '';
+    const expMatch = qBlock.match(/\*\*Пояснення:\*\*\s*(.+)/i);
+    if (expMatch) explanation = expMatch[1].trim();
+
+    const options: string[] = [];
+    let correctIndex = 0;
+
+    const optLines = qBlock.split('\n').filter(l => l.trim().match(/^- \[[ xX]\]/));
+    optLines.forEach((optLine, oIdx) => {
+      const isCorrect = /^- \[[xX]\]/.test(optLine.trim());
+      if (isCorrect) correctIndex = oIdx;
+      options.push(optLine.replace(/^- \[[ xX]\]\s*/, '').trim());
+    });
+
+    if (options.length > 0) {
+      questions.push({
+        id: `${idPrefix}-${qIdx}`,
+        sectionId,
+        department,
+        role,
+        difficulty,
+        question: questionText,
+        contextScenario: context,
+        options,
+        correctIndex,
+        explanation: explanation || 'Правильна відповідь згідно з положеннями регламенту.',
+        sourceDocPage
+      });
+    }
+  });
+
+  return questions;
+}
+
+/**
  * Допоміжна функція парсингу одного блоку інструкції
  */
 function parseSingleInstructionBlock(
@@ -447,57 +511,12 @@ function parseSingleInstructionBlock(
     stopRules: stopRules.length > 0 ? stopRules : undefined
   };
 
-  // Questions
-  const questions: QuizQuestion[] = [];
-  const questionBlocks = block.split(/(?=### ПИТАННЯ:\s*)/i).filter(b => /^### ПИТАННЯ:/i.test(b.trim()));
-
-  questionBlocks.forEach((qBlock, qIdx) => {
-    const qLines = qBlock.split('\n');
-    const headerLine = qLines[0] || '';
-    const questionText = headerLine.replace(/^### ПИТАННЯ:\s*/i, '').trim();
-    if (!questionText) return;
-
-    let difficulty: 'easy' | 'medium' | 'hard' = 'medium';
-    const diffMatch = qBlock.match(/\*\*Складність:\*\*\s*(easy|medium|hard)/i);
-    if (diffMatch) difficulty = diffMatch[1].toLowerCase() as any;
-
-    let context: string | undefined;
-    const ctxMatch = qBlock.match(/\*\*Контекст:\*\*\s*(.+)/i);
-    if (ctxMatch) context = ctxMatch[1].trim();
-
-    let sourceDocPage = pageReference;
-    const srcMatch = qBlock.match(/\*\*(?:Першоджерело|Сторінка):\*\*\s*(.+)/i);
-    if (srcMatch) sourceDocPage = srcMatch[1].trim();
-
-    let explanation = '';
-    const expMatch = qBlock.match(/\*\*Пояснення:\*\*\s*(.+)/i);
-    if (expMatch) explanation = expMatch[1].trim();
-
-    const options: string[] = [];
-    let correctIndex = 0;
-
-    const optLines = qBlock.split('\n').filter(l => l.trim().match(/^- \[[ xX]\]/));
-    optLines.forEach((optLine, oIdx) => {
-      const isCorrect = /^- \[[xX]\]/.test(optLine.trim());
-      if (isCorrect) correctIndex = oIdx;
-      options.push(optLine.replace(/^- \[[ xX]\]\s*/, '').trim());
-    });
-
-    if (options.length > 0) {
-      questions.push({
-        id: `q-${Date.now()}-${blockIdx}-${qIdx}`,
-        sectionId: instructionId,
-        department,
-        role,
-        difficulty,
-        question: questionText,
-        contextScenario: context,
-        options,
-        correctIndex,
-        explanation: explanation || 'Правильна відповідь згідно з положеннями регламенту.',
-        sourceDocPage
-      });
-    }
+  const questions = parseQuestionBlocks(block, {
+    sectionId: instructionId,
+    department,
+    role,
+    pageReference,
+    idPrefix: `q-${Date.now()}-${blockIdx}`
   });
 
   return { section, questions };

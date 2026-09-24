@@ -9,7 +9,9 @@ import {
 } from './fileStorage.js';
 import { extractPdfImages } from './pdfImages.js';
 import { convertDocxWithImages } from './docxImages.js';
-import { buildInstructionPrompt } from '../../shared/instructionPrompt.js';
+import { buildInstructionPrompt, buildAdditionalQuestionsPrompt } from '../../shared/instructionPrompt.js';
+
+const AI_MODEL = 'claude-opus-5';
 
 /** Скріншот, витягнутий з оригіналу документа. */
 export interface ExtractedDocumentImage {
@@ -198,13 +200,18 @@ export async function generateInstructionFromDocument(params: {
     }
   );
 
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-5',
-    max_tokens: 16000,
-    messages: [
-      { role: 'user', content: [documentBlock, { type: 'text', text: aiPromptGuide }] }
-    ]
-  });
+  // Повний текст інструкції разом із великим банком питань (20–30) не вміщається
+  // у 16 тис. токенів, а довша відповідь потребує стрімінгу, щоб не впертися в
+  // HTTP-тайм-аут.
+  const response = await anthropic.messages
+    .stream({
+      model: AI_MODEL,
+      max_tokens: 64000,
+      messages: [
+        { role: 'user', content: [documentBlock, { type: 'text', text: aiPromptGuide }] }
+      ]
+    })
+    .finalMessage();
 
   const markdownText = response.content
     .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -225,4 +232,43 @@ export async function generateInstructionFromDocument(params: {
       sizeBytes: img.sizeBytes
     }))
   };
+}
+
+/** Скільки питань можна догенерувати за один запит. */
+export const MAX_ADDITIONAL_QUESTIONS = 30;
+
+/**
+ * Догенеровує питання до вже збереженої інструкції. Повертає Markdown із
+ * блоками «### ПИТАННЯ:» — адмін переглядає їх у редакторі питань і лише тоді
+ * зберігає, тож у базу нічого не пишемо.
+ */
+export async function generateAdditionalQuestions(params: {
+  instructionMarkdown: string;
+  existingQuestions: string[];
+  count: number;
+}): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new InstructionGenerationError('ANTHROPIC_API_KEY is not configured on the server.', 500);
+  }
+  if (!params.instructionMarkdown.trim()) {
+    throw new InstructionGenerationError('Інструкція не містить тексту, з якого можна скласти питання.', 400);
+  }
+
+  const count = Math.max(1, Math.min(MAX_ADDITIONAL_QUESTIONS, Math.floor(params.count) || 10));
+  const anthropic = new Anthropic({ apiKey });
+  const response = await anthropic.messages
+    .stream({
+      model: AI_MODEL,
+      max_tokens: 32000,
+      messages: [
+        { role: 'user', content: buildAdditionalQuestionsPrompt({ ...params, count }) }
+      ]
+    })
+    .finalMessage();
+
+  return response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
 }

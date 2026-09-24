@@ -18,6 +18,8 @@ import { trackNavigation } from '../utils/activityTracker';
 import React, { useState, useRef, useMemo, Suspense, lazy } from 'react';
 import { InstructionSection, QuizQuestion, KnowledgeSpace } from '../types';
 import { buildAiPromptGuide, parseMarkdown, exportToMarkdown } from '../utils/markdownParser';
+import { DEFAULT_QUIZ_QUESTION_COUNT } from '../../shared/quizSampling';
+import { QuestionBankEditor } from './Admin/QuestionBankEditor';
 
 /**
  * Панелі адміністрування вантажаться на вимогу.
@@ -133,7 +135,8 @@ const blankCourse = () => ({
   isProgressive: false,
   quizPassScorePercent: 80,
   quizTimeLimitMin: undefined as number | undefined,
-  quizMaxAttempts: undefined as number | undefined
+  quizMaxAttempts: undefined as number | undefined,
+  quizQuestionCount: undefined as number | undefined
 });
 
 export const TestManagement: React.FC<TestManagementProps> = ({
@@ -365,6 +368,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [attachedSourcePdf, setAttachedSourcePdf] = useState<File | null>(null);
 
+  /** Інструкція, банк питань якої зараз відкрито в редакторі питань. */
+  const [editingQuestionsInstId, setEditingQuestionsInstId] = useState<string | null>(null);
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
   const [exportMenuInstId, setExportMenuInstId] = useState<string | null>(null);
@@ -1459,6 +1464,14 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                           )}
                         </div>
                         <button
+                          onClick={() => setEditingQuestionsInstId(inst.id)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200"
+                          title="Переглянути та редагувати питання тесту"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          <span>Питання ({inst.questionCount})</span>
+                        </button>
+                        <button
                           onClick={() => {
                             setEditingCourseId(inst.id);
                             setEditingCourseDep(inst.department);
@@ -1604,6 +1617,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             quizPassScorePercent: course.quizPassScorePercent ?? 80,
                             quizTimeLimitMin: course.quizTimeLimitMin,
                             quizMaxAttempts: course.quizMaxAttempts,
+                            quizQuestionCount: course.quizQuestionCount,
                             isActive: course.isActive !== undefined ? course.isActive : true
                             });
                           }}
@@ -2170,7 +2184,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
             hint="Наступну інструкцію видно лише після вивчення попередньої."
           />
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <FormField label="Мін. бал, %">
               <input
                 type="number"
@@ -2200,7 +2214,21 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 className={FIELD_INPUT_CLASS}
               />
             </FormField>
+            <FormField label="Питань у спробі">
+              <input
+                type="number"
+                min="1"
+                placeholder={String(DEFAULT_QUIZ_QUESTION_COUNT)}
+                value={editingCourse?.quizQuestionCount || ''}
+                onChange={e => setEditingCourse((prev: any) => !prev ? null : { ...prev, quizQuestionCount: e.target.value ? Number(e.target.value) : undefined })}
+                className={FIELD_INPUT_CLASS}
+              />
+            </FormField>
           </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            «Питань у спробі» — скільки питань випадково добирається з банку інструкцій курсу на кожне проходження.
+            У банку курсу зараз {questions.filter(q => (editingCourse?.instructionIds || []).includes(q.sectionId)).length} питань.
+          </p>
         </FormSection>
       </MaterialEditDialog>
 
@@ -2257,6 +2285,13 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           hint="Неактивні інструкції приховані від співробітників і недоступні для проходження."
         />
       </MaterialEditDialog>
+
+      <QuestionBankEditor
+        section={editingQuestionsInstId ? sections.find(s => s.id === editingQuestionsInstId) || null : null}
+        questions={editingQuestionsInstId ? questions.filter(q => q.sectionId === editingQuestionsInstId) : []}
+        onClose={() => setEditingQuestionsInstId(null)}
+        onSaved={refreshMaterials}
+      />
 
       {editingMarkdownInstId && (
         <MarkdownEditor

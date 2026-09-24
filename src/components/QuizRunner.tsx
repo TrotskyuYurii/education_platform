@@ -15,9 +15,41 @@ import {
   FileText, 
   Sparkles,
   Briefcase,
-  Clock
+  Clock,
+  Shuffle
 } from 'lucide-react';
 import { SUCCESS_QUOTES, RESILIENCE_QUOTES, UkrainianQuote } from '../data/ukrainianQuotes';
+import {
+  DEFAULT_QUIZ_QUESTION_COUNT,
+  pickQuizQuestions,
+  shuffleQuestionOptions,
+  mergeRecentQuestionIds
+} from '../../shared/quizSampling';
+
+/**
+ * Які питання співробітник бачив нещодавно — щоб наступна спроба почалася з
+ * інших. Це лише зручність у межах браузера: без неї (приватне вікно, очищені
+ * дані) вибірка все одно випадкова.
+ */
+const recentQuestionsKey = (userId?: string) => `quiz-recent-questions:${userId || 'anonymous'}`;
+
+function readRecentQuestionIds(userId?: string): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(recentQuestionsKey(userId)) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberShownQuestions(userId: string | undefined, shownIds: string[]) {
+  try {
+    const merged = mergeRecentQuestionIds(readRecentQuestionIds(userId), shownIds);
+    localStorage.setItem(recentQuestionsKey(userId), JSON.stringify(merged));
+  } catch {
+    /* сховище недоступне — просто не пам'ятаємо історію */
+  }
+}
 
 interface QuizRunnerProps {
   allQuestions: QuizQuestion[];
@@ -107,10 +139,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     return courses;
   }, [courses]);
 
-  // Filter and shuffle questions based on mode/role/section/course/department
-  const questionsToRun = useMemo(() => {
+  // Банк питань для обраного матеріалу (без перемішування — вибірка робиться на старті спроби)
+  const questionPool = useMemo(() => {
     let list = [...allQuestions];
-    
+
     if (targetSectionId) {
       list = list.filter((q) => q.sectionId === targetSectionId);
     } else if (targetCourseId) {
@@ -126,15 +158,21 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
         list = list.filter((q) => q.department === selectedDepartment);
       }
     }
-    
-    // Shuffle the array (Fisher-Yates)
-    for (let i = list.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [list[i], list[j]] = [list[j], list[i]];
-    }
 
     return list;
-  }, [allQuestions, targetSectionId, targetCourseId, selectedRole, selectedDepartment, quizAttempt]);
+  }, [allQuestions, targetSectionId, targetCourseId, courses, selectedRole, selectedDepartment]);
+
+  // Скільки питань показати за одну спробу: налаштування курсу або типова кількість
+  const questionsPerAttempt = Math.min(
+    questionPool.length,
+    currentTargetCourse?.quizQuestionCount || DEFAULT_QUIZ_QUESTION_COUNT
+  );
+
+  /**
+   * Питання поточної спроби фіксуються на старті: інакше оновлення контенту
+   * посеред тесту перемішало б їх і відповіді «з'їхали» б на інші питання.
+   */
+  const [questionsToRun, setQuestionsToRun] = useState<QuizQuestion[]>([]);
 
   const currentQ = questionsToRun[currentIndex];
 
@@ -179,6 +217,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   }, [quizStarted, quizSubmitted, timeLeft]);
 
   const handleStartQuiz = () => {
+    const picked = pickQuizQuestions(questionPool, questionsPerAttempt, {
+      recentIds: readRecentQuestionIds(user?.id)
+    }).map(q => shuffleQuestionOptions(q));
+    rememberShownQuestions(user?.id, picked.map(q => q.id));
+    setQuestionsToRun(picked);
     setUserAnswers({});
     setCurrentIndex(0);
     setQuizSubmitted(false);
@@ -367,13 +410,19 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 <div className="flex flex-col items-center w-full sm:w-auto">
                   <button
                     onClick={handleStartQuiz}
-                    disabled={questionsToRun.length === 0 || hasNoAttempts}
+                    disabled={questionPool.length === 0 || hasNoAttempts}
                     id="btn-start-quiz-now"
                     className="w-full px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <span>Розпочати тестування ({questionsToRun.length} питань)</span>
+                    <span>Розпочати тестування ({questionsPerAttempt} питань)</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
+                  {questionPool.length > questionsPerAttempt && (
+                    <span className="text-xs font-medium mt-2 text-slate-500 flex items-center gap-1.5">
+                      <Shuffle className="w-3.5 h-3.5" />
+                      Щоразу нова добірка з банку в {questionPool.length} питань
+                    </span>
+                  )}
                   {maxAttempts && (
                     <span className={`text-xs font-semibold mt-2 ${hasNoAttempts ? 'text-rose-600' : 'text-slate-500'}`}>
                       Використано спроб: {pastAttempts} з {maxAttempts}
@@ -394,7 +443,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               Повернутися до читання інструкції
             </button>
           </div>
-          {questionsToRun.length === 0 && (
+          {questionPool.length === 0 && (
             <p className="mt-4 text-sm text-rose-500 font-medium">Для даного розділу або курсу поки що не створено жодного питання.</p>
           )}
         </div>

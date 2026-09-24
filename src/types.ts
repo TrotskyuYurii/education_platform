@@ -149,6 +149,8 @@ export interface Course {
   quizTimeLimitMin?: number;
   quizPassScorePercent?: number;
   quizMaxAttempts?: number;
+  /** Скільки питань із банку показувати за одну спробу. */
+  quizQuestionCount?: number;
 }
 
 export interface InstructionSection {

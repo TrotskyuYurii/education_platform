@@ -28,9 +28,11 @@ import { sendStoredFile, sendStoredInline } from './services/fileDownload.js';
 import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.js';
 import {
   generateInstructionFromDocument,
+  generateAdditionalQuestions,
   InstructionGenerationError,
   describeAiError
 } from './services/aiInstructionGenerator.js';
+import { normalizeQuestions, buildSectionMarkdownForAi, QuestionValidationError } from './services/questionBank.js';
 import { importInstructions } from './services/instructionImport.js';
 import {
   AiImportJob,
@@ -868,6 +870,13 @@ apiRouter.post('/admin/ai-import-jobs/:id/dismiss', requireAuth, requireAdmin, a
   }
 });
 
+/** «Питань в одній спробі»: порожнє значення — типова кількість, інакше ціле від 1. */
+function parseQuestionCount(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { 
@@ -881,6 +890,7 @@ apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => 
       quizTimeLimitMin,
       quizPassScorePercent,
       quizMaxAttempts,
+      quizQuestionCount,
       isActive
     } = req.body;
     const course = await Course.create({
@@ -897,7 +907,8 @@ apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => 
       isActive: isActive === undefined ? true : !!isActive,
       quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
       quizPassScorePercent: quizPassScorePercent !== undefined ? Number(quizPassScorePercent) : 80,
-      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined
+      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined,
+      quizQuestionCount: parseQuestionCount(quizQuestionCount)
     } as any);
     res.json({ success: true, course });
   } catch (err) {
@@ -948,6 +959,7 @@ apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) 
       quizTimeLimitMin,
       quizPassScorePercent,
       quizMaxAttempts,
+      quizQuestionCount,
       isActive
     } = req.body;
     
@@ -961,7 +973,9 @@ apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) 
       isProgressive: !!isProgressive,
       quizPassScorePercent: quizPassScorePercent !== undefined ? Number(quizPassScorePercent) : 80,
       quizTimeLimitMin: quizTimeLimitMin !== undefined && quizTimeLimitMin !== null && quizTimeLimitMin !== '' ? Number(quizTimeLimitMin) : undefined,
-      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined
+      quizMaxAttempts: quizMaxAttempts !== undefined && quizMaxAttempts !== null && quizMaxAttempts !== '' ? Number(quizMaxAttempts) : undefined,
+      // null, а не undefined: інакше очищене поле не скинеться до типового значення
+      quizQuestionCount: parseQuestionCount(quizQuestionCount) ?? null
     };
     if (isActive !== undefined) {
       updateData.isActive = !!isActive;
@@ -1143,6 +1157,62 @@ apiRouter.put('/admin/instructions/:id', requireAuth, requireAdmin, async (req, 
     res.json({ success: true, section });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update instruction' });
+  }
+});
+
+/**
+ * Зберігає банк питань інструкції з редактора питань: повністю замінює
+ * наявний набір, не чіпаючи ні тексту інструкції, ні її редакцій.
+ */
+apiRouter.put('/admin/instructions/:id/questions', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const section = await Section.findOne({ id: req.params.id } as any).lean<any>();
+    if (!section) return res.status(404).json({ error: 'Інструкцію не знайдено' });
+
+    const questions = normalizeQuestions(req.body?.questions, section);
+    await Question.deleteMany({ sectionId: section.id } as any);
+    if (questions.length > 0) await Question.insertMany(questions);
+
+    res.json({ success: true, questions });
+  } catch (err) {
+    if (err instanceof QuestionValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('Failed to save instruction questions', err);
+    res.status(500).json({ error: 'Не вдалося зберегти питання' });
+  }
+});
+
+/**
+ * Догенерація питань ШІ до наявної інструкції. Повертає Markdown із новими
+ * питаннями — у базу вони потрапляють лише після того, як адмін їх перегляне
+ * і збереже в редакторі.
+ */
+apiRouter.post('/admin/instructions/:id/questions/generate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const section = await Section.findOne({ id: req.params.id } as any).lean<any>();
+    if (!section) return res.status(404).json({ error: 'Інструкцію не знайдено' });
+
+    // Питання з редактора (ще не збережені) важливіші за записані в базі:
+    // модель має не повторювати саме те, що адмін бачить зараз.
+    const existingQuestions: string[] = (Array.isArray(req.body?.existingQuestions)
+      ? req.body.existingQuestions.filter((q: unknown): q is string => typeof q === 'string' && q.trim().length > 0)
+      : (await Question.find({ sectionId: section.id } as any, { question: 1 } as any).lean<any[]>()).map(q => q.question)
+    ).slice(0, 200);
+
+    const markdown = await generateAdditionalQuestions({
+      instructionMarkdown: buildSectionMarkdownForAi(section),
+      existingQuestions,
+      count: Number(req.body?.count) || 10
+    });
+
+    res.json({ success: true, markdown });
+  } catch (err: any) {
+    if (err instanceof InstructionGenerationError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    console.error('Failed to generate additional questions via AI', err);
+    res.status(500).json({ error: describeAiError(err) });
   }
 });
 

@@ -75,6 +75,8 @@ const courseSchema = new mongoose.Schema({
   quizTimeLimitMin: { type: Number },
   quizPassScorePercent: { type: Number, default: 80 },
   quizMaxAttempts: { type: Number },
+  // Скільки питань із банку добирати на одну спробу; порожньо — типова кількість
+  quizQuestionCount: { type: Number },
   spaceId: { type: String, default: 'space-general' },
   // Тека адміністративного переліку: суто організаційна, на доступ не впливає
   folderId: { type: String, default: null, index: true },
