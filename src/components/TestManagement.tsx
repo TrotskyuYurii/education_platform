@@ -42,6 +42,7 @@ const NotificationTemplates = lazy(() => import('./Admin/NotificationTemplates')
 const SystemLogPanel = lazy(() => import('./Admin/SystemLogPanel').then(m => ({ default: m.SystemLogPanel })));
 const UserActivityPanel = lazy(() => import('./Admin/UserActivityPanel').then(m => ({ default: m.UserActivityPanel })));
 const AppSettingsPanel = lazy(() => import('./Admin/AppSettingsPanel').then(m => ({ default: m.AppSettingsPanel })));
+const DashboardsHub = lazy(() => import('./Admin/Dashboards/DashboardsHub').then(m => ({ default: m.DashboardsHub })));
 
 /** Спільна заглушка на час підвантаження чанка панелі. */
 const PanelFallback = () => (
@@ -88,7 +89,8 @@ import {
   Plus,
   Paperclip,
   Rocket,
-  Footprints
+  Footprints,
+  LayoutDashboard
 } from 'lucide-react';
 
 /** Що сервер зробив зі скріншотами документа під час імпорту. */
@@ -120,11 +122,13 @@ interface TestManagementProps {
   onRefresh?: () => Promise<void>;
   /** Відкрити маршрут конкретного онбордінгу на вкладці «Онбординг». */
   onOpenOnboardingAssignment?: (assignmentId: string) => void;
+  /** Відкрити «Аналітику та прогрес навчання» (той самий екран, що з «Мого профілю»). */
+  onOpenLearningDashboard?: () => void;
   /** Відкрити певну вкладку при вході в розділ (напр. за кліком по індикатору тривоги). */
   initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings' | 'dashboards';
 
 /** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
 const blankCourse = () => ({
@@ -154,6 +158,7 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   isSetupMode,
   onRefresh,
   onOpenOnboardingAssignment,
+  onOpenLearningDashboard,
   initialTab
 }) => {
   const { hasPermission, isAdministrator } = useAuth();
@@ -323,7 +328,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings', 'dashboards'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -1023,14 +1028,26 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 </div>
               </div>
 
-              {/* Group 3: Адміністрування — журнали й глобальні налаштування */}
-              {(canViewLogs || isAdministrator || canManageSettings) && (
+              {/* Group 3: Адміністрування — дашборди, журнали й глобальні налаштування.
+                  «Дашборди» доступні всім, хто бачить адміністрування, тож група є завжди. */}
               <div className="pt-4 border-t border-slate-200">
                 <div className="flex items-center gap-1.5 px-2 mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   <Wrench className="w-3.5 h-3.5" />
                   <span>Адміністрування</span>
                 </div>
                 <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('dashboards')}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                      activeTab === 'dashboards'
+                        ? 'bg-purple-100 text-purple-800 shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    <span>Дашборди</span>
+                  </button>
+
                   {canViewLogs && (
                     <button
                       onClick={() => setActiveTab('systemlog')}
@@ -1082,7 +1099,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                   )}
                 </div>
               </div>
-              )}
             </div>
           </div>
         )}
@@ -1826,6 +1842,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'systemlog' && <SystemLogPanel />}
           {activeTab === 'activity' && isAdministrator && <UserActivityPanel />}
           {activeTab === 'settings' && canManageSettings && <AppSettingsPanel />}
+          {activeTab === 'dashboards' && (
+            <DashboardsHub
+              canViewActivity={isAdministrator}
+              onOpenLearningDashboard={() => onOpenLearningDashboard?.()}
+            />
+          )}
 
           {/* TAB: KNOWLEDGE SPACES & LIFECYCLE */}
           {activeTab === 'knowledge' && (

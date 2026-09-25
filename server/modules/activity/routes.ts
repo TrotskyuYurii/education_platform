@@ -7,6 +7,7 @@ import { logger } from '../core/logger.js';
 import { activityTrackRateLimiter } from '../core/rateLimit.js';
 import { CLIENT_ACTIVITY_TYPES } from './models.js';
 import { ActivityService, ACTIVITY_EXPORT_MAX_ROWS } from './service.js';
+import { ActivityDashboardService } from './dashboard.js';
 
 export const activityRouter = Router();
 
@@ -32,6 +33,15 @@ activityRouter.get('/', requireAdminRole, async (req, res, next) => {
   try {
     const { userId, type, from, to, search, page, limit } = req.query as Record<string, string>;
     res.json(await ActivityService.list({ userId, type, from, to, search, page: Number(page), limit: Number(limit) }));
+  } catch (err) { next(err); }
+});
+
+// Дашборд «Активність»: входи, активні користувачі, час у застосунку за період.
+// Ті самі персональні дані, що й у журналі, тож і доступ той самий.
+activityRouter.get('/dashboard', requireAdminRole, async (req, res, next) => {
+  try {
+    const { from, to } = req.query as Record<string, string>;
+    res.json(await ActivityDashboardService.build({ from, to }));
   } catch (err) { next(err); }
 });
 

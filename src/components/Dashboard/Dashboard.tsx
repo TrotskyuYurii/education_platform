@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { DrilldownDialog } from '../DrilldownDialog';
+import { buildLearningDrilldown, LearningDrill } from './learningDrilldowns';
 import { UserProgress, InstructionSection } from '../../types';
 import { User } from '../../context/AuthContext';
 import { RotateCcw } from 'lucide-react';
@@ -9,6 +11,7 @@ import { KpiMetricsGrid } from './KpiMetricsGrid';
 import { CertificatesSection } from './CertificatesSection';
 import { AnalyticsCharts } from './AnalyticsCharts';
 import { QuizHistoryTable } from './QuizHistoryTable';
+import { resolveHistoryDepartment, historyPercentage } from './historyLabels';
 
 interface DashboardProps {
   progress: UserProgress;
@@ -38,6 +41,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   
   // Certificate viewer state
   const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
+
+  // Деталізація картки чи графіка: з чого складається число.
+  const [drill, setDrill] = useState<LearningDrill | null>(null);
+  // Стабільні посилання: KpiMetricsGrid і AnalyticsCharts обгорнуті в memo.
+  const openDrill = useCallback((next: LearningDrill) => setDrill(next), []);
+  const closeDrill = useCallback(() => setDrill(null), []);
 
   // Fetch all users with summary stats
   const fetchUsersList = useCallback(async () => {
@@ -157,7 +166,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           sectionId: s.sectionId,
           courseId: s.courseId,
           department: s.department,
-          mode: s.mode
+          mode: s.mode,
+          startedAt: s.startedAt,
+          durationSec: s.durationSec
         })),
         certificates: p.certificates || []
       };
@@ -177,25 +188,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const scoreByDept: DepartmentScoreStat[] = useMemo(() => {
     const deps: Record<string, { totalScore: number; count: number }> = {};
     (activeProgress.quizHistory || []).forEach(history => {
-      let dep = history.department || 'Загальний';
-      if ((!dep || dep === 'Загальний') && history.courseId) {
-        const matchingCourse = courses.find(c => c.id === history.courseId);
-        if (matchingCourse?.department) {
-          dep = matchingCourse.department;
-        } else {
-          const matchingSection = sections.find(s => s.courseId === history.courseId);
-          if (matchingSection?.department) dep = matchingSection.department;
-        }
-      }
-      if ((!dep || dep === 'Загальний') && history.sectionId) {
-        const matchingSection = sections.find(s => s.id === history.sectionId);
-        if (matchingSection?.department) {
-          dep = matchingSection.department;
-        }
-      }
-      const pct = history.percentage !== undefined 
-        ? history.percentage 
-        : (history.total > 0 ? Math.round((history.score / history.total) * 100) : 0);
+      const dep = resolveHistoryDepartment(history, courses, sections);
+      const pct = historyPercentage(history);
 
       if (!deps[dep]) deps[dep] = { totalScore: 0, count: 0 };
       deps[dep].totalScore += pct;
@@ -221,6 +215,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const certificates = activeProgress.certificates || [];
 
+  const drilldown = useMemo(() => {
+    if (!drill) return null;
+    const name = activeProgress.employeeInfo?.fullName || activeUser?.email;
+    return buildLearningDrilldown(drill, {
+      quizHistory: activeProgress.quizHistory || [],
+      sections,
+      courses,
+      readSectionIds: activeProgress.readSectionIds,
+      subjectLabel: selectedUserId ? (name || 'Співробітник') : 'Ваш прогрес'
+    });
+  }, [drill, activeProgress, activeUser, sections, courses, selectedUserId]);
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {selectedCertificate && (
@@ -231,6 +237,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           onDelete={isAdmin && selectedUserId ? () => handleDeleteCertificate(selectedCertificate.courseId) : undefined}
         />
       )}
+
+      {drilldown && <DrilldownDialog key={JSON.stringify(drill)} {...drilldown} onClose={closeDrill} />}
 
       {/* Header and Controls */}
       <div className="space-y-4">
@@ -296,6 +304,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             readCount={readProgress.read}
             totalSectionsCount={sections.length}
             totalQuestionsAnswered={activeProgress.totalQuestionsAnswered}
+            onOpenDetail={openDrill}
           />
 
           {/* Certificates Section subcomponent */}
@@ -312,6 +321,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             scoreByDept={scoreByDept}
             readProgress={readProgress}
             totalSectionsCount={sections.length}
+            onOpenDetail={openDrill}
           />
 
           {/* Quiz History Table subcomponent */}

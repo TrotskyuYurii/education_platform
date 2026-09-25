@@ -1,6 +1,7 @@
 import React from 'react';
 import { History } from 'lucide-react';
 import { formatDuration } from '../../../shared/attemptDuration';
+import { getHistoryTitle } from './historyLabels';
 
 interface QuizHistoryItem {
   date: string;
@@ -32,22 +33,7 @@ export const QuizHistoryTable = React.memo<QuizHistoryTableProps>(({
   courses = [],
   sections = [],
 }) => {
-  // Helper to get title for history items
-  const getItemTitle = (history: QuizHistoryItem) => {
-    if (history.mode === 'cases') {
-      const c = history.courseId ? courses.find(course => course.id === history.courseId) : undefined;
-      return c?.title ? `Практичні кейси: ${c.title}` : 'Практичні кейси';
-    }
-    if (history.courseId) {
-      const c = courses.find(course => course.id === history.courseId);
-      if (c?.title) return c.title;
-    }
-    if (history.sectionId) {
-      const s = sections.find(sec => sec.id === history.sectionId);
-      if (s?.title) return s.title;
-    }
-    return history.department ? `Тест (${history.department})` : 'Підсумковий тест';
-  };
+  const getItemTitle = (history: QuizHistoryItem) => getHistoryTitle(history, courses, sections);
 
   const getItemDepartment = (history: QuizHistoryItem) => {
     if (history.department && history.department !== 'Загальний') {

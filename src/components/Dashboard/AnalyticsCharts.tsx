@@ -3,13 +3,16 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell 
 } from 'recharts';
-import { Target } from 'lucide-react';
+import { Target, MousePointerClick } from 'lucide-react';
 import { DepartmentScoreStat, ReadProgressStats } from './types';
+import type { LearningDrill } from './learningDrilldowns';
 
 interface AnalyticsChartsProps {
   scoreByDept: DepartmentScoreStat[];
   readProgress: ReadProgressStats;
   totalSectionsCount: number;
+  /** Клік по стовпчику чи сектору відкриває спроби або інструкції, з яких він складається. */
+  onOpenDetail?: (drill: LearningDrill) => void;
 }
 
 /**
@@ -21,7 +24,10 @@ export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
   scoreByDept,
   readProgress,
   totalSectionsCount,
+  onOpenDetail,
 }) => {
+  const openReadList = (filter: 'all' | 'read' | 'unread') => onOpenDetail?.({ kind: 'read', filter });
+  const counterClass = 'rounded-lg px-2 py-1 transition enabled:hover:bg-slate-50 enabled:cursor-pointer disabled:cursor-default focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500';
   const pieData = [
     { name: 'Опрацьовано', value: readProgress.read },
     { name: 'Залишилось', value: readProgress.unread }
@@ -45,9 +51,18 @@ export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
         </div>
 
         {scoreByDept.length > 0 ? (
+          <>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={scoreByDept} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+              <BarChart
+                data={scoreByDept}
+                margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                style={onOpenDetail ? { cursor: 'pointer' } : undefined}
+                onClick={(state: any) => {
+                  const row = scoreByDept[Number(state?.activeTooltipIndex)];
+                  if (row && onOpenDetail) onOpenDetail({ kind: 'department', name: row.name });
+                }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
                 <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
@@ -61,6 +76,12 @@ export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {onOpenDetail && (
+            <p className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-2">
+              <MousePointerClick className="w-3.5 h-3.5" /> Натисніть на стовпчик, щоб побачити спроби цього підрозділу
+            </p>
+          )}
+          </>
         ) : (
           <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
             <Target className="w-8 h-8 text-slate-300 mb-2" />
@@ -86,6 +107,8 @@ export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
                 paddingAngle={5}
                 dataKey="value"
                 stroke="none"
+                style={onOpenDetail ? { cursor: 'pointer' } : undefined}
+                onClick={(_: any, index: number) => openReadList(index === 0 ? 'read' : 'unread')}
               >
                 <Cell fill="#10b981" />
                 <Cell fill="#f1f5f9" />
@@ -102,21 +125,26 @@ export const AnalyticsCharts = React.memo<AnalyticsChartsProps>(({
         </div>
 
         <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-around text-center text-xs">
-          <div>
+          <button type="button" className={counterClass} disabled={!onOpenDetail} onClick={() => openReadList('read')}>
             <div className="font-bold text-emerald-600 text-base">{readProgress.read}</div>
             <div className="text-slate-500">Прочитано</div>
-          </div>
+          </button>
           <div className="w-px h-8 bg-slate-100" />
-          <div>
+          <button type="button" className={counterClass} disabled={!onOpenDetail} onClick={() => openReadList('unread')}>
             <div className="font-bold text-slate-400 text-base">{readProgress.unread}</div>
             <div className="text-slate-500">Залишилось</div>
-          </div>
+          </button>
           <div className="w-px h-8 bg-slate-100" />
-          <div>
+          <button type="button" className={counterClass} disabled={!onOpenDetail} onClick={() => openReadList('all')}>
             <div className="font-bold text-slate-800 text-base">{totalSectionsCount}</div>
             <div className="text-slate-500">Всього в базі</div>
-          </div>
+          </button>
         </div>
+        {onOpenDetail && (
+          <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 mt-3">
+            <MousePointerClick className="w-3.5 h-3.5" /> Натисніть, щоб побачити перелік інструкцій
+          </p>
+        )}
       </div>
 
     </div>

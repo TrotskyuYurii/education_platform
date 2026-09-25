@@ -98,6 +98,7 @@ import { foldersRouter } from './modules/folders/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
 import { settingsRouter } from './modules/settings/routes.js';
 import { ActivityService } from './modules/activity/service.js';
+import { ActivityDashboardService } from './modules/activity/dashboard.js';
 import { OnboardingService } from './modules/onboarding/service.js';
 import { OnboardingAssignment } from './modules/onboarding/models.js';
 
@@ -328,6 +329,9 @@ apiRouter.post('/auth/logout', async (req, res) => {
  */
 apiRouter.post('/auth/heartbeat', requireAuth, (req: any, res) => {
   issueSessionCookie(res, req.user);
+  // Пульс приходить лише у відповідь на реальні дії людини — з нього й рахуємо
+  // час у застосунку для дашборду «Активність».
+  ActivityDashboardService.captureBeat(req.user._id);
   res.json({ success: true, session: sessionPolicy() });
 });
 

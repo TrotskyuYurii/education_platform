@@ -34,7 +34,7 @@ export const ACTIVITY_EXPORT_MAX_ROWS = 200_000;
  * в UTC, тож межі періоду й час у файлі рахуємо явно в цьому поясі — інакше
  * «сьогодні» зсувалося б на 2–3 години.
  */
-const ACTIVITY_TIMEZONE = process.env.ACTIVITY_LOG_TIMEZONE || 'Europe/Kyiv';
+export const ACTIVITY_TIMEZONE = process.env.ACTIVITY_LOG_TIMEZONE || 'Europe/Kyiv';
 
 const tzFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: ACTIVITY_TIMEZONE,
@@ -48,7 +48,7 @@ const tzFormatter = new Intl.DateTimeFormat('en-US', {
 });
 
 /** Годинник у поясі журналу, записаний як UTC-мітка («настінний» час). */
-const wallClockMs = (instant: Date): number => {
+export const wallClockMs = (instant: Date): number => {
   const parts: Record<string, number> = {};
   for (const p of tzFormatter.formatToParts(instant)) {
     if (p.type !== 'literal') parts[p.type] = Number(p.value);
@@ -57,7 +57,7 @@ const wallClockMs = (instant: Date): number => {
 };
 
 /** Північ дати 'YYYY-MM-DD' у поясі журналу як реальна мить. */
-const parseDay = (value?: string, nextDay = false): Date | null => {
+export const parseDay = (value?: string, nextDay = false): Date | null => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [y, m, d] = value.split('-').map(Number);
   const target = Date.UTC(y, m - 1, d + (nextDay ? 1 : 0));

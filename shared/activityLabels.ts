@@ -45,7 +45,10 @@ const ADMIN_PAGE_LABELS: Record<string, string> = {
   notifications: 'Сповіщення',
   analytics: 'Аналітика',
   systemlog: 'Журнал адміністратора',
-  activity: 'Журнал дій'
+  activity: 'Журнал дій',
+  settings: 'Налаштування',
+  dashboards: 'Дашборди',
+  'dashboards:activity': 'Дашборди → Активність'
 };
 
 // Незнайомий ключ показуємо як є — новий розділ не зламає журнал.

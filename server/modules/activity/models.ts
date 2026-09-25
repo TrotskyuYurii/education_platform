@@ -61,3 +61,28 @@ UserActivitySchema.index({ type: 1, createdAt: -1 });
 UserActivitySchema.index({ createdAt: -1 }, { expireAfterSeconds: ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 });
 
 export const UserActivity = mongoose.models.UserActivity || mongoose.model('UserActivity', UserActivitySchema);
+
+/**
+ * Скільки часу людина провела в застосунку — один документ на людину на день.
+ *
+ * Окремо від журналу дій навмисно: час рахується з «пульсу» сесії, що
+ * приходить щохвилини, і писати кожен пульс окремим записом означало б
+ * засмітити журнал тисячами однакових рядків. Тут пульс лише збільшує лічильник.
+ */
+const UserDailyUsageSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  // Календарний день у поясі журналу ('YYYY-MM-DD'), а не UTC-мітка:
+  // так «сьогодні» на дашборді збігається з київським днем.
+  day: { type: String, required: true },
+  seconds: { type: Number, default: 0 },
+  beats: { type: Number, default: 0 },
+  // Від нього рахується наступний пульс; потрібен і для TTL.
+  lastBeatAt: { type: Date }
+});
+
+UserDailyUsageSchema.index({ userId: 1, day: 1 }, { unique: true });
+UserDailyUsageSchema.index({ day: 1 });
+// Та сама глибина зберігання, що й у журналу дій.
+UserDailyUsageSchema.index({ lastBeatAt: 1 }, { expireAfterSeconds: ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 });
+
+export const UserDailyUsage = mongoose.models.UserDailyUsage || mongoose.model('UserDailyUsage', UserDailyUsageSchema);

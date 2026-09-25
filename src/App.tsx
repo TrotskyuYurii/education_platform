@@ -782,6 +782,7 @@ function MainApp() {
             spaces={spaces}
             onRefresh={fetchContent}
             initialTab={mgmtInitialTab}
+            onOpenLearningDashboard={() => setCurrentTab('dashboard')}
             onOpenOnboardingAssignment={(assignmentId) => {
               setOnboardingFocusId(assignmentId);
               setCurrentTab('onboarding');
