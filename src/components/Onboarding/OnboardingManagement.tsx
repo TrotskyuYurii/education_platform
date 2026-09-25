@@ -122,8 +122,8 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
     }
   };
 
+  // Підтвердження архівації й видалення питає меню «Дії» рядка шаблона.
   const archiveTemplate = async (id: string) => {
-    if (!window.confirm('Перевести онбординг в архів? Його більше не можна буде призначати, вже розпочаті проходження не постраждають.')) return;
     try {
       const res = await fetch(`/api/v2/onboarding/templates/${id}`, {
         method: 'PUT',
@@ -140,8 +140,7 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
     }
   };
 
-  const deleteTemplate = async (id: string, name: string) => {
-    if (!window.confirm(`Видалити онбординг «${name}» назавжди? Дію не можна скасувати.`)) return;
+  const deleteTemplate = async (id: string) => {
     try {
       const res = await fetch(`/api/v2/onboarding/templates/${id}`, { method: 'DELETE' });
       const data = await res.json();
@@ -275,7 +274,7 @@ export const OnboardingManagement: React.FC<OnboardingManagementProps> = ({
                   onAssign={() => setAssigningTemplate(t)}
                   onDuplicate={() => duplicateTemplate(t.id)}
                   onArchive={() => archiveTemplate(t.id)}
-                  onDelete={() => deleteTemplate(t.id, t.name)}
+                  onDelete={() => deleteTemplate(t.id)}
                 />
               ))}
             </MaterialList>
@@ -306,9 +305,9 @@ const TemplateRow: React.FC<{
   template: OnboardingTemplateSummary;
   onEdit: () => void;
   onAssign: () => void;
-  onDuplicate: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
+  onDuplicate: () => Promise<void>;
+  onArchive: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }> = ({ template, onEdit, onAssign, onDuplicate, onArchive, onDelete }) => {
   const statusMeta = TEMPLATE_STATUS_META[template.status];
   const isPublished = template.status === 'published';
@@ -332,50 +331,60 @@ const TemplateRow: React.FC<{
         { label: <span><b>{template.assignedCompleted}</b> завершили</span>, tone: 'emerald' },
         { label: <span><b>{template.assignedTotal}</b> всього</span>, tone: 'slate' }
       ]}
-      actions={
-        <>
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
-          >
-            <Pencil className="w-3.5 h-3.5 shrink-0" />
-            <span>Схема</span>
-          </button>
-          <button
-            onClick={onAssign}
-            disabled={!isPublished}
-            title={isPublished ? 'Призначити співробітнику' : 'Спершу опублікуйте онбординг'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <UserPlus className="w-3.5 h-3.5 shrink-0" />
-            <span>Призначити</span>
-          </button>
-          <button
-            onClick={onDuplicate}
-            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
-            title="Створити копію"
-          >
-            <Copy className="w-4 h-4" />
-          </button>
-          {template.status !== 'archived' ? (
-            <button
-              onClick={onArchive}
-              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
-              title="В архів"
-            >
-              <Archive className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              onClick={onDelete}
-              className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 transition"
-              title="Видалити назавжди"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-        </>
-      }
+      preview={{
+        onClick: onEdit,
+        title: 'Відкрити схему онбордингу: кроки та зв\'язки між ними'
+      }}
+      menuActions={[
+        {
+          key: 'assign',
+          label: 'Призначити співробітнику',
+          hint: 'Запустити маршрут адаптації',
+          icon: UserPlus,
+          disabled: !isPublished,
+          disabledReason: 'Спершу опублікуйте онбординг',
+          onSelect: onAssign
+        },
+        {
+          key: 'edit',
+          label: 'Редагувати схему',
+          hint: 'Кроки, зв\'язки, публікація',
+          icon: Pencil,
+          onSelect: onEdit
+        },
+        {
+          key: 'duplicate',
+          label: 'Створити копію',
+          hint: 'Нова чернетка з тими самими кроками',
+          icon: Copy,
+          onSelect: onDuplicate
+        },
+        template.status !== 'archived'
+          ? {
+              key: 'archive',
+              danger: true,
+              label: 'В архів',
+              icon: Archive,
+              confirm: {
+                question: `Перевести «${template.name}» в архів?`,
+                details: 'Його більше не можна буде призначати, вже розпочаті проходження не постраждають.',
+                confirmLabel: 'В архів'
+              },
+              onSelect: onArchive
+            }
+          : {
+              key: 'delete',
+              danger: true,
+              label: 'Видалити назавжди',
+              icon: Trash2,
+              confirm: {
+                question: `Видалити онбординг «${template.name}» назавжди?`,
+                details: 'Дію не можна скасувати.',
+                confirmLabel: 'Видалити'
+              },
+              onSelect: onDelete
+            }
+      ]}
     />
   );
 };

@@ -1,4 +1,9 @@
 import React from 'react';
+import { Eye } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { MaterialActionsMenu, MaterialAction } from './MaterialActionsMenu';
+
+export type { MaterialAction } from './MaterialActionsMenu';
 
 /**
  * Єдиний формат переліку матеріалів у розділі адміністрування.
@@ -10,7 +15,11 @@ import React from 'react';
  * використовують усі вкладки, тож новий перелік не потребує власної верстки.
  *
  * Анатомія рядка (однакова скрізь):
- *   [іконка] [назва + бейджі / другий рядок метаданих] … [лічильники] [дії]
+ *   [іконка] [назва + бейджі / другий рядок метаданих] … [лічильники] [Перегляд] [Дії ▾]
+ *
+ * На виду лишається тільки «Перегляд»; решта керування — у меню «Дії».
+ * Рядок свідомо не приймає довільних кнопок: інакше кожна нова можливість
+ * знову додавала б кнопку в кожен рядок і переліки розповзалися б.
  */
 
 export type BadgeTone = 'slate' | 'blue' | 'purple' | 'emerald' | 'amber' | 'rose' | 'cyan';
@@ -76,7 +85,16 @@ interface MaterialRowProps {
   meta?: React.ReactNode;
   /** Лічильники праворуч від тексту (кроки, регламенти, курси). */
   stats?: MaterialBadge[];
-  actions?: React.ReactNode;
+  /** Головна дія, що завжди на виду, — зазвичай «Перегляд». */
+  preview?: {
+    onClick: () => void;
+    title?: string;
+    /** За замовчуванням «Перегляд» з іконкою ока. */
+    label?: string;
+    icon?: LucideIcon;
+  };
+  /** Усе інше керування матеріалом — у меню «Дії». */
+  menuActions?: MaterialAction[];
 }
 
 export const MaterialRow: React.FC<MaterialRowProps> = ({
@@ -87,8 +105,11 @@ export const MaterialRow: React.FC<MaterialRowProps> = ({
   badges,
   meta,
   stats,
-  actions
+  preview,
+  menuActions
 }) => {
+  const PreviewIcon = preview?.icon || Eye;
+  const plainTitle = typeof title === 'string' ? title : undefined;
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 transition p-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
       {icon && (
@@ -113,8 +134,21 @@ export const MaterialRow: React.FC<MaterialRowProps> = ({
         </div>
       )}
 
-      {actions && (
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">{actions}</div>
+      {(preview || (menuActions && menuActions.length > 0)) && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {preview && (
+            <button
+              type="button"
+              onClick={preview.onClick}
+              title={preview.title}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
+            >
+              <PreviewIcon className="w-3.5 h-3.5 text-slate-600" />
+              <span>{preview.label || 'Перегляд'}</span>
+            </button>
+          )}
+          {menuActions && menuActions.length > 0 && <MaterialActionsMenu actions={menuActions} itemLabel={plainTitle} />}
+        </div>
       )}
     </div>
   );

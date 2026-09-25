@@ -21,7 +21,6 @@ import {
   X, 
   Building2, 
   Tag, 
-  ChevronRight, 
   Eye, 
   Calendar, 
   User, 
@@ -41,12 +40,15 @@ interface KnowledgeSettingsProps {
   spaces: KnowledgeSpace[];
   sections: InstructionSection[];
   onRefresh: () => Promise<void>;
+  /** Відкрити інструкцію у спільному вікні перегляду адміністрування. */
+  onPreviewInstruction?: (id: string) => void;
 }
 
 export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
   spaces,
   sections,
-  onRefresh
+  onRefresh,
+  onPreviewInstruction
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'spaces' | 'lifecycle' | 'versions'>('spaces');
   const [metrics, setMetrics] = useState<KnowledgeMetrics | null>(null);
@@ -186,11 +188,8 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
     }
   };
 
+  // Підтвердження питає меню «Дії» рядка простору.
   const handleDeleteSpace = async (spaceId: string) => {
-    if (!confirm('Ви впевнені, що хочете видалити цей простір? Усі матеріали з нього буде автоматично перенесено в «Загальнокорпоративний простір».')) {
-      return;
-    }
-
     setDeletingSpaceId(spaceId);
     try {
       const res = await fetch(`/api/v2/knowledge/spaces/${spaceId}`, { method: 'DELETE' });
@@ -535,38 +534,35 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
                 { label: <span><b>{sp.stats?.totalInstructions ?? 0}</b> регл.</span>, tone: 'slate', icon: <FileText className="w-3 h-3 text-slate-400" /> },
                 { label: <span><b>{sp.stats?.totalCourses ?? 0}</b> курсів</span>, tone: 'slate', icon: <BookOpen className="w-3 h-3 text-slate-400" /> }
               ]}
-              actions={
-                <>
-                  <button
-                    onClick={() => {
-                      setSelectedSpaceFilter(sp.id);
-                      setActiveSubTab('lifecycle');
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition"
-                    title="Переглянути матеріали цього простору"
-                  >
-                    <span>Матеріали</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleOpenEditSpace(sp)}
-                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                    title="Редагувати простір"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  {!sp.isDefault && (
-                    <button
-                      onClick={() => handleDeleteSpace(sp.id)}
-                      disabled={deletingSpaceId === sp.id}
-                      className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition disabled:opacity-50"
-                      title="Видалити простір"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </>
-              }
+              preview={{
+                onClick: () => {
+                  setSelectedSpaceFilter(sp.id);
+                  setActiveSubTab('lifecycle');
+                },
+                title: 'Переглянути матеріали цього простору'
+              }}
+              menuActions={[
+                {
+                  key: 'edit',
+                  label: 'Редагувати простір',
+                  hint: 'Назва, код, підрозділ, оформлення',
+                  icon: Edit2,
+                  onSelect: () => handleOpenEditSpace(sp)
+                },
+                ...(!sp.isDefault ? [{
+                  key: 'delete',
+                  danger: true,
+                  label: 'Видалити простір',
+                  icon: Trash2,
+                  disabled: deletingSpaceId === sp.id,
+                  confirm: {
+                    question: `Видалити простір «${sp.name}»?`,
+                    details: 'Усі матеріали з нього буде автоматично перенесено в «Загальнокорпоративний простір».',
+                    confirmLabel: 'Видалити'
+                  },
+                  onSelect: () => handleDeleteSpace(sp.id)
+                }] : [])
+              ]}
             />
           ))}
         </MaterialList>
@@ -643,31 +639,36 @@ export const KnowledgeSettings: React.FC<KnowledgeSettingsProps> = ({
                       )}
                     </>
                   }
-                  actions={
-                    <>
-                      <button
-                        onClick={() => handleOpenStatusDialog(sec)}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
-                        title="Змінити життєвий цикл / статус"
-                      >
-                        Статус
-                      </button>
-                      <button
-                        onClick={() => handleOpenNewVersionDialog(sec)}
-                        className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-semibold transition"
-                        title="Створити нову редакцію (increment)"
-                      >
-                        + Версія
-                      </button>
-                      <button
-                        onClick={() => handleOpenVersions(sec)}
-                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                        title="Історія ревізій"
-                      >
-                        <History className="w-4 h-4" />
-                      </button>
-                    </>
-                  }
+                  preview={onPreviewInstruction ? {
+                    onClick: () => onPreviewInstruction(sec.id),
+                    title: 'Переглянути інструкцію так, як її бачить співробітник'
+                  } : undefined}
+                  menuActions={[
+                    {
+                      key: 'status',
+                      section: 'Життєвий цикл',
+                      label: 'Змінити статус',
+                      hint: 'Чернетка, погодження, публікація, архів',
+                      icon: CheckCircle2,
+                      onSelect: () => handleOpenStatusDialog(sec)
+                    },
+                    {
+                      key: 'version',
+                      section: 'Життєвий цикл',
+                      label: 'Нова версія',
+                      hint: 'Створити наступну редакцію',
+                      icon: GitBranch,
+                      onSelect: () => handleOpenNewVersionDialog(sec)
+                    },
+                    {
+                      key: 'history',
+                      section: 'Життєвий цикл',
+                      label: 'Історія ревізій',
+                      hint: 'Попередні версії та зміни',
+                      icon: History,
+                      onSelect: () => handleOpenVersions(sec)
+                    }
+                  ]}
                 />
               );
             })}

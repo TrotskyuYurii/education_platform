@@ -71,13 +71,11 @@ import {
   BookOpen,
   Edit2,
   Briefcase,
-  ChevronDown,
   Building2,
   ShieldCheck,
   SlidersHorizontal,
   Wrench,
   X,
-  Eye,
   EyeOff,
   Search,
   FolderTree,
@@ -179,8 +177,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
    */
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [creatingCourse, setCreatingCourse] = useState(false);
-  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
-  const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
   const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
   const [onboardingCount, setOnboardingCount] = useState<number | null>(null);
@@ -210,7 +206,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   const handleDeleteCourse = async (id: string) => {
     if (!id) return;
-    setIsDeletingCourse(true);
     try {
       const res = await fetch('/api/admin/courses/' + encodeURIComponent(id), { 
         method: 'DELETE',
@@ -225,9 +220,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     } catch(e) {
       console.error('Error deleting course:', e);
       alert('Помилка при видаленні курсу');
-    } finally {
-      setIsDeletingCourse(false);
-      setDeletingCourseId(null);
     }
   };
   
@@ -235,8 +227,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editingCourseDep, setEditingCourseDep] = useState<string>('');
   const [editingInstIsActive, setEditingInstIsActive] = useState<boolean>(true);
-  const [deletingInstId, setDeletingInstId] = useState<string | null>(null);
-  const [isDeletingInst, setIsDeletingInst] = useState(false);
   const [newDepartment, setNewDepartment] = useState('');
   const [isDeletingDep, setIsDeletingDep] = useState(false);
   const [deletingDepId, setDeletingDepId] = useState<string | null>(null);
@@ -278,7 +268,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   }, []);
   const handleDeleteInstruction = async (id: string) => {
     if (!id) return;
-    setIsDeletingInst(true);
     try {
       const res = await fetch('/api/admin/instructions/' + encodeURIComponent(id), { 
         method: 'DELETE',
@@ -293,9 +282,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     } catch(e) {
       console.error('Error deleting instruction:', e);
       alert('Помилка при видаленні інструкції');
-    } finally {
-      setIsDeletingInst(false);
-      setDeletingInstId(null);
     }
   };
 
@@ -310,8 +296,6 @@ export const TestManagement: React.FC<TestManagementProps> = ({
 
   const [editingCase, setEditingCase] = useState<any>(null);
    // dummy if missing
-  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
-  const [isDeletingCase, setIsDeletingCase] = useState(false);
 
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
@@ -383,7 +367,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const [editingQuestionsInstId, setEditingQuestionsInstId] = useState<string | null>(null);
   const [editingMarkdownInstId, setEditingMarkdownInstId] = useState<string | null>(null);
   const [editingMarkdownContent, setEditingMarkdownContent] = useState<string>('');
-  const [exportMenuInstId, setExportMenuInstId] = useState<string | null>(null);
 
   /**
    * Матеріал, відкритий на перегляд поверх списку. Дає подивитися готовий
@@ -438,7 +421,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
 
   const handleDeleteCase = async (id: string) => { 
     if (!id) return;
-    setIsDeletingCase(true); 
     try { 
       const res = await fetch('/api/admin/cases/' + encodeURIComponent(id), { 
         method: 'DELETE',
@@ -453,9 +435,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
     } catch(e) {
       console.error('Error deleting case:', e);
       alert('Помилка при видаленні кейсу');
-    } finally { 
-      setIsDeletingCase(false); 
-      setDeletingCaseId(null); 
     } 
   };
   const handleCreateDepartment = async (e: React.FormEvent) => {
@@ -1436,145 +1415,72 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       ...(inst.isActive === false ? [{ label: 'Вимкнено', tone: 'slate' as const }] : [])
                     ]}
                     meta={`ID: ${inst.id} · Питань: ${inst.questionCount}`}
-                    actions={
-                      <>
-                        <button
-                          onClick={() => setPreviewTarget({ kind: 'instruction', id: inst.id })}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
-                          title="Переглянути інструкцію так, як її бачить співробітник"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Перегляд</span>
-                        </button>
-
-                        {/* Unified Export Submenu */}
-                        <div className="relative">
-                          <button
-                            id={`btn-export-dropdown-${inst.id}`}
-                            onClick={() => setExportMenuInstId(exportMenuInstId === inst.id ? null : inst.id)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border ${
-                              exportMenuInstId === inst.id
-                                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
-                                : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200'
-                            }`}
-                            title="Підменю експорту"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Експорт</span>
-                            <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${exportMenuInstId === inst.id ? 'rotate-180' : ''}`} />
-                          </button>
-
-                          {exportMenuInstId === inst.id && (
-                            <>
-                              <div 
-                                className="fixed inset-0 z-20" 
-                                onClick={() => setExportMenuInstId(null)} 
-                              />
-                              <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
-                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                  Формат експорту
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    handleExportInstMD(inst.id, inst.title);
-                                    setExportMenuInstId(null);
-                                  }}
-                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
-                                  title="Експортувати у Markdown (.md)"
-                                >
-                                  <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
-                                    MD
-                                  </div>
-                                  <div>
-                                    <div className="font-semibold text-slate-800 leading-tight">Markdown (.md)</div>
-                                    <div className="text-[10px] text-slate-400">Текст інструкції з тестами</div>
-                                  </div>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleExportInstPDF(inst.id);
-                                    setExportMenuInstId(null);
-                                  }}
-                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition text-left"
-                                  title="Експортувати у PDF"
-                                >
-                                  <div className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-[10px] shrink-0">
-                                    PDF
-                                  </div>
-                                  <div>
-                                    <div className="font-semibold text-slate-800 leading-tight">PDF (.pdf)</div>
-                                    <div className="text-[10px] text-slate-400">Формат для друку</div>
-                                  </div>
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setEditingQuestionsInstId(inst.id)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200"
-                          title="Переглянути та редагувати питання тесту"
-                        >
-                          <HelpCircle className="w-3.5 h-3.5" />
-                          <span>Питання ({inst.questionCount})</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingCourseId(inst.id);
-                            setEditingCourseDep(inst.department);
-                            setEditingInstIsActive(inst.isActive !== false);
-                            setMaterialError(null);
-                          }}
-                          className="p-2 text-slate-600 hover:bg-slate-200 rounded-lg transition"
-                          title="Редагувати інструкцію"
-                        >
-                          <Settings2 className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            const sec = sections.find(s => s.id === inst.id);
-                            if (!sec) return;
-                            const secQs = questions.filter(q => q.sectionId === inst.id);
-                            const md = exportToMarkdown(inst.title, [sec], secQs);
-                            setEditingMarkdownInstId(inst.id);
-                            setEditingMarkdownContent(md);
-                          }}
-                          className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                          title="Редагувати вміст (Markdown)"
-                        >
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                        {deletingInstId === (inst.id || (inst as any)._id) ? (
-                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                            <button
-                              type="button"
-                              disabled={isDeletingInst}
-                              onClick={() => handleDeleteInstruction(inst.id || (inst as any)._id)}
-                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                            >
-                              {isDeletingInst ? '...' : 'Так'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isDeletingInst}
-                              onClick={() => setDeletingInstId(null)}
-                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                            >
-                              Ні
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setDeletingInstId(inst.id || (inst as any)._id)}
-                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                            title="Видалити інструкцію"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        )}
-                      </>
-                    }
+                    preview={{
+                      onClick: () => setPreviewTarget({ kind: 'instruction', id: inst.id }),
+                      title: 'Переглянути інструкцію так, як її бачить співробітник'
+                    }}
+                    menuActions={[
+                      {
+                        key: 'settings',
+                        section: 'Редагування',
+                        label: 'Налаштування',
+                        hint: 'Підрозділ, увімкнення',
+                        icon: Settings2,
+                        onSelect: () => {
+                          setEditingCourseId(inst.id);
+                          setEditingCourseDep(inst.department);
+                          setEditingInstIsActive(inst.isActive !== false);
+                          setMaterialError(null);
+                        }
+                      },
+                      {
+                        key: 'content',
+                        section: 'Редагування',
+                        label: 'Редагувати вміст',
+                        hint: 'Текст інструкції в Markdown',
+                        icon: Edit2,
+                        onSelect: () => {
+                          const sec = sections.find(s => s.id === inst.id);
+                          if (!sec) return;
+                          const secQs = questions.filter(q => q.sectionId === inst.id);
+                          setEditingMarkdownInstId(inst.id);
+                          setEditingMarkdownContent(exportToMarkdown(inst.title, [sec], secQs));
+                        }
+                      },
+                      {
+                        key: 'questions',
+                        section: 'Редагування',
+                        label: 'Питання тесту',
+                        hint: 'Переглянути та редагувати банк питань',
+                        badge: String(inst.questionCount),
+                        icon: HelpCircle,
+                        onSelect: () => setEditingQuestionsInstId(inst.id)
+                      },
+                      {
+                        key: 'export-md',
+                        section: 'Експорт',
+                        label: 'Markdown (.md)',
+                        hint: 'Текст інструкції з тестами',
+                        icon: FileDown,
+                        onSelect: () => handleExportInstMD(inst.id, inst.title)
+                      },
+                      {
+                        key: 'export-pdf',
+                        section: 'Експорт',
+                        label: 'PDF (.pdf)',
+                        hint: 'Формат для друку',
+                        icon: FileDown,
+                        onSelect: () => handleExportInstPDF(inst.id)
+                      },
+                      {
+                        key: 'delete',
+                        danger: true,
+                        label: 'Видалити інструкцію',
+                        icon: Trash2,
+                        confirm: { question: `Видалити інструкцію «${inst.title}»?`, details: 'Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                        onSelect: () => handleDeleteInstruction(inst.id || (inst as any)._id)
+                      }
+                    ]}
                   />
                   )
                 }))}
@@ -1635,23 +1541,22 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         : [])
                     ]}
                     meta={`Включає ${course.instructionIds?.length || 0} інструкцій`}
-                    actions={
-                      <>
-                        <button
-                          onClick={() => setPreviewTarget({ kind: 'course', id: currentCourseId })}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
-                          title="Переглянути склад курсу та його матеріали"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Перегляд</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setMaterialError(null);
-                            setCreatingCourse(false);
-                            setCourseInstFilter('all');
-                            setCourseInstSearch('');
-                            setEditingCourse({
+                    preview={{
+                      onClick: () => setPreviewTarget({ kind: 'course', id: currentCourseId }),
+                      title: 'Переглянути склад курсу та його матеріали'
+                    }}
+                    menuActions={[
+                      {
+                        key: 'edit',
+                        label: 'Редагувати курс',
+                        hint: 'Склад, тестування, сертифікат',
+                        icon: Edit2,
+                        onSelect: () => {
+                          setMaterialError(null);
+                          setCreatingCourse(false);
+                          setCourseInstFilter('all');
+                          setCourseInstSearch('');
+                          setEditingCourse({
                             id: currentCourseId,
                             _id: course._id,
                             title: course.title,
@@ -1666,44 +1571,18 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             quizMaxAttempts: course.quizMaxAttempts,
                             quizQuestionCount: course.quizQuestionCount,
                             isActive: course.isActive !== undefined ? course.isActive : true
-                            });
-                          }}
-                          className="p-2 text-slate-500 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition"
-                          title="Редагувати курс"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        {deletingCourseId === currentCourseId ? (
-                          <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                            <button
-                              type="button"
-                              disabled={isDeletingCourse}
-                              onClick={() => handleDeleteCourse(currentCourseId)}
-                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                            >
-                              {isDeletingCourse ? '...' : 'Так'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isDeletingCourse}
-                              onClick={() => setDeletingCourseId(null)}
-                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                            >
-                              Ні
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setDeletingCourseId(currentCourseId)}
-                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                            title="Видалити курс"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </>
-                    }
+                          });
+                        }
+                      },
+                      {
+                        key: 'delete',
+                        danger: true,
+                        label: 'Видалити курс',
+                        icon: Trash2,
+                        confirm: { question: `Видалити курс «${course.title}»?`, details: 'Інструкції курсу лишаться в базі. Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                        onSelect: () => handleDeleteCourse(currentCourseId)
+                      }
+                    ]}
                   />
                     )
                   };
@@ -1746,7 +1625,6 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                   empty="Немає створених кейсів."
                   items={cases.map(c => {
                     const currentCaseId = c.id || c._id;
-                    const isConfirming = deletingCaseId === currentCaseId;
                     return {
                       id: currentCaseId,
                       folderId: c.folderId,
@@ -1760,56 +1638,27 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         dimmed={c.isActive === false}
                         badges={c.isActive === false ? [{ label: 'Вимкнено', tone: 'slate' as const }] : []}
                         meta={<span className="line-clamp-2">{c.scenario}</span>}
-                        actions={
-                          <>
-                            <button
-                              onClick={() => setPreviewTarget({ kind: 'case', id: currentCaseId })}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition border text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200"
-                              title="Переглянути сценарій кейса з правильними відповідями"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-slate-600" />
-                              <span>Перегляд</span>
-                            </button>
-
-                            <button
-                            onClick={() => { setMaterialError(null); setEditingCase(c); }}
-                            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                            title="Редагувати кейс"
-                            >
-                            <Edit2 className="w-4 h-4" />
-                            </button>
-
-                            {isConfirming ? (
-                            <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                            <span className="text-xs font-semibold text-rose-700">Видалити?</span>
-                            <button 
-                            type="button"
-                            disabled={isDeletingCase}
-                            onClick={() => handleDeleteCase(currentCaseId)} 
-                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow-xs transition disabled:opacity-50"
-                            >
-                            {isDeletingCase ? '...' : 'Так'}
-                            </button>
-                            <button 
-                            type="button"
-                            disabled={isDeletingCase}
-                            onClick={() => setDeletingCaseId(null)} 
-                            className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded transition"
-                            >
-                            Ні
-                            </button>
-                            </div>
-                            ) : (
-                            <button 
-                            onClick={() => setDeletingCaseId(currentCaseId)} 
-                            className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg transition"
-                            title="Видалити кейс"
-                            >
-                            <Trash2 className="w-4 h-4" />
-                            </button>
-                            )}
-                          </>
-                        }
+                        preview={{
+                          onClick: () => setPreviewTarget({ kind: 'case', id: currentCaseId }),
+                          title: 'Переглянути сценарій кейса з правильними відповідями'
+                        }}
+                        menuActions={[
+                          {
+                            key: 'edit',
+                            label: 'Редагувати кейс',
+                            hint: 'Сценарій, варіанти відповідей',
+                            icon: Edit2,
+                            onSelect: () => { setMaterialError(null); setEditingCase(c); }
+                          },
+                          {
+                            key: 'delete',
+                            danger: true,
+                            label: 'Видалити кейс',
+                            icon: Trash2,
+                            confirm: { question: `Видалити кейс «${c.title}»?`, details: 'Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                            onSelect: () => handleDeleteCase(currentCaseId)
+                          }
+                        ]}
                       />
                       )
                     };
@@ -1864,6 +1713,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                 spaces={spaces}
                 sections={sections}
                 onRefresh={onRefresh || (async () => {})}
+                onPreviewInstruction={id => setPreviewTarget({ kind: 'instruction', id })}
               />
             </div>
           )}

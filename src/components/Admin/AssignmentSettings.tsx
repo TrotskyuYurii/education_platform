@@ -22,6 +22,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { UserSearchSelect } from './UserSearchSelect';
+import { MaterialActionsMenu } from './MaterialActionsMenu';
 import { 
   LearningAssignment, 
   AssignmentStats, 
@@ -302,10 +303,8 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
     }
   };
 
+  // Підтвердження скасування питає меню «Дії» рядка.
   const handleDeleteAssignment = async (assignment: LearningAssignment) => {
-    if (!confirm(`Скасувати призначення «${assignment.title}» для ${assignment.user?.fullName || assignment.user?.username}?`)) {
-      return;
-    }
     try {
       const res = await fetch(`/api/progress-v2/admin/assignments/${assignment.id}`, {
         method: 'DELETE'
@@ -672,35 +671,45 @@ export const AssignmentSettings: React.FC<AssignmentSettingsProps> = ({ courses,
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {!isCompleted && (
-                            <button
-                              onClick={() => handleSendReminder(a)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                              title="Надіслати нагадування співробітнику"
-                            >
-                              <Bell className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setEditingAssignment(a);
-                              setEditDueDate(a.dueDate.split('T')[0]);
-                              setEditPriority(a.priority);
-                              setEditNotes(a.notes || '');
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                            title="Змінити дедлайн або налаштування"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteAssignment(a)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                            title="Скасувати призначення"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div className="flex items-center justify-end">
+                          <MaterialActionsMenu
+                            itemLabel={a.title}
+                            actions={[
+                              {
+                                key: 'remind',
+                                label: 'Надіслати нагадування',
+                                hint: 'Лист співробітнику про дедлайн',
+                                icon: Bell,
+                                disabled: isCompleted,
+                                disabledReason: 'Призначення вже виконано',
+                                onSelect: () => handleSendReminder(a)
+                              },
+                              {
+                                key: 'edit',
+                                label: 'Змінити призначення',
+                                hint: 'Дедлайн, пріоритет, примітки',
+                                icon: Edit3,
+                                onSelect: () => {
+                                  setEditingAssignment(a);
+                                  setEditDueDate(a.dueDate.split('T')[0]);
+                                  setEditPriority(a.priority);
+                                  setEditNotes(a.notes || '');
+                                }
+                              },
+                              {
+                                key: 'cancel',
+                                danger: true,
+                                label: 'Скасувати призначення',
+                                icon: Trash2,
+                                confirm: {
+                                  question: `Скасувати призначення «${a.title}»?`,
+                                  details: `Співробітник: ${a.user?.fullName || a.user?.username || '—'}.`,
+                                  confirmLabel: 'Скасувати призначення'
+                                },
+                                onSelect: () => handleDeleteAssignment(a)
+                              }
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
