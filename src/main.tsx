@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import './index.css';
+import { initPwa } from './utils/pwa';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -12,9 +13,5 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Крок 14: register the offline-fallback service worker (see public/sw.js).
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
-}
+// PWA: service worker (оболонка й матеріали офлайн, див. public/sw.js) і встановлення.
+initPwa();

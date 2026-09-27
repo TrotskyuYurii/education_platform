@@ -19,7 +19,8 @@ import {
   X,
   ChevronRight,
   FolderTree,
-  GitBranch
+  GitBranch,
+  WifiOff
 } from 'lucide-react';
 import { FreshnessBadgeChip, MaterialDateLabel } from './MaterialFreshnessBadge';
 import { getMaterialFreshness } from '../../shared/materialFreshness';
@@ -27,6 +28,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { RichTextWithImages } from './RichTextWithImages';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { useOfflineLibrary } from '../context/OfflineLibraryContext';
+import { OfflineSaveButton } from './Offline/OfflineSaveButton';
 
 interface InstructionViewerProps {
   sections: InstructionSection[];
@@ -61,6 +64,8 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Зображення, відкрите на весь екран (лайтбокс)
   const [lightboxImage, setLightboxImage] = useState<{ url: string; alt: string } | null>(null);
+  // Офлайн тести й кейси не запускаються — результати зараховуються лише онлайн.
+  const isOfflineMode = !!useOfflineLibrary()?.isOfflineMode;
 
   // Setup active course and sections
   const activeCourse = courseId ? courses.find(c => c.id === courseId) : undefined;
@@ -111,9 +116,16 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
         <button onClick={onBackToCatalog} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition mb-4 uppercase tracking-wider">
           <ArrowLeft className="w-3.5 h-3.5" /> До каталогу
         </button>
-        <h2 className="font-extrabold text-slate-900 text-lg leading-tight mb-3">
-          {activeCourse ? activeCourse.title : 'Окрема інструкція'}
-        </h2>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h2 className="font-extrabold text-slate-900 text-lg leading-tight">
+            {activeCourse ? activeCourse.title : 'Окрема інструкція'}
+          </h2>
+          <OfflineSaveButton
+            kind={activeCourse ? 'course' : 'section'}
+            id={activeCourse ? activeCourse.id : activeSection.id}
+            className="shrink-0"
+          />
+        </div>
         {activeCourse && (
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs font-semibold text-slate-600">
@@ -179,6 +191,12 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
       {activeCourse && allRead && (
         <div className="p-4 border-t border-slate-200 bg-emerald-50/50">
           <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2 text-center">Курс завершено</h4>
+          {isOfflineMode ? (
+            <p className="flex items-start gap-2 text-xs text-slate-600 bg-white border border-slate-200 rounded-xl px-3 py-2.5">
+              <WifiOff className="w-4 h-4 shrink-0 text-amber-600" />
+              Фінальний тест і кейси стануть доступні, щойно з'явиться підключення до інтернету.
+            </p>
+          ) : (<>
           <button
             onClick={() => onStartQuiz('course', activeCourse.id)}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl text-sm font-bold transition shadow-sm mb-2"
@@ -199,6 +217,7 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
               <MonitorPlay className="w-4 h-4" /> Практичні кейси
             </button>
           )}
+          </>)}
         </div>
       )}
     </nav>
@@ -398,13 +417,20 @@ export const InstructionViewer: React.FC<InstructionViewerProps> = ({
                   Пройдіть швидкий тест за цим матеріалом, щоб закріпити знання з миттєвим зворотним зв'язком.
                 </p>
               </div>
-              <button
-                onClick={() => onStartQuiz('section', activeSection.id)}
-                className="w-full sm:w-auto shrink-0 py-3.5 px-6 bg-white text-blue-700 hover:bg-blue-50 font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2.5"
-              >
-                <Award className="w-5 h-5 text-blue-600" />
-                Почати тест
-              </button>
+              {isOfflineMode ? (
+                <div className="w-full sm:w-auto shrink-0 py-3 px-5 bg-white/15 border border-white/30 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2.5 text-center">
+                  <WifiOff className="w-5 h-5 shrink-0" />
+                  Тест доступний лише онлайн
+                </div>
+              ) : (
+                <button
+                  onClick={() => onStartQuiz('section', activeSection.id)}
+                  className="w-full sm:w-auto shrink-0 py-3.5 px-6 bg-white text-blue-700 hover:bg-blue-50 font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2.5"
+                >
+                  <Award className="w-5 h-5 text-blue-600" />
+                  Почати тест
+                </button>
+              )}
             </div>
             
             {/* Footer Navigation */}

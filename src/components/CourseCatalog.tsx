@@ -23,12 +23,16 @@ import {
   X,
   FolderTree,
   GitBranch,
-  Sparkles
+  Sparkles,
+  CloudCheck,
+  WifiOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { MyAssignmentsWidget } from './MyAssignmentsWidget';
 import { FreshnessBadgeChip, MaterialDateLabel } from './MaterialFreshnessBadge';
 import { getMaterialFreshness, materialChangedAt, FRESH_MATERIAL_DAYS } from '../../shared/materialFreshness';
+import { useOfflineLibrary } from '../context/OfflineLibraryContext';
+import { OfflineSaveButton } from './Offline/OfflineSaveButton';
 
 interface CourseCatalogProps {
   certificates?: Array<{ courseId: string; courseTitle: string; issuedAt: string; expiresAt: string; }>;
@@ -41,6 +45,7 @@ interface CourseCatalogProps {
   onOpenCourse: (courseId: string) => void;
   onOpenInstruction?: (sectionId: string) => void;
   onStartCourseQuiz: (courseId: string, isCourse: boolean) => void;
+  onOpenOfflineLibrary?: () => void;
 }
 
 export const CourseCatalog: React.FC<CourseCatalogProps> = ({
@@ -53,9 +58,13 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
   onStartCourseQuiz,
   certificates = [],
   notifications = [],
-  onDismissNotification
+  onDismissNotification,
+  onOpenOfflineLibrary
 }) => {
   const { user } = useAuth();
+  const offline = useOfflineLibrary();
+  const isOfflineMode = !!offline?.isOfflineMode;
+  const [onlySaved, setOnlySaved] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState<string>(() => {
     const specificDept = user?.departments?.find(d => d !== 'Всі підрозділи');
     return specificDept || 'all';
@@ -161,10 +170,11 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
   }, [sections, courses, selectedDepartment, selectedSpaceId, searchQuery, activeView, readSectionIds]);
 
   const freshCount = useMemo(() => filteredItems.filter(i => i.freshness.badge).length, [filteredItems]);
-  const visibleItems = useMemo(
-    () => (onlyFresh ? filteredItems.filter(i => i.freshness.badge) : filteredItems),
-    [filteredItems, onlyFresh]
-  );
+  const visibleItems = useMemo(() => {
+    let out = onlyFresh ? filteredItems.filter(i => i.freshness.badge) : filteredItems;
+    if (onlySaved && offline) out = out.filter(i => offline.isSaved(i.id));
+    return out;
+  }, [filteredItems, onlyFresh, onlySaved, offline]);
 
   const renderCompactRow = (item: any) => {
     // calculate progress
@@ -222,6 +232,7 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
             </span>
           </div>
           <div className="flex gap-2 shrink-0">
+            <OfflineSaveButton kind={item.isCourse ? 'course' : 'section'} id={item.id} />
             <button
               onClick={() => onOpenCourse(item.id)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-sm font-bold transition"
@@ -231,8 +242,9 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
             </button>
             <button
               onClick={() => onStartCourseQuiz(item.id, item.isCourse)}
-              className="inline-flex items-center justify-center px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-sm font-bold transition"
-              title="Пройти тест"
+              disabled={isOfflineMode}
+              className="inline-flex items-center justify-center px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100"
+              title={isOfflineMode ? 'Тестування недоступне без підключення до інтернету' : 'Пройти тест'}
             >
               <Play className="w-4 h-4" />
             </button>
@@ -400,11 +412,13 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
 
       </div>
 
-      {/* Крок 7. Рушій призначень: Обов'язкові призначення співробітника */}
-      <MyAssignmentsWidget 
-        onOpenCourse={onOpenCourse} 
-        onOpenInstruction={onOpenInstruction} 
-      />
+      {/* Крок 7. Рушій призначень: Обов'язкові призначення співробітника (потребують сервера) */}
+      {!isOfflineMode && (
+        <MyAssignmentsWidget
+          onOpenCourse={onOpenCourse}
+          onOpenInstruction={onOpenInstruction}
+        />
+      )}
 
       {/* KNOWLEDGE BASE SECTION */}
       <div className="flex flex-col lg:flex-row gap-8">
@@ -555,12 +569,59 @@ export const CourseCatalog: React.FC<CourseCatalogProps> = ({
                   {freshCount}
                 </span>
               </button>
+
+              {/* Збережені для навчання без інтернету */}
+              {offline && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setOnlySaved(v => !v)}
+                    aria-pressed={onlySaved}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold border transition ${
+                      onlySaved
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-200'
+                    }`}
+                    title="Показати лише матеріали, збережені на цьому пристрої"
+                  >
+                    <span className="flex items-center gap-2">
+                      <CloudCheck className={`w-4 h-4 ${onlySaved ? 'text-white' : 'text-emerald-600'}`} />
+                      Збережені офлайн
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                      onlySaved ? 'bg-emerald-700 text-white' : offline.savedCount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {offline.savedCount}
+                    </span>
+                  </button>
+                  {onOpenOfflineLibrary && (
+                    <button
+                      onClick={onOpenOfflineLibrary}
+                      className="w-full text-left text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline px-1"
+                    >
+                      Керувати офлайн-матеріалами →
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Main List */}
         <div className="flex-1">
+          {isOfflineMode && (
+            <div className="mb-4 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3 text-sm">
+              <WifiOff className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <div className="font-bold">Ви офлайн</div>
+                <div className="text-xs text-amber-800 mt-0.5">
+                  {offline && offline.savedCount === 0
+                    ? 'На цьому пристрої ще немає збережених матеріалів. Коли з\'явиться інтернет, натисніть значок хмаринки біля курсу чи інструкції, щоб зберегти їх для навчання без мережі.'
+                    : 'Показано матеріали, збережені на пристрої. Позначки «вивчено» зберігаються й надішлються, щойно з\'явиться зв\'язок. Тестування буде доступне після підключення.'}
+                </div>
+              </div>
+            </div>
+          )}
           {visibleItems.length > 0 ? (
             <div className="flex flex-col">
               {visibleItems.map(renderCompactRow)}

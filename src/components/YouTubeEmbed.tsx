@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Play, ExternalLink, Youtube } from 'lucide-react';
+import { Play, ExternalLink, Youtube, WifiOff } from 'lucide-react';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { YouTubeVideo, youTubeEmbedUrl, youTubeThumbnailUrl, youTubeWatchUrl } from '../../shared/youtube';
 
 /**
@@ -14,11 +15,18 @@ export const YouTubeEmbed: React.FC<{ video: YouTubeVideo; title?: string }> = (
   const [playing, setPlaying] = useState(false);
   const [thumbFailed, setThumbFailed] = useState(false);
   const label = title || 'Відео до інструкції';
+  // Відео не зберігається офлайн — без мережі чесно кажемо про це замість порожнього плеєра.
+  const isOnline = useOnlineStatus();
 
   return (
     <figure className="not-prose my-6 rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
       <div className="relative aspect-video bg-slate-900">
-        {playing ? (
+        {!isOnline && !playing ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-300 text-sm px-6 text-center">
+            <WifiOff className="w-8 h-8" />
+            <span>Відео доступне лише з підключенням до інтернету</span>
+          </div>
+        ) : playing ? (
           <iframe
             src={youTubeEmbedUrl(video, { autoplay: true })}
             title={label}

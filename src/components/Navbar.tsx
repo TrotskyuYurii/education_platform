@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Bell, Rocket } from 'lucide-react';
+import { BookOpen, CheckCircle2, Award, Briefcase, Sparkles, FileText, Settings2, Info, LogOut, ChevronDown, User, Search, Sun, Bell, Rocket, CloudCheck, Download, WifiOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { INSTRUCTION_DOCUMENT_META } from '../data/instructionData';
 import { useAuth } from '../context/AuthContext';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 
 export type AppTab = 'myday' | 'catalog' | 'manual' | 'quiz' | 'cases' | 'onboarding' | 'signoff' | 'management' | 'dashboard' | 'about';
 
@@ -73,6 +74,8 @@ interface NavItem {
   accent?: NavAccent;
   title?: string;
   badge?: { text: string; idleClass: string } | null;
+  /** Розділ недоступний без мережі (тест, кейси) — позначається значком. */
+  offlineLocked?: boolean;
 }
 
 interface NavbarProps {
@@ -86,6 +89,10 @@ interface NavbarProps {
   isSigned: boolean;
   /** Скільки кроків онбордінгу чекають на дію користувача (свої + як відповідальний). */
   onboardingPendingCount?: number;
+  /** Офлайн-режим: тестування недоступне, працюють лише збережені матеріали. */
+  isOffline?: boolean;
+  offlineSavedCount?: number;
+  onOpenOfflineLibrary?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -98,8 +105,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   bestScore,
   isSigned,
   onboardingPendingCount = 0,
+  isOffline = false,
+  offlineSavedCount = 0,
+  onOpenOfflineLibrary,
 }) => {
   const { user, logout, canManage, primaryRoleLabel } = useAuth();
+  const { canInstall, install } = usePwaInstall();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const clampedReadCount = Math.max(0, Math.min(readCount, totalSections));
@@ -157,14 +168,18 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: Award,
       label: 'Тестування (Квіз)',
       isActive: currentTab === 'quiz',
-      badge: bestScore !== null ? { text: `${bestScore}%`, idleClass: 'bg-emerald-100 text-emerald-800' } : null
+      badge: bestScore !== null ? { text: `${bestScore}%`, idleClass: 'bg-emerald-100 text-emerald-800' } : null,
+      offlineLocked: isOffline,
+      title: isOffline ? 'Тестування недоступне без підключення до інтернету' : undefined
     },
     {
       idSuffix: 'cases',
       tab: 'cases',
       icon: Briefcase,
       label: 'Кейси',
-      isActive: currentTab === 'cases'
+      isActive: currentTab === 'cases',
+      offlineLocked: isOffline,
+      title: isOffline ? 'Кейси недоступні без підключення до інтернету' : undefined
     },
     {
       idSuffix: 'onboarding',
@@ -234,6 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {item.badge.text}
                   </span>
                 )}
+                {item.offlineLocked && <WifiOff className="w-3.5 h-3.5 opacity-70" aria-label="Недоступно офлайн" />}
               </button>
             ))}
           </nav>
@@ -406,6 +422,51 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
                     )}
 
+                    {onOpenOfflineLibrary && (
+                      <button
+                        id="submenu-btn-offline-library"
+                        onClick={() => {
+                          onOpenOfflineLibrary();
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 transition min-h-[44px]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                            <CloudCheck className="w-4 h-4" />
+                          </div>
+                          <div className="text-left">
+                            <div className="leading-tight">Офлайн-матеріали</div>
+                            <div className="text-[11px] text-slate-400 font-normal">Збережене для навчання без інтернету</div>
+                          </div>
+                        </div>
+                        {offlineSavedCount > 0 && (
+                          <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                            {offlineSavedCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {canInstall && (
+                      <button
+                        id="submenu-btn-install-app"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          void install();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 transition min-h-[44px]"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                          <Download className="w-4 h-4" />
+                        </div>
+                        <div className="text-left">
+                          <div className="leading-tight">Встановити додаток</div>
+                          <div className="text-[11px] text-slate-400 font-normal">Окреме вікно та значок на пристрої</div>
+                        </div>
+                      </button>
+                    )}
+
                     <button
                       id="submenu-btn-about"
                       onClick={() => {
@@ -472,6 +533,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {item.badge.text}
                 </span>
               )}
+              {item.offlineLocked && <WifiOff className="w-3 h-3 opacity-70" aria-label="Недоступно офлайн" />}
             </button>
           ))}
         </div>

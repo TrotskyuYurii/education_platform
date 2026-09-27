@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useIdleTimeout, clearSharedActivity } from '../hooks/useIdleTimeout';
 import { SessionTimeoutModal } from '../components/SessionTimeoutModal';
 import { resetNavigationTracking } from '../utils/activityTracker';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 export type PermissionScope = 'self' | 'team' | 'department' | 'all';
 
@@ -42,6 +43,40 @@ const DEFAULT_SESSION_POLICY: SessionPolicy = {
   warningSeconds: 60
 };
 
+/**
+ * Офлайн-сесія: профіль останнього входу, щоб без мережі відкривались збережені
+ * матеріали. Це лише локальна копія — жодних даних із сервера без справжньої
+ * сесії не отримати. Термін обмежений, вихід із системи її стирає.
+ */
+const OFFLINE_SESSION_KEY = 'viatec_offline_session';
+const OFFLINE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const rememberOfflineSession = (user: User) => {
+  try {
+    localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify({ user, savedAt: Date.now() }));
+  } catch {}
+};
+
+const forgetOfflineSession = () => {
+  try { localStorage.removeItem(OFFLINE_SESSION_KEY); } catch {}
+};
+
+const readOfflineSession = (): User | null => {
+  try {
+    const raw = localStorage.getItem(OFFLINE_SESSION_KEY);
+    if (!raw) return null;
+    const { user, savedAt } = JSON.parse(raw);
+    if (!user?.id || !Number.isFinite(savedAt) || Date.now() - savedAt > OFFLINE_SESSION_MAX_AGE_MS) return null;
+    return user;
+  } catch {
+    return null;
+  }
+};
+
+/** Сервер недосяжний (немає мережі або шлюз не відповідає) — на відміну від «не авторизовано». */
+const isServerUnreachable = (status?: number) =>
+  !navigator.onLine || status === undefined || status === 502 || status === 503 || status === 504;
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -57,6 +92,8 @@ interface AuthContextType {
   sessionExpired: boolean;
   dismissSessionExpired: () => void;
   sessionPolicy: SessionPolicy;
+  /** Сесію відновлено з пристрою без зв'язку з сервером (офлайн-режим). */
+  offlineSession: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,6 +118,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [sessionPolicy, setSessionPolicy] = useState<SessionPolicy>(DEFAULT_SESSION_POLICY);
+  const [offlineSession, setOfflineSession] = useState(false);
+  const isOnline = useOnlineStatus();
 
   const applySessionPolicy = (session: any) => {
     if (session && Number.isFinite(session.idleTimeoutSeconds)) {
@@ -93,16 +132,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const restoreOfflineSession = () => {
+    const cached = readOfflineSession();
+    if (cached) {
+      setUser(cached);
+      setOfflineSession(true);
+    }
+  };
+
   const fetchCurrentUser = async () => {
     try {
       const res = await fetch('/api/auth/me');
       if (res.ok) {
         const data = await res.json();
         applySessionPolicy(data.session);
-        if (data.user) setUser(data.user);
+        if (data.user) {
+          setUser(data.user);
+          setOfflineSession(false);
+          rememberOfflineSession(data.user);
+        }
+      } else if (isServerUnreachable(res.status)) {
+        restoreOfflineSession();
+      } else if (res.status === 401) {
+        // Сесія на сервері завершилась — офлайн-копія більше не дійсна.
+        forgetOfflineSession();
+        setUser(null);
+        setOfflineSession(false);
       }
     } catch (err) {
-      // Ignored for unauthenticated initial load
+      // Мережі немає — відкриваємо збережені матеріали останнього користувача.
+      if (isServerUnreachable()) restoreOfflineSession();
     } finally {
       setLoading(false);
     }
@@ -112,16 +171,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchCurrentUser();
   }, []);
 
+  // Зв'язок повернувся — перевіряємо, чи офлайн-сесія ще дійсна на сервері.
+  useEffect(() => {
+    if (isOnline && offlineSession) void fetchCurrentUser();
+  }, [isOnline, offlineSession]);
+
   const login = (userData: User, session?: SessionPolicy) => {
     try { localStorage.setItem('viatec_current_tab', 'myday'); } catch {}
     applySessionPolicy(session);
     setSessionExpired(false);
+    setOfflineSession(false);
+    rememberOfflineSession(userData);
     setUser(userData);
   };
   
   const logout = useCallback(async (reason: LogoutReason = 'manual') => {
     clearSharedActivity();
     setSessionExpired(reason === 'idle');
+    forgetOfflineSession();
     try {
       // Причину виходу сервер записує в журнал дій (вихід / бездіяльність).
       await fetch('/api/auth/logout', {
@@ -129,8 +196,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason })
       });
+    } catch {
+      // Офлайн: серверна сесія завершиться сама, локально виходимо одразу.
     } finally {
       resetNavigationTracking();
+      setOfflineSession(false);
       setUser(null);
     }
   }, []);
@@ -140,7 +210,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [logout]);
 
   const { warningActive, secondsLeft, extendSession } = useIdleTimeout({
-    enabled: Boolean(user),
+    // Без мережі серверної сесії, яку треба захищати, немає, а повторно увійти
+    // офлайн неможливо — тож таймер бездіяльності працює лише з підключенням.
+    enabled: Boolean(user) && isOnline,
     idleTimeoutSeconds: sessionPolicy.idleTimeoutSeconds,
     warningSeconds: sessionPolicy.warningSeconds,
     onTimeout: handleIdleTimeout
@@ -206,7 +278,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       refreshUser: fetchCurrentUser,
       sessionExpired,
       dismissSessionExpired: () => setSessionExpired(false),
-      sessionPolicy
+      sessionPolicy,
+      offlineSession
     }}>
       {children}
       {user && warningActive && (

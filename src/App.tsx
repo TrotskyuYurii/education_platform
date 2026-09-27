@@ -10,6 +10,12 @@ import { InstructionSection, QuizQuestion, UserProgress, KnowledgeSpace, SearchR
 import { Info, Search } from 'lucide-react';
 import { trackNavigation } from './utils/activityTracker';
 import type { CaseRunResult } from './components/CaseSimulator';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { OfflineLibraryProvider, useOfflineLibraryController } from './context/OfflineLibraryContext';
+import { OfflineLibrary, applyReadOps } from './utils/offlineLibrary';
+import { primeOfflineShell } from './utils/pwa';
+import { OfflineStatusBanner } from './components/Offline/OfflineStatusBanner';
+import { OfflineUnavailable } from './components/Offline/OfflineUnavailable';
 
 // Вкладки вантажаться на вимогу: разом вони тягнуть recharts, @xyflow, html2pdf
 // та react-markdown — кілька мегабайт, які на старті потрібні лише одній вкладці.
@@ -27,6 +33,12 @@ const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').th
 const MyDay = lazy(() => import('./components/MyDay').then(m => ({ default: m.MyDay })));
 const MyOnboarding = lazy(() => import('./components/Onboarding/MyOnboarding').then(m => ({ default: m.MyOnboarding })));
 const NotificationSettingsModal = lazy(() => import('./components/NotificationSettingsModal').then(m => ({ default: m.NotificationSettingsModal })));
+const OfflineLibraryModal = lazy(() => import('./components/Offline/OfflineLibraryModal').then(m => ({ default: m.OfflineLibraryModal })));
+
+/** Розділи, що працюють без мережі — на збережених на пристрої матеріалах. */
+const OFFLINE_TABS: AppTab[] = ['catalog', 'manual', 'about'];
+/** Тести й кейси зараховуються лише онлайн, тож без мережі вони недоступні. */
+const TESTING_TABS: AppTab[] = ['quiz', 'cases'];
 
 // Нейтральна заглушка на час підвантаження чанка вкладки: тримає висоту
 // сторінки, щоб футер не стрибав угору й назад.
@@ -47,7 +59,12 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <>
+        <OfflineStatusBanner hasSession={false} />
+        <LoginScreen />
+      </>
+    );
   }
 
   return <MainApp />;
@@ -121,6 +138,22 @@ function MainApp() {
   // Клік по індикатору тривоги має відкрити саме вкладку журналу, а не ту, що збереглась з минулого разу.
   const [mgmtInitialTab, setMgmtInitialTab] = useState<'systemlog' | undefined>(undefined);
   const [onboardingPendingCount, setOnboardingPendingCount] = useState(0);
+  const [isOfflineLibraryOpen, setIsOfflineLibraryOpen] = useState(false);
+
+  // Офлайн-режим: немає мережі або матеріали на екрані взяті з офлайн-бібліотеки.
+  const isOnline = useOnlineStatus();
+  const [contentSource, setContentSource] = useState<'server' | 'offline'>('server');
+  const isOfflineMode = !isOnline || contentSource === 'offline';
+  const contentSourceRef = useRef(contentSource);
+  contentSourceRef.current = contentSource;
+  const offline = useOfflineLibraryController(user!.id, { sections, courses, spaces }, isOnline, isOfflineMode);
+  // Вкладка, відкрита ще з мережею: при втраті зв'язку вона лишається на місці
+  // (тест — на паузі), а не зникає разом із введеними даними.
+  const [openedOnlineTab, setOpenedOnlineTab] = useState<AppTab | null>(null);
+  useEffect(() => {
+    if (!isOfflineMode) setOpenedOnlineTab(currentTab);
+    else setOpenedOnlineTab(t => (t === currentTab ? t : null));
+  }, [currentTab, isOfflineMode]);
 
   // Global hotkey Ctrl+K / Cmd+K
   useEffect(() => {
@@ -180,7 +213,7 @@ function MainApp() {
     return valid;
   }, [progress.readSectionIds, validSectionIdsSet]);
 
-  const fetchContent = async () => {
+  const fetchContent = async (): Promise<boolean> => {
     try {
       const res = await fetch('/api/content');
       const data = await res.json();
@@ -190,9 +223,53 @@ function MainApp() {
         setCourses(data.courses || []);
         setCases(data.cases || []);
         setSpaces(data.spaces || []);
+        setContentSource('server');
+        // Збережені офлайн матеріали підтягують свіжі редакції.
+        offline.syncFromServer({
+          sections: data.sections || [],
+          courses: data.courses || [],
+          spaces: data.spaces || []
+        });
+        return true;
       }
     } catch (err) {
       console.error('Failed to fetch content', err);
+    }
+    return false;
+  };
+
+  /** Без сервера показуємо лише збережені на пристрої матеріали — без питань тестів і кейсів. */
+  const applyOfflineLibrary = (lib: OfflineLibrary) => {
+    setSections(lib.sections);
+    setCourses(lib.courses);
+    setSpaces(lib.spaces);
+    setQuestions([]);
+    setCases([]);
+    setProgress(prev => ({ ...prev, readSectionIds: lib.readSectionIds }));
+    setContentSource('offline');
+  };
+
+  /**
+   * Надсилає позначки «вивчено», зроблені без мережі. Сервер перезаписує список
+   * прочитаного цілком, тож спершу беремо його актуальний стан (раптом людина
+   * вчилась і з іншого пристрою) і лише зверху накладаємо офлайн-зміни.
+   */
+  const flushPendingReads = async () => {
+    const ops = offline.pendingReadOps();
+    if (ops.length === 0) return;
+    try {
+      const res = await fetch('/api/progress');
+      if (!res.ok) return;
+      const data = await res.json();
+      const merged = applyReadOps(data.progress?.readSectionIds || [], ops);
+      const saveRes = await fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readSectionIds: merged })
+      });
+      if (saveRes.ok) offline.clearPendingReadOps(ops);
+    } catch (err) {
+      console.error('Failed to sync offline progress', err);
     }
   };
 
@@ -201,6 +278,7 @@ function MainApp() {
       const res = await fetch('/api/progress');
       const data = await res.json();
       if (res.ok && data.progress) {
+        offline.rememberReadIds(data.progress.readSectionIds || []);
         const historyList = data.progress.quizHistory || data.progress.testScores || [];
         setProgress(prev => ({
           ...prev,
@@ -256,10 +334,24 @@ function MainApp() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchContent(), fetchProgress()]).then(() => setDataLoaded(true));
+    (async () => {
+      const lib = await offline.ready;
+      if (navigator.onLine) await flushPendingReads();
+      const [contentOk] = await Promise.all([fetchContent(), fetchProgress()]);
+      if (!contentOk) {
+        applyOfflineLibrary(lib);
+        // Розділи, яким потрібен сервер, офлайн не відкриються — починаємо з матеріалів.
+        setCurrentTab(tab => (OFFLINE_TABS.includes(tab) ? tab : 'catalog'));
+      }
+      setDataLoaded(true);
+    })();
     fetchOnboardingPending();
 
     const poll = () => {
+      // Без мережі опитування лише засмічує консоль помилками.
+      if (!navigator.onLine) return;
+      // Мережа була, але сервер не відповідав — щойно він повернеться, беремо свіжі дані.
+      if (contentSourceRef.current === 'offline') fetchContent();
       fetchProgress();
       fetchOnboardingPending();
     };
@@ -293,8 +385,26 @@ function MainApp() {
     };
   }, []);
 
-  // Sync progress on switching to catalog or dashboard
+  // Зв'язок повернувся: відправляємо офлайн-прогрес і оновлюємо дані з сервера.
+  const wasOnlineRef = useRef(isOnline);
   useEffect(() => {
+    const wasOnline = wasOnlineRef.current;
+    wasOnlineRef.current = isOnline;
+    if (!isOnline || wasOnline || !dataLoaded) return;
+    (async () => {
+      await flushPendingReads();
+      await Promise.all([fetchContent(), fetchProgress()]);
+      fetchOnboardingPending();
+    })();
+  }, [isOnline, dataLoaded]);
+
+  // Оболонка додатку й чанки розділів, доступних офлайн, кешуються заздалегідь.
+  useEffect(() => {
+    if (dataLoaded && isOnline) void primeOfflineShell();
+  }, [dataLoaded, isOnline]);
+
+  // Sync progress on switching to catalog or dashboard
+useEffect(() => {
     if (currentTab === 'catalog' || currentTab === 'dashboard') {
       fetchProgress();
     }
@@ -302,38 +412,52 @@ function MainApp() {
 
   // When sections or progress load, clean up any obsolete/deleted section IDs from progress
   useEffect(() => {
-    if (dataLoaded && sections.length > 0 && progress.readSectionIds.length > 0) {
+    // Офлайн на екрані лише частина матеріалів — «чистка» викинула б прогрес решти.
+    if (dataLoaded && !isOfflineMode && sections.length > 0 && progress.readSectionIds.length > 0) {
       if (progress.readSectionIds.length !== validReadSectionIds.length) {
         setProgress(prev => ({ ...prev, readSectionIds: validReadSectionIds }));
         saveProgressToDb(validReadSectionIds);
       }
     }
-  }, [dataLoaded, sections, validReadSectionIds, progress.readSectionIds.length]);
+  }, [dataLoaded, isOfflineMode, sections, validReadSectionIds, progress.readSectionIds.length]);
 
-  const saveProgressToDb = async (readIds?: string[], testScore?: any, employeeInfo?: any) => {
+  /** Повертає false, якщо сервер не вдалося досягти (немає мережі). */
+  const saveProgressToDb = async (readIds?: string[], testScore?: any, employeeInfo?: any): Promise<boolean> => {
     try {
       await fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ readSectionIds: readIds, testScore, employeeInfo })
       });
+      return true;
     } catch (err) {
       console.error('Failed to save progress', err);
+      return false;
     }
   };
 
   const handleToggleReadSection = (sectionId: string) => {
     // Only allow toggling if section exists
     if (!validSectionIdsSet.has(sectionId)) return;
-    
-    setProgress((prev) => {
-      const exists = prev.readSectionIds.includes(sectionId);
-      const updated = exists
-        ? prev.readSectionIds.filter((id) => id !== sectionId && validSectionIdsSet.has(id))
-        : Array.from(new Set([...prev.readSectionIds.filter(id => validSectionIdsSet.has(id)), sectionId]));
-      
-      saveProgressToDb(updated);
-      return { ...prev, readSectionIds: updated };
+
+    // Офлайн на екрані лише збережені матеріали — прогрес решти не чіпаємо.
+    const keepId = (id: string) => contentSource === 'offline' || validSectionIdsSet.has(id);
+    const exists = progress.readSectionIds.includes(sectionId);
+    const base = progress.readSectionIds.filter(keepId);
+    const updated = exists
+      ? base.filter((id) => id !== sectionId)
+      : Array.from(new Set([...base, sectionId]));
+
+    setProgress((prev) => ({ ...prev, readSectionIds: updated }));
+
+    if (isOfflineMode) {
+      offline.queueReadOp(sectionId, !exists);
+      return;
+    }
+    void saveProgressToDb(updated).then((reached) => {
+      // Зв'язок зник саме зараз — позначка надішлеться пізніше.
+      if (reached) offline.rememberReadIds(updated);
+      else offline.queueReadOp(sectionId, !exists);
     });
   };
 
@@ -524,7 +648,7 @@ function MainApp() {
             isSetupMode={true}
             onImport={async () => {}}
             onReset={() => {}}
-            onRefresh={fetchContent}
+            onRefresh={async () => { await fetchContent(); }}
           />
           </Suspense>
         </main>
@@ -532,7 +656,14 @@ function MainApp() {
     );
   }
 
+  // Офлайн доступні лише матеріали; вкладку, відкриту ще з мережею, не прибираємо,
+  // а тест і кейси ставимо на паузу — результати зараховуються тільки онлайн.
+  const isTestingTab = TESTING_TABS.includes(currentTab);
+  const canRenderTab = !isOfflineMode || OFFLINE_TABS.includes(currentTab) || openedOnlineTab === currentTab;
+  const pauseForOffline = isOfflineMode && isTestingTab;
+
   return (
+    <OfflineLibraryProvider value={offline}>
     <AppSettingsProvider>
     <AiImportJobsProvider enabled={hasPermission('admin.access')} onJobFinished={fetchContent}>
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -597,9 +728,23 @@ function MainApp() {
         bestScore={progress.bestScore > 0 ? progress.bestScore : null}
         isSigned={progress.employeeInfo.isSigned}
         onboardingPendingCount={onboardingPendingCount}
+        isOffline={isOfflineMode}
+        offlineSavedCount={offline.savedCount}
+        onOpenOfflineLibrary={() => setIsOfflineLibraryOpen(true)}
       />
 
+      <OfflineStatusBanner />
+
       <main className="grow">
+        {isOfflineMode && (pauseForOffline || !canRenderTab) && (
+          <OfflineUnavailable
+            kind={isTestingTab ? 'testing' : 'network'}
+            paused={pauseForOffline && canRenderTab}
+            onOpenLibrary={() => setCurrentTab('catalog')}
+          />
+        )}
+        {canRenderTab && (
+        <div hidden={pauseForOffline}>
         <Suspense fallback={<TabFallback />}>
         {currentTab === 'myday' && (
           <MyDay
@@ -662,6 +807,7 @@ function MainApp() {
               setCurrentTab('manual');
             }}
             onStartCourseQuiz={(courseId, isCourse) => handleStartQuiz(isCourse ? 'course' : 'section', courseId)}
+            onOpenOfflineLibrary={() => setIsOfflineLibraryOpen(true)}
           />
         )}
 
@@ -780,7 +926,7 @@ function MainApp() {
             courses={courses}
             cases={cases}
             spaces={spaces}
-            onRefresh={fetchContent}
+            onRefresh={async () => { await fetchContent(); }}
             initialTab={mgmtInitialTab}
             onOpenLearningDashboard={() => setCurrentTab('dashboard')}
             onOpenOnboardingAssignment={(assignmentId) => {
@@ -813,6 +959,8 @@ function MainApp() {
           <AboutApp onBack={() => setCurrentTab('catalog')} />
         )}
         </Suspense>
+        </div>
+        )}
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-6 print:hidden mt-auto">
@@ -873,10 +1021,25 @@ function MainApp() {
         </Suspense>
       )}
 
+      {isOfflineLibraryOpen && (
+        <Suspense fallback={null}>
+          <OfflineLibraryModal
+            onClose={() => setIsOfflineLibraryOpen(false)}
+            onOpenCourse={handleOpenCourse}
+            onOpenInstruction={(secId) => {
+              setActiveCourseId(undefined);
+              setSelectedSectionId(secId);
+              setCurrentTab('manual');
+            }}
+          />
+        </Suspense>
+      )}
+
       {/* Прогрес фонової ШІ-обробки документів — видно на будь-якій вкладці */}
       <AiImportProgressWidget />
     </div>
     </AiImportJobsProvider>
     </AppSettingsProvider>
+    </OfflineLibraryProvider>
   );
 }
