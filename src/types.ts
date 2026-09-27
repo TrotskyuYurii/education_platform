@@ -307,6 +307,8 @@ export interface SearchResultItem {
   sectionId?: string;
   version?: string;
   status?: string;
+  /** Слова з тексту, що збіглися із запитом (словоформи, синоніми) — для підсвічування */
+  highlights?: string[];
   score: number;
 }
 

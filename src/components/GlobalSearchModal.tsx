@@ -261,22 +261,24 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     inputRef.current?.focus();
   };
 
-  // Helper to highlight matching keywords in snippets and titles
-  const renderHighlighted = (text: string, searchQuery: string) => {
+  // Helper to highlight matching keywords in snippets and titles.
+  // Сервер повертає точні слова, що збіглися (зокрема інші словоформи й синоніми) —
+  // підсвічуємо їх; без них (офлайн-пошук) — слова запиту як є.
+  const renderHighlighted = (text: string, searchQuery: string, highlights?: string[]) => {
     if (!searchQuery.trim() || !text) return text;
-    const tokens = searchQuery
-      .trim()
-      .split(/\s+/)
+    const words = highlights && highlights.length > 0 ? highlights : searchQuery.trim().split(/\s+/);
+    const tokens = [...new Set(words)]
       .filter(t => t.length > 1)
+      .sort((a, b) => b.length - a.length)
       .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
     if (tokens.length === 0) return text;
 
-    const regex = new RegExp(`(${tokens.join('|')})`, 'gi');
-    const parts = text.split(regex);
+    // split із групою захоплення: збіги завжди на непарних позиціях
+    const parts = text.split(new RegExp(`(${tokens.join('|')})`, 'giu'));
 
     return parts.map((part, i) =>
-      regex.test(part) ? (
+      i % 2 === 1 ? (
         <mark key={i} className="bg-amber-100 text-amber-900 rounded-xs px-0.5 font-semibold">
           {part}
         </mark>
@@ -554,18 +556,18 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                     </div>
 
                     <h4 className="text-sm font-bold text-slate-900 leading-snug truncate">
-                      {renderHighlighted(item.title, query)}
+                      {renderHighlighted(item.title, query, item.highlights)}
                     </h4>
 
                     {item.subtitle && (
                       <p className="text-xs text-slate-500 font-medium truncate mb-1">
-                        {renderHighlighted(item.subtitle, query)}
+                        {renderHighlighted(item.subtitle, query, item.highlights)}
                       </p>
                     )}
 
                     {item.snippet && (
                       <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed bg-slate-50/80 p-1.5 rounded-md border border-slate-100 mt-1">
-                        {renderHighlighted(item.snippet, query)}
+                        {renderHighlighted(item.snippet, query, item.highlights)}
                       </p>
                     )}
                   </div>
