@@ -12,6 +12,12 @@ import {
 import { NotificationService } from '../notifications/service.js';
 import { OnboardingService } from '../onboarding/service.js';
 import { sanitizeDurationSec } from '../../../shared/attemptDuration.js';
+import {
+  attemptIsForExistingMaterial,
+  assignmentIsForExistingMaterial,
+  certificateIsForExistingMaterial
+} from '../../../shared/materialPresence.js';
+import { loadMaterialPresence, existingAttemptMatch } from './materialPresence.js';
 
 /** Дата з браузера або undefined, якщо прийшло щось непридатне. */
 function validDate(value: unknown): Date | undefined {
@@ -264,8 +270,8 @@ export class ProgressService {
     // Обробник лише читає й одразу віддає JSON, тож документи Mongoose тут ні до
     // чого: .lean() прибирає гідрацію на найгарячішому маршруті додатка
     // (клієнт смикає /api/progress кожні 15 секунд).
-    const [currentSections, reads, attempts, certs, ack, notifs] = await Promise.all([
-      Section.find({} as any, { id: 1 } as any).lean<any[]>(),
+    const [presence, reads, allAttempts, allCerts, ack, notifs] = await Promise.all([
+      loadMaterialPresence(),
       ReadingProgress.find({ userId: userObjectId }).select('sectionId').lean<any[]>(),
       QuizAttempt.find({ userId: userObjectId }).sort({ date: 1 }).lean<any[]>(),
       CertificateRecord.find({ userId: userObjectId, status: 'active' }).sort({ issuedAt: -1 }).lean<any[]>(),
@@ -273,10 +279,14 @@ export class ProgressService {
       LearningNotification.find({ userId: userObjectId }).sort({ date: -1 }).lean<any[]>()
     ]);
 
-    const validSectionIds = new Set(currentSections.map((s: any) => s.id));
+    // Видалені (зокрема перенесені в корзину) матеріали не мають впливати ні на
+    // прогрес, ні на показники: їхні спроби й сертифікати лишаються в базі й
+    // повернуться в розрахунок разом з матеріалом, якщо його відновлять.
     const validReadIds = reads
       .map((r: any) => r.sectionId)
-      .filter(id => validSectionIds.has(id));
+      .filter(id => presence.sectionIds.has(id));
+    const attempts = allAttempts.filter((a: any) => attemptIsForExistingMaterial(a, presence));
+    const certs = allCerts.filter((c: any) => certificateIsForExistingMaterial(c, presence));
 
     // Найкращий результат — лише за тестами: кейси атестацією не є.
     const testAttempts = attempts.filter((a: any) => a.mode !== 'cases');
@@ -495,7 +505,8 @@ export class ProgressService {
     if (wantsToSign) {
       // A compliance signature is only valid once the employee has actually passed
       // the qualification quiz — enforce this server-side, not just in the UI.
-      const attempts = await QuizAttempt.find({ userId: userObjectId, mode: { $ne: 'cases' } });
+      const presence = await loadMaterialPresence();
+      const attempts = await QuizAttempt.find({ userId: userObjectId, mode: { $ne: 'cases' }, ...existingAttemptMatch(presence) });
       const bestScore = attempts.length > 0 ? Math.max(...attempts.map(a => a.percentage || 0)) : 0;
       if (bestScore < ACKNOWLEDGMENT_PASS_THRESHOLD) {
         throw new Error(
@@ -624,9 +635,9 @@ export class ProgressService {
    * Analytics summary report for a list of users (scoped)
    */
   static async getUsersProgressReport(userFilter: any, limit: number = 1000, skip: number = 0) {
-    const currentSections = await Section.find({} as any, { id: 1 } as any).lean<any[]>();
-    const validSectionIds = new Set(currentSections.map((s: any) => s.id));
-    const totalSectionsCount = currentSections.length;
+    const presence = await loadMaterialPresence();
+    const validSectionIds = presence.sectionIds;
+    const totalSectionsCount = validSectionIds.size;
 
     const users = await User.find(userFilter)
       .select('-passwordHash -authCode')
@@ -661,6 +672,7 @@ export class ProgressService {
 
     const attemptsMap = new Map<string, any[]>();
     allAttempts.forEach((a: any) => {
+      if (!attemptIsForExistingMaterial(a, presence)) return;
       const uid = a.userId.toString();
       if (!attemptsMap.has(uid)) attemptsMap.set(uid, []);
       attemptsMap.get(uid)!.push(a);
@@ -668,6 +680,7 @@ export class ProgressService {
 
     const certsMap = new Map<string, any[]>();
     allCerts.forEach((c: any) => {
+      if (!certificateIsForExistingMaterial(c, presence)) return;
       const uid = c.userId.toString();
       if (!certsMap.has(uid)) certsMap.set(uid, []);
       certsMap.get(uid)!.push(c);
@@ -873,7 +886,13 @@ export class ProgressService {
    */
   static async getUserAssignments(userId: string | mongoose.Types.ObjectId) {
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
-    const assignments = await LearningAssignment.find({ userId: userObjectId }).sort({ dueDate: 1 });
+    const [allAssignments, presence] = await Promise.all([
+      LearningAssignment.find({ userId: userObjectId }).sort({ dueDate: 1 }),
+      loadMaterialPresence()
+    ]);
+    // Призначення видаленого курсу чи інструкції виконати неможливо — не показуємо
+    // його і не рахуємо в лічильниках, поки матеріал не відновлять.
+    const assignments = allAssignments.filter((a: any) => assignmentIsForExistingMaterial(a, presence));
     const now = new Date();
 
     const result = [];
@@ -924,7 +943,11 @@ export class ProgressService {
 
     // Крок 14: generous safety cap — assignments scale with users × courses, the
     // single most likely list in the app to exceed a few thousand rows.
-    const assignments = await LearningAssignment.find({ userId: { $in: targetUserIds } }).sort({ dueDate: 1, createdAt: -1 }).limit(5000);
+    const [allAssignments, presence] = await Promise.all([
+      LearningAssignment.find({ userId: { $in: targetUserIds } }).sort({ dueDate: 1, createdAt: -1 }).limit(5000),
+      loadMaterialPresence()
+    ]);
+    const assignments = allAssignments.filter((a: any) => assignmentIsForExistingMaterial(a, presence));
     const now = new Date();
 
     let total = assignments.length;

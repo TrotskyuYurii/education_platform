@@ -4,6 +4,11 @@ import { sendEmail, isEmailCircuitOpen } from '../../email.js';
 import { NotificationOutbox, UserNotificationSettings, SchedulerRun } from './models.js';
 import { NotificationService } from './service.js';
 import { OnboardingService } from '../onboarding/service.js';
+import {
+  loadMaterialPresence,
+  existingAssignmentMatch,
+  existingCertificateMatch
+} from '../learning/materialPresence.js';
 
 const JOB_NAME = 'daily-notifications';
 const CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -23,7 +28,11 @@ async function notifyExpiringCertificates() {
   const in30Days = new Date(now);
   in30Days.setDate(in30Days.getDate() + 30);
 
+  // Сертифікати й призначення видалених матеріалів (зокрема в корзині) не
+  // нагадують про себе: їх не можна ні продовжити, ні виконати.
+  const presence = await loadMaterialPresence();
   const certs = await CertificateRecord.find({
+    ...existingCertificateMatch(presence),
     status: 'active',
     expiresAt: { $gte: now, $lte: in30Days },
     expiryNotifiedAt: { $exists: false }
@@ -50,7 +59,9 @@ async function notifyUpcomingDeadlines() {
   const in3Days = new Date(now);
   in3Days.setDate(in3Days.getDate() + 3);
 
+  const presence = await loadMaterialPresence();
   const assignments = await LearningAssignment.find({
+    ...existingAssignmentMatch(presence),
     status: { $in: ['assigned', 'in_progress'] },
     dueDate: { $gte: now, $lte: in3Days },
     deadlineReminderSentAt: { $exists: false }
@@ -77,7 +88,9 @@ async function notifyOverdueAssignments() {
   // NOTE: status may already be 'overdue' here — getUserAssignments/getAssignmentsReport
   // lazily flip it to 'overdue' on read, which can race ahead of this job. Match on
   // overdueNotifiedAt (not status) so an assignment flipped by that lazy path still gets notified.
+  const presence = await loadMaterialPresence();
   const assignments = await LearningAssignment.find({
+    ...existingAssignmentMatch(presence),
     status: { $ne: 'completed' },
     dueDate: { $lt: now },
     overdueNotifiedAt: { $exists: false }

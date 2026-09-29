@@ -27,7 +27,9 @@ const trashItemSchema = new mongoose.Schema({
     /** Де матеріал стояв у курсах — щоб повернути на те саме місце. */
     courseRefs: { type: [{ courseId: String, field: String, index: Number, _id: false }], default: [] },
     /** Хто мав інструкцію в прочитаних */
-    readByUserIds: { type: [mongoose.Schema.Types.ObjectId], default: [] }
+    readByUserIds: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    /** Записи ReadingProgress: хто і коли прочитав інструкцію */
+    readings: { type: [mongoose.Schema.Types.Mixed], default: [] }
   },
   deletedAt: { type: Date, default: Date.now, index: true },
   deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },

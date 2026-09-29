@@ -5,6 +5,8 @@ import { InstructionVersion } from '../knowledge/models.js';
 import { MaterialFolder } from '../folders/models.js';
 import { deleteDocumentStorage } from '../../services/fileStorage.js';
 import { DuplicateService } from '../tools/duplicates.js';
+import { ReadingProgress } from '../learning/models.js';
+import { OnboardingService } from '../onboarding/service.js';
 import { TrashItem, TrashKind, TRASH_KINDS } from './models.js';
 
 export class TrashConflictError extends Error {
@@ -137,11 +139,16 @@ export const TrashService = {
     const questions = await Question.find({ sectionId: { $in: ids } } as any).lean<any[]>();
     const courseRefs = await collectCourseRefs('instructionIds', ids);
     const readers = await Progress.find({ readSectionIds: { $in: ids } } as any, { _id: 1 } as any).lean<any[]>();
+    // Позначки «прочитано» живуть і в новій колекції ReadingProgress — саме з неї
+    // рахується прогрес. Зберігаємо їх зі знімком, бо наступне збереження
+    // прогресу людиною перезаписує її відмітки лише наявними інструкціями.
+    const readings = await ReadingProgress.find({ sectionId: { $in: ids } } as any).lean<any[]>();
 
     await createItem('instruction', section, {
       questions,
       courseRefs,
-      readByUserIds: readers.map(r => r._id)
+      readByUserIds: readers.map(r => r._id),
+      readings: readings.map(r => ({ userId: r.userId, courseId: r.courseId, completedAt: r.completedAt }))
     }, user);
 
     await Section.deleteOne({ _id: section._id } as any);
@@ -154,6 +161,8 @@ export const TrashService = {
       { readSectionIds: { $in: ids } } as any,
       { $pull: { readSectionIds: { $in: ids } } } as any
     );
+    await ReadingProgress.deleteMany({ sectionId: { $in: ids } } as any);
+    await OnboardingService.recalcForMaterial(section.id);
     // Версії та файли (оригінал, instruction.md, скріншоти) лишаються до
     // остаточного видалення — інакше відновлена інструкція була б без зображень.
     return true;
@@ -164,6 +173,7 @@ export const TrashService = {
     if (!course) return false;
     await createItem('course', course, {}, user);
     await Course.deleteOne({ _id: course._id } as any);
+    await OnboardingService.recalcForMaterial(course.id);
     return true;
   },
 
@@ -179,6 +189,7 @@ export const TrashService = {
       { caseIds: { $in: ids } } as any,
       { $pull: { caseIds: { $in: ids } } } as any
     );
+    await OnboardingService.recalcForMaterial(found.id);
     return true;
   },
 
@@ -242,17 +253,30 @@ export const TrashService = {
         const toInsert = questions.filter(q => !taken.has(q.id));
         if (toInsert.length) await Question.collection.insertMany(toInsert);
       }
+      const readings = (item.related?.readings || []) as any[];
+      if (readings.length) {
+        await ReadingProgress.bulkWrite(readings.map(r => ({
+          updateOne: {
+            filter: { userId: r.userId, sectionId: snapshot.id },
+            update: { $setOnInsert: { userId: r.userId, sectionId: snapshot.id, courseId: r.courseId, completedAt: r.completedAt || new Date() } },
+            upsert: true
+          }
+        })), { ordered: false });
+      }
+      // readByUserIds — це _id legacy-документів Progress. updatedAt зсуваємо,
+      // щоб синхронізація з legacy не пропустила зміну через кеш позначок часу.
       const readers = item.related?.readByUserIds || [];
       if (readers.length) {
         await Progress.updateMany(
           { _id: { $in: readers } } as any,
-          { $addToSet: { readSectionIds: snapshot.id } } as any
+          { $addToSet: { readSectionIds: snapshot.id }, $set: { updatedAt: new Date() } } as any
         );
       }
     }
     if (kind === 'instruction' || kind === 'case') {
       await restoreCourseRefs(snapshot.id, item.related?.courseRefs || []);
     }
+    await OnboardingService.recalcForMaterial(snapshot.id);
 
     await TrashItem.deleteOne({ id: itemId } as any);
     return { kind, materialId: snapshot.id, title: item.title };

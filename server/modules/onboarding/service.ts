@@ -11,6 +11,8 @@ import {
   OnboardingStepType
 } from './models.js';
 import { validateOnboardingGraph, AUTO_STEP_TYPES } from '../../../shared/onboardingGraph.js';
+import { onboardingStepTargetMissing } from '../../../shared/materialPresence.js';
+import { loadMaterialPresence } from '../learning/materialPresence.js';
 
 type ObjectIdLike = string | mongoose.Types.ObjectId;
 
@@ -457,7 +459,16 @@ export class OnboardingService {
       if (incoming.has(e.target)) incoming.get(e.target)!.push(e.source);
     }
 
+    // Крок, матеріал якого видалено (зокрема перенесено в корзину), закрити
+    // неможливо: він не блокує наступні кроки й не входить у відсоток. Після
+    // відновлення матеріалу крок знову рахується звичайним чином.
+    const presence = await loadMaterialPresence();
+    const missingNodeIds = new Set(
+      nodes.filter((n: any) => onboardingStepTargetMissing(n, presence)).map((n: any) => n.id)
+    );
+
     const isClosed = (nodeId: string) => {
+      if (missingNodeIds.has(nodeId)) return true;
       const p = progressByNode.get(nodeId);
       return p ? (p.status === 'completed' || p.status === 'skipped') : false;
     };
@@ -497,7 +508,7 @@ export class OnboardingService {
       if (!changed) break;
     }
 
-    const realNodes = nodes.filter((n: any) => !AUTO_STEP_TYPES.includes(n.type));
+    const realNodes = nodes.filter((n: any) => !AUTO_STEP_TYPES.includes(n.type) && !missingNodeIds.has(n.id));
     const requiredNodes = realNodes.filter((n: any) => n.isRequired !== false);
     const doneRequired = requiredNodes.filter((n: any) => isClosed(n.id)).length;
     const doneAll = realNodes.filter((n: any) => isClosed(n.id)).length;
@@ -742,6 +753,23 @@ export class OnboardingService {
     }
   }
 
+  /**
+   * Матеріал видалено в корзину або відновлено — перераховує прогрес онбордингів,
+   * у маршрутах яких він є. Завершені онбординги не чіпаємо: відновлення
+   * матеріалу не має «розвершувати» вже пройдену адаптацію.
+   */
+  static async recalcForMaterial(targetId: string) {
+    try {
+      const assignments = await OnboardingAssignment.find({
+        'graph.nodes.targetId': targetId,
+        status: { $nin: ['completed', 'cancelled'] }
+      } as any, { _id: 1 } as any);
+      for (const a of assignments) await this.recalcAssignment(a._id, { notify: false });
+    } catch (err) {
+      console.error('Failed to recalc onboarding after material change:', err);
+    }
+  }
+
   /** Закриває кроки типу 'acknowledgement' після електронного підпису. */
   static async syncFromAcknowledgement(userId: mongoose.Types.ObjectId) {
     try {
@@ -848,6 +876,11 @@ export class OnboardingService {
         : n.type === 'case' ? caseMap.get(n.targetId)
         : null;
       const dueDate = p?.dueDate || null;
+      const targetMissing = ['instruction', 'course', 'quiz', 'case'].includes(n.type) && Boolean(n.targetId) && !target;
+      const closed = p?.status === 'completed' || p?.status === 'skipped';
+      // Незакритий крок із видаленим матеріалом показуємо як пропущений: виконати
+      // його неможливо, тож він не має висіти в «моїх завданнях» і лічильниках.
+      const status = targetMissing && !closed ? 'skipped' : (p?.status || 'locked');
 
       return {
         nodeId: n.id,
@@ -856,6 +889,8 @@ export class OnboardingService {
         description: n.description || '',
         targetId: n.targetId || '',
         targetTitle: target?.title || '',
+        // Прив'язаний матеріал видалено — крок не враховується в прогресі.
+        targetMissing,
         url: n.url || '',
         stageKey: n.stageKey || '',
         ownerRole: n.ownerRole || 'employee',
@@ -863,12 +898,12 @@ export class OnboardingService {
         isRequired: n.isRequired !== false,
         estimatedMinutes: n.estimatedMinutes || 0,
         position: n.position || { x: 0, y: 0 },
-        status: p?.status || 'locked',
+        status,
         dueDate: dueDate ? dueDate.toISOString() : null,
-        isOverdue: Boolean(dueDate && dueDate < now && p?.status !== 'completed' && p?.status !== 'skipped'),
+        isOverdue: Boolean(dueDate && dueDate < now && status !== 'completed' && status !== 'skipped'),
         completedAt: p?.completedAt ? p.completedAt.toISOString() : null,
         completedByName: p?.completedByName || '',
-        comment: p?.comment || '',
+        comment: targetMissing && !closed ? 'Матеріал кроку видалено — крок не враховується в прогресі' : (p?.comment || ''),
         // Чи може саме цей глядач закрити крок (визначає, чи показувати кнопку).
         // Дзеркалить resolveStepOwners: показувати кнопку тому, кому сервер
         // все одно відмовить — гірше, ніж не показувати її взагалі.
@@ -932,10 +967,14 @@ export class OnboardingService {
       return owners.some(o => o.toString() === userId.toString());
     };
 
+    // Кроки з видаленим матеріалом виконати неможливо — у задачі їх не віддаємо.
+    const presence = await loadMaterialPresence();
+
     const tasks: any[] = [];
     for (const assignment of assignments) {
       const relevantNodes: any[] = [];
       for (const n of assignment.graph?.nodes || []) {
+        if (onboardingStepTargetMissing(n, presence)) continue;
         if (await isOwner(n, assignment)) relevantNodes.push(n);
       }
       if (relevantNodes.length === 0) continue;

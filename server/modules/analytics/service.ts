@@ -4,6 +4,12 @@ import { LearningAssignment, Acknowledgment, QuizAttempt, CertificateRecord } fr
 import { SearchQueryLog } from './models.js';
 import { scopeFilter } from '../core/permissions.js';
 import { formatDuration } from '../../../shared/attemptDuration.js';
+import {
+  loadMaterialPresence,
+  existingAttemptMatch,
+  existingAssignmentMatch,
+  existingCertificateMatch
+} from '../learning/materialPresence.js';
 
 export interface ReportFilters {
   departmentId?: string;
@@ -66,7 +72,12 @@ export const AnalyticsService = {
     if (Array.isArray(userIds) && userIds.length === 0) return { rows: [], totals: null };
 
     const now = new Date();
-    const match: any = { ...dateRangeMatch('assignedDate', filters.dateFrom, filters.dateTo) };
+    // Призначення видалених (у т.ч. перенесених у корзину) матеріалів у звіт не йдуть.
+    const presence = await loadMaterialPresence();
+    const match: any = {
+      ...dateRangeMatch('assignedDate', filters.dateFrom, filters.dateTo),
+      ...existingAssignmentMatch(presence)
+    };
     if (filters.courseId) match.targetId = filters.courseId;
     if (userIds !== 'all') match.userId = { $in: userIds };
 
@@ -164,7 +175,13 @@ export const AnalyticsService = {
     }
 
     // Звіт про тести: проходження кейсів-тренажерів сюди не входять.
-    const match: any = { ...dateRangeMatch('date', filters.dateFrom, filters.dateTo), mode: { $ne: 'cases' } };
+    // Спроби за видаленими матеріалами в середній бал і розподіл не входять.
+    const presence = await loadMaterialPresence();
+    const match: any = {
+      ...dateRangeMatch('date', filters.dateFrom, filters.dateTo),
+      mode: { $ne: 'cases' },
+      ...existingAttemptMatch(presence)
+    };
     if (filters.courseId) match.courseId = filters.courseId;
     if (userIds !== 'all') match.userId = { $in: userIds };
 
@@ -211,8 +228,10 @@ export const AnalyticsService = {
       return { active: 0, revoked: 0, expiringIn30: 0, expiringIn60: 0, expiringIn90: 0, expiringSoon: [] };
     }
 
-    const match: any = {};
-    if (filters.courseId) match.courseId = filters.courseId;
+    // Сертифікати видалених курсів не рахуються, поки курс не відновлять.
+    const presence = await loadMaterialPresence();
+    const match: any = { ...existingCertificateMatch(presence) };
+    if (filters.courseId) match.$and = [{ courseId: filters.courseId }];
     if (userIds !== 'all') match.userId = { $in: userIds };
 
     const now = new Date();

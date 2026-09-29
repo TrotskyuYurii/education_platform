@@ -121,6 +121,8 @@ export interface OnboardingStepView {
   completedByName: string;
   comment: string;
   isMine: boolean;
+  /** Прив'язаний матеріал видалено (зокрема в корзину) — крок показується пропущеним. */
+  targetMissing?: boolean;
 }
 
 export interface OnboardingAssignmentView {
