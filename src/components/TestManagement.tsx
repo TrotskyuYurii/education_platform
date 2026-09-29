@@ -44,6 +44,7 @@ const UserActivityPanel = lazy(() => import('./Admin/UserActivityPanel').then(m 
 const AppSettingsPanel = lazy(() => import('./Admin/AppSettingsPanel').then(m => ({ default: m.AppSettingsPanel })));
 const DashboardsHub = lazy(() => import('./Admin/Dashboards/DashboardsHub').then(m => ({ default: m.DashboardsHub })));
 const DuplicateFinderPanel = lazy(() => import('./Admin/Tools/DuplicateFinderPanel').then(m => ({ default: m.DuplicateFinderPanel })));
+const TrashPanel = lazy(() => import('./Admin/TrashPanel').then(m => ({ default: m.TrashPanel })));
 const ImportDuplicateCheckDialog = lazy(() => import('./Admin/Tools/ImportDuplicateCheckDialog').then(m => ({ default: m.ImportDuplicateCheckDialog })));
 
 /** Спільна заглушка на час підвантаження чанка панелі. */
@@ -129,7 +130,7 @@ interface TestManagementProps {
   initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings' | 'dashboards' | 'duplicates';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings' | 'dashboards' | 'duplicates' | 'trash';
 
 /** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
 const blankCourse = () => ({
@@ -183,6 +184,8 @@ export const TestManagement: React.FC<TestManagementProps> = ({
   const [departments, setDepartments] = useState<any[]>([]);
   const [assignmentsCount, setAssignmentsCount] = useState<number | null>(null);
   const [onboardingCount, setOnboardingCount] = useState<number | null>(null);
+  /** Скільки матеріалів у корзині — для бейджа в навігації (лише для адміністратора). */
+  const [trashCount, setTrashCount] = useState<number | null>(null);
   const [newCase, setNewCase] = useState<any>({ title: '', sectionId: '', scenario: '', expectedResult: '', maxScore: 100, passScore: 80, options: [{ id: 'opt-1', text: '', isCorrect: true, feedback: '' }], isActive: true });
 
   /**
@@ -269,6 +272,15 @@ export const TestManagement: React.FC<TestManagementProps> = ({
     fetchAssignmentsCount();
     fetchOnboardingCount();
   }, []);
+
+  // Після кожного видалення матеріалів переліки перечитуються — тоді ж оновлюємо й лічильник корзини.
+  React.useEffect(() => {
+    if (!isAdministrator) return;
+    fetch('/api/v2/trash/count')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (data && typeof data.total === 'number') setTrashCount(data.total); })
+      .catch(() => {});
+  }, [isAdministrator, sections.length, courses.length, cases.length]);
   const handleDeleteInstruction = async (id: string) => {
     if (!id) return;
     try {
@@ -315,7 +327,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings', 'dashboards', 'duplicates'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings', 'dashboards', 'duplicates', 'trash'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -940,6 +952,30 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                     <HelpCircle className="w-4 h-4" />
                     <span>Допомога / Шаблон</span>
                   </button>
+
+                  {/* Корзина: перегляд, відновлення й остаточне видалення — лише роль «Адміністратор». */}
+                  {isAdministrator && (
+                    <button
+                      onClick={() => setActiveTab('trash')}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                        activeTab === 'trash'
+                          ? 'bg-rose-100 text-rose-800 shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Trash2 className="w-4 h-4" />
+                        <span>Корзина</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition ${
+                        activeTab === 'trash'
+                          ? 'bg-rose-200/80 text-rose-900'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {trashCount !== null ? trashCount : '—'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1511,7 +1547,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         danger: true,
                         label: 'Видалити інструкцію',
                         icon: Trash2,
-                        confirm: { question: `Видалити інструкцію «${inst.title}»?`, details: 'Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                        confirm: { question: `Видалити інструкцію «${inst.title}»?`, details: 'Інструкцію разом з питаннями буде переміщено в корзину — її можна відновити.', confirmLabel: 'Видалити' },
                         onSelect: () => handleDeleteInstruction(inst.id || (inst as any)._id)
                       }
                     ]}
@@ -1613,7 +1649,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                         danger: true,
                         label: 'Видалити курс',
                         icon: Trash2,
-                        confirm: { question: `Видалити курс «${course.title}»?`, details: 'Інструкції курсу лишаться в базі. Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                        confirm: { question: `Видалити курс «${course.title}»?`, details: 'Інструкції курсу лишаться в базі. Курс буде переміщено в корзину — його можна відновити.', confirmLabel: 'Видалити' },
                         onSelect: () => handleDeleteCourse(currentCourseId)
                       }
                     ]}
@@ -1689,7 +1725,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                             danger: true,
                             label: 'Видалити кейс',
                             icon: Trash2,
-                            confirm: { question: `Видалити кейс «${c.title}»?`, details: 'Дію не можна скасувати.', confirmLabel: 'Видалити' },
+                            confirm: { question: `Видалити кейс «${c.title}»?`, details: 'Кейс буде переміщено в корзину — його можна відновити.', confirmLabel: 'Видалити' },
                             onSelect: () => handleDeleteCase(currentCaseId)
                           }
                         ]}
@@ -1725,6 +1761,9 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'systemlog' && <SystemLogPanel />}
           {activeTab === 'activity' && isAdministrator && <UserActivityPanel />}
           {activeTab === 'settings' && canManageSettings && <AppSettingsPanel />}
+          {activeTab === 'trash' && isAdministrator && (
+            <TrashPanel onRefresh={refreshMaterials} onCountChange={setTrashCount} />
+          )}
           {activeTab === 'duplicates' && isAdministrator && (
             <DuplicateFinderPanel
               onRefresh={refreshMaterials}

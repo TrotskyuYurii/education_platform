@@ -21,8 +21,7 @@ import {
   resolveVersionAsset,
   saveVersionAsset,
   listVersionAssets,
-  copyVersionAssets,
-  deleteDocumentStorage
+  copyVersionAssets
 } from './services/fileStorage.js';
 import { sendStoredFile, sendStoredInline } from './services/fileDownload.js';
 import { normalizeDocumentAssets, assetApiUrl } from './services/documentAssets.js';
@@ -97,7 +96,8 @@ import { systemRouter } from './modules/system/routes.js';
 import { foldersRouter } from './modules/folders/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
 import { toolsRouter } from './modules/tools/routes.js';
-import { DuplicateService } from './modules/tools/duplicates.js';
+import { trashRouter } from './modules/trash/routes.js';
+import { TrashService } from './modules/trash/service.js';
 import { settingsRouter } from './modules/settings/routes.js';
 import { ActivityService } from './modules/activity/service.js';
 import { ActivityDashboardService } from './modules/activity/dashboard.js';
@@ -124,6 +124,7 @@ apiRouter.use('/v2/system', requireAuth, systemRouter);
 apiRouter.use('/v2/folders', requireAuth, foldersRouter);
 apiRouter.use('/v2/activity', requireAuth, activityRouter);
 apiRouter.use('/v2/tools', requireAuth, toolsRouter);
+apiRouter.use('/v2/trash', requireAuth, trashRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -929,21 +930,11 @@ apiRouter.post('/admin/courses', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.delete('/admin/courses/:id', requireAuth, requireAdmin, async (req: any, res) => {
   try {
-    const courseId = req.params.id;
-    const isObjectId = mongoose.isValidObjectId(courseId);
-    const query: any = {
-      $or: [
-        { id: courseId },
-        ...(isObjectId ? [{ _id: courseId }] : [])
-      ]
-    };
-    let deleted = await Course.findOneAndDelete(query);
-    if (!deleted && isObjectId) {
-      deleted = await Course.findByIdAndDelete(courseId);
-    }
-    res.json({ success: true, deleted: !!deleted });
+    // Видалений курс не зникає, а переноситься в корзину — його можна відновити.
+    const deleted = await TrashService.trashCourse(req.params.id, req.user);
+    res.json({ success: true, deleted, trashed: deleted });
   } catch (err) {
     console.error('Error deleting course:', err);
     res.status(500).json({ error: 'Failed to delete course' });
@@ -1006,47 +997,12 @@ apiRouter.put('/admin/courses/:id', requireAuth, requireAdmin, async (req, res) 
   }
 });
 
-apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (req: any, res) => {
   try {
-    const instructionId = req.params.id;
-    const isObjectId = mongoose.isValidObjectId(instructionId);
-    const query: any = {
-      $or: [
-        { id: instructionId },
-        ...(isObjectId ? [{ _id: instructionId }] : [])
-      ]
-    };
-    const deletedSection = await Section.findOneAndDelete(query);
-    const secId = deletedSection?.id || instructionId;
-
-    await Question.deleteMany({
-      $or: [
-        { sectionId: secId },
-        { sectionId: instructionId }
-      ]
-    } as any);
-    
-    // Also remove this instruction from any courses
-    await Course.updateMany(
-      { instructionIds: { $in: [secId, instructionId] } } as any,
-      { $pull: { instructionIds: { $in: [secId, instructionId] } } } as any
-    );
-
-    // Also remove this deleted instruction from all users' progress to prevent progress overflow
-    await Progress.updateMany(
-      {},
-      { $pull: { readSectionIds: { $in: [secId, instructionId] } } } as any
-    );
-
-    // Разом з інструкцією прибираємо її теку: оригінал, instruction.md та скріншоти,
-    // інакше сховище засмічується файлами, на які вже ніщо не посилається
-    if (deletedSection) {
-      await InstructionVersion.deleteMany({ sectionId: secId } as any);
-      await deleteDocumentStorage(secId);
-      await DuplicateService.forgetSection(secId);
-    }
-
-    res.json({ success: true });
+    // Інструкція разом з питаннями й зв'язками переноситься в корзину. Файли,
+    // версії та відхилені пари дублів прибираються лише при остаточному видаленні.
+    const trashed = await TrashService.trashInstruction(req.params.id, req.user);
+    res.json({ success: true, trashed });
   } catch (err) {
     console.error('Error deleting instruction:', err);
     res.status(500).json({ error: 'Failed to delete instruction' });
@@ -1288,23 +1244,10 @@ apiRouter.post('/admin/cases/generate', requireAuth, requireAdmin, async (req, r
   }
 });
 
-apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req, res) => {
+apiRouter.delete('/admin/cases/:id', requireAuth, requireAdmin, async (req: any, res) => {
   try {
-    const caseId = req.params.id;
-    const isObjectId = mongoose.isValidObjectId(caseId);
-    const query: any = {
-      $or: [
-        { id: caseId },
-        ...(isObjectId ? [{ _id: caseId }] : [])
-      ]
-    };
-    const deletedCase = await Case.findOneAndDelete(query);
-    const deletedId = deletedCase?.id || caseId;
-    await Course.updateMany(
-      { caseIds: { $in: [deletedId, caseId] } } as any,
-      { $pull: { caseIds: { $in: [deletedId, caseId] } } } as any
-    );
-    res.json({ success: true });
+    const trashed = await TrashService.trashCase(req.params.id, req.user);
+    res.json({ success: true, trashed });
   } catch (err) {
     console.error('Error deleting case:', err);
     res.status(500).json({ error: 'Failed to delete case' });
