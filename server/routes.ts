@@ -96,6 +96,8 @@ import { onboardingRouter } from './modules/onboarding/routes.js';
 import { systemRouter } from './modules/system/routes.js';
 import { foldersRouter } from './modules/folders/routes.js';
 import { activityRouter } from './modules/activity/routes.js';
+import { toolsRouter } from './modules/tools/routes.js';
+import { DuplicateService } from './modules/tools/duplicates.js';
 import { settingsRouter } from './modules/settings/routes.js';
 import { ActivityService } from './modules/activity/service.js';
 import { ActivityDashboardService } from './modules/activity/dashboard.js';
@@ -121,6 +123,7 @@ apiRouter.use('/v2/onboarding', requireAuth, onboardingRouter);
 apiRouter.use('/v2/system', requireAuth, systemRouter);
 apiRouter.use('/v2/folders', requireAuth, foldersRouter);
 apiRouter.use('/v2/activity', requireAuth, activityRouter);
+apiRouter.use('/v2/tools', requireAuth, toolsRouter);
 apiRouter.use('/admin', requireAuth, rolesRouter);
 
 // --- AUTH ROUTES ---
@@ -1040,6 +1043,7 @@ apiRouter.delete('/admin/instructions/:id', requireAuth, requireAdmin, async (re
     if (deletedSection) {
       await InstructionVersion.deleteMany({ sectionId: secId } as any);
       await deleteDocumentStorage(secId);
+      await DuplicateService.forgetSection(secId);
     }
 
     res.json({ success: true });

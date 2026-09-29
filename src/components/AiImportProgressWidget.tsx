@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import {
   Sparkles,
   X,
@@ -8,9 +8,15 @@ import {
   RefreshCw,
   Clock,
   MinusCircle,
-  FileText
+  FileText,
+  Copy
 } from 'lucide-react';
 import { AiImportJob, AiImportJobItem, useAiImportJobs } from '../context/AiImportJobsContext';
+import { useAuth } from '../context/AuthContext';
+
+const ImportDuplicateCheckDialog = lazy(() =>
+  import('./Admin/Tools/ImportDuplicateCheckDialog').then(m => ({ default: m.ImportDuplicateCheckDialog }))
+);
 
 const STATUS_LABEL: Record<AiImportJob['status'], string> = {
   queued: 'У черзі',
@@ -28,8 +34,13 @@ const ItemIcon: React.FC<{ status: AiImportJobItem['status'] }> = ({ status }) =
   return <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />;
 };
 
-const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
+const JobCard: React.FC<{ job: AiImportJob; onShowDuplicates: (ids: string[]) => void }> = ({ job, onShowDuplicates }) => {
   const { cancelJob, dismissJob } = useAiImportJobs();
+  // Пошук дублів — інструмент лише ролі «Адміністратор».
+  const { isAdministrator } = useAuth();
+  const duplicateItems = isAdministrator ? job.items.filter(i => i.status === 'done' && (i.duplicates?.length || 0) > 0) : [];
+  const duplicateSectionIds = [...new Set(duplicateItems.flatMap(i => (i.duplicates || []).map(d => d.sectionId)))];
+  const duplicateCount = duplicateItems.reduce((sum, i) => sum + (i.duplicates?.length || 0), 0);
   const [expanded, setExpanded] = useState(false);
   const running = job.status === 'queued' || job.status === 'processing';
 
@@ -79,6 +90,11 @@ const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
             {STATUS_LABEL[job.status]} · {job.processedFiles} з {job.totalFiles}
             {running && job.currentFileName ? ` · ${job.currentFileName}` : ''}
           </p>
+          {running && job.currentStage === 'duplicates' && (
+            <p className="text-[11px] font-semibold text-indigo-600 mt-0.5 flex items-center gap-1">
+              <RefreshCw className="w-3 h-3 animate-spin" /> Аналіз і пошук дублів…
+            </p>
+          )}
 
           <div className="mt-2 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
             <div
@@ -92,6 +108,16 @@ const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
               Створено інструкцій: <strong>{job.createdSections}</strong> · питань: <strong>{job.createdQuestions}</strong>
               {job.failedFiles > 0 && <span className="text-rose-600"> · з помилкою: {job.failedFiles}</span>}
             </p>
+          )}
+
+          {duplicateCount > 0 && (
+            <button
+              onClick={() => onShowDuplicates(duplicateSectionIds)}
+              className="mt-2 w-full px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5"
+              title="Переглянути знайдені дублі та вирішити, що з ними робити"
+            >
+              <Copy className="w-3.5 h-3.5" /> Знайдено можливих дублів: {duplicateCount} — переглянути
+            </button>
           )}
 
           <button
@@ -124,6 +150,11 @@ const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
                     {item.assetsFound ? ` · скріншотів: ${item.assetsUsed}/${item.assetsFound}` : ''}
                   </p>
                 )}
+                {isAdministrator && item.status === 'done' && (item.duplicates?.length || 0) > 0 && (
+                  <p className="text-[10px] text-amber-700 truncate">
+                    Схожа на: {item.duplicates!.map(d => d.matchTitle).filter(Boolean).join(', ')}
+                  </p>
+                )}
                 {item.status === 'error' && (
                   <p className="text-[10px] text-rose-600">{item.error}</p>
                 )}
@@ -144,8 +175,19 @@ const JobCard: React.FC<{ job: AiImportJob }> = ({ job }) => {
  * далі працювати з додатком, поки пачка документів обробляється у фоні.
  */
 export const AiImportProgressWidget: React.FC = () => {
-  const { jobs } = useAiImportJobs();
+  const { jobs, notifyContentChanged } = useAiImportJobs();
   const [collapsed, setCollapsed] = useState(false);
+  const [duplicateIds, setDuplicateIds] = useState<string[] | null>(null);
+
+  const duplicateDialog = duplicateIds && (
+    <Suspense fallback={null}>
+      <ImportDuplicateCheckDialog
+        sectionIds={duplicateIds}
+        onClose={() => setDuplicateIds(null)}
+        onChanged={notifyContentChanged}
+      />
+    </Suspense>
+  );
 
   if (jobs.length === 0) return null;
 
@@ -179,7 +221,8 @@ export const AiImportProgressWidget: React.FC = () => {
           Згорнути
         </button>
       </div>
-      {jobs.map(job => <JobCard key={job.id} job={job} />)}
+      {jobs.map(job => <JobCard key={job.id} job={job} onShowDuplicates={setDuplicateIds} />)}
+      {duplicateDialog}
     </div>
   );
 };

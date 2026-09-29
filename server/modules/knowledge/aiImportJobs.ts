@@ -8,12 +8,25 @@ import {
 import { importInstructions } from '../../services/instructionImport.js';
 import { Section } from '../../models.js';
 import { listDepartmentNames } from '../../services/departmentDirectory.js';
+import { DuplicateService } from '../tools/duplicates.js';
 // Парсер Markdown спільний з адмінкою: інакше пакетна обробка розбирала б
 // відповідь моделі за іншими правилами, ніж завантаження одного файлу.
 import { parseMarkdown } from '../../../src/utils/markdownParser.js';
 
 export type AiImportJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 export type AiImportItemStatus = 'pending' | 'processing' | 'done' | 'error' | 'skipped';
+/** Що саме зараз робиться з поточним файлом — для підпису в панелі прогресу. */
+export type AiImportStage = '' | 'generating' | 'duplicates';
+
+/** Можливий дубль щойно створеної інструкції серед наявних. */
+const aiImportDuplicateSchema = new mongoose.Schema({
+  sectionId: String,
+  sectionTitle: String,
+  matchId: String,
+  matchTitle: String,
+  score: Number,
+  level: String
+}, { _id: false });
 
 const aiImportItemSchema = new mongoose.Schema({
   fileName: { type: String, required: true },
@@ -30,6 +43,8 @@ const aiImportItemSchema = new mongoose.Schema({
   questionCount: { type: Number, default: 0 },
   assetsFound: { type: Number, default: 0 },
   assetsUsed: { type: Number, default: 0 },
+  /** Результат автоматичного пошуку дублів після імпорту. */
+  duplicates: { type: [aiImportDuplicateSchema], default: [] },
   startedAt: { type: Date },
   finishedAt: { type: Date }
 }, { _id: false });
@@ -46,6 +61,7 @@ const aiImportJobSchema = new mongoose.Schema({
   createdSections: { type: Number, default: 0 },
   createdQuestions: { type: Number, default: 0 },
   currentFileName: { type: String, default: '' },
+  currentStage: { type: String, default: '' },
   cancelRequested: { type: Boolean, default: false },
   /** Адмін прибрав картку з екрана — у списку активних більше не показуємо. */
   dismissedAt: { type: Date },
@@ -91,6 +107,7 @@ async function processItem(job: any, index: number, takenIds: Set<string>, depar
   item.status = 'processing';
   item.startedAt = new Date();
   job.currentFileName = item.fileName;
+  job.currentStage = 'generating';
   await job.save();
 
   try {
@@ -123,6 +140,12 @@ async function processItem(job: any, index: number, takenIds: Set<string>, depar
     }
 
     const report = await importInstructions(parsed.sections, parsed.questions, false);
+
+    // Нова інструкція одразу звіряється з базою: адміністратор має дізнатися
+    // про повторне завантаження того самого документа, поки пам'ятає контекст.
+    job.currentStage = 'duplicates';
+    await job.save();
+    item.duplicates = await findImportDuplicates(parsed.sections.map((s: any) => s.id));
 
     item.status = 'done';
     item.sectionIds = parsed.sections.map((s: any) => s.id);
@@ -191,9 +214,33 @@ async function processJob(job: any): Promise<void> {
   }
 
   job.currentFileName = '';
+  job.currentStage = '';
   job.finishedAt = new Date();
   job.markModified('items');
   await job.save();
+}
+
+/** Пошук дублів не має зривати імпорт: у разі збою просто нічого не показуємо. */
+async function findImportDuplicates(sectionIds: string[]): Promise<any[]> {
+  if (sectionIds.length === 0) return [];
+  try {
+    const report = await DuplicateService.find({ focusIds: sectionIds });
+    const created = new Set(sectionIds);
+    return report.pairs
+      // Інструкції з одного файлу між собою — це частини документа, а не дублі.
+      .filter(p => !(created.has(p.a) && created.has(p.b)))
+      .map(p => ({
+        sectionId: p.a,
+        sectionTitle: report.sections[p.a]?.title || '',
+        matchId: p.b,
+        matchTitle: report.sections[p.b]?.title || '',
+        score: p.score,
+        level: p.level
+      }));
+  } catch (err) {
+    console.error('Duplicate check after AI import failed', err);
+    return [];
+  }
 }
 
 let workerRunning = false;
@@ -294,6 +341,7 @@ export interface SerializedAiImportItem {
   questionCount: number;
   assetsFound: number;
   assetsUsed: number;
+  duplicates: Array<{ sectionId: string; sectionTitle: string; matchId: string; matchTitle: string; score: number; level: string }>;
 }
 
 export interface SerializedAiImportJob {
@@ -306,6 +354,7 @@ export interface SerializedAiImportJob {
   createdSections: number;
   createdQuestions: number;
   currentFileName: string;
+  currentStage: AiImportStage;
   percent: number;
   cancelRequested: boolean;
   createdAt?: Date;
@@ -328,6 +377,7 @@ export function serializeAiImportJob(job: any): SerializedAiImportJob {
     createdSections: job.createdSections,
     createdQuestions: job.createdQuestions,
     currentFileName: job.currentFileName,
+    currentStage: (job.currentStage || '') as AiImportStage,
     percent: total > 0 ? Math.round((job.processedFiles / total) * 100) : 0,
     cancelRequested: job.cancelRequested,
     createdAt: job.createdAt,
@@ -342,7 +392,15 @@ export function serializeAiImportJob(job: any): SerializedAiImportJob {
       sectionDepartments: item.sectionDepartments || [],
       questionCount: item.questionCount,
       assetsFound: item.assetsFound,
-      assetsUsed: item.assetsUsed
+      assetsUsed: item.assetsUsed,
+      duplicates: (item.duplicates || []).map((d: any) => ({
+        sectionId: d.sectionId,
+        sectionTitle: d.sectionTitle,
+        matchId: d.matchId,
+        matchTitle: d.matchTitle,
+        score: d.score,
+        level: d.level
+      }))
     }))
   };
 }

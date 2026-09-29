@@ -13,6 +13,8 @@ export interface AiImportJobItem {
   questionCount?: number;
   assetsFound?: number;
   assetsUsed?: number;
+  /** Можливі дублі створених інструкцій серед наявних (автоматична перевірка після імпорту). */
+  duplicates?: Array<{ sectionId: string; sectionTitle: string; matchId: string; matchTitle: string; score: number; level: string }>;
 }
 
 export interface AiImportJob {
@@ -25,6 +27,8 @@ export interface AiImportJob {
   createdSections: number;
   createdQuestions: number;
   currentFileName?: string;
+  /** 'generating' — ШІ розбирає документ, 'duplicates' — аналіз і пошук дублів. */
+  currentStage?: '' | 'generating' | 'duplicates';
   percent: number;
   cancelRequested?: boolean;
   createdAt?: string;
@@ -41,6 +45,8 @@ interface AiImportJobsValue {
   cancelJob: (jobId: string) => Promise<void>;
   dismissJob: (jobId: string) => Promise<void>;
   refresh: () => Promise<void>;
+  /** Матеріали змінено поза адмінкою (напр., видалено дубль із панелі прогресу). */
+  notifyContentChanged: () => void;
 }
 
 const AiImportJobsContext = createContext<AiImportJobsValue>({
@@ -50,7 +56,8 @@ const AiImportJobsContext = createContext<AiImportJobsValue>({
   enqueueFiles: async () => ({ ok: false, message: 'Фонова ШІ-обробка недоступна в цьому режимі.' }),
   cancelJob: async () => {},
   dismissJob: async () => {},
-  refresh: async () => {}
+  refresh: async () => {},
+  notifyContentChanged: () => {}
 });
 
 export const useAiImportJobs = () => useContext(AiImportJobsContext);
@@ -183,7 +190,8 @@ export const AiImportJobsProvider: React.FC<ProviderProps> = ({ children, enable
         enqueueFiles,
         cancelJob,
         dismissJob,
-        refresh
+        refresh,
+        notifyContentChanged: () => onJobFinishedRef.current?.()
       }}
     >
       {children}

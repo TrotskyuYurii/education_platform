@@ -43,6 +43,8 @@ const SystemLogPanel = lazy(() => import('./Admin/SystemLogPanel').then(m => ({ 
 const UserActivityPanel = lazy(() => import('./Admin/UserActivityPanel').then(m => ({ default: m.UserActivityPanel })));
 const AppSettingsPanel = lazy(() => import('./Admin/AppSettingsPanel').then(m => ({ default: m.AppSettingsPanel })));
 const DashboardsHub = lazy(() => import('./Admin/Dashboards/DashboardsHub').then(m => ({ default: m.DashboardsHub })));
+const DuplicateFinderPanel = lazy(() => import('./Admin/Tools/DuplicateFinderPanel').then(m => ({ default: m.DuplicateFinderPanel })));
+const ImportDuplicateCheckDialog = lazy(() => import('./Admin/Tools/ImportDuplicateCheckDialog').then(m => ({ default: m.ImportDuplicateCheckDialog })));
 
 /** Спільна заглушка на час підвантаження чанка панелі. */
 const PanelFallback = () => (
@@ -88,7 +90,8 @@ import {
   Paperclip,
   Rocket,
   Footprints,
-  LayoutDashboard
+  LayoutDashboard,
+  FileSearch
 } from 'lucide-react';
 
 /** Що сервер зробив зі скріншотами документа під час імпорту. */
@@ -126,7 +129,7 @@ interface TestManagementProps {
   initialTab?: 'systemlog';
 }
 
-type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings' | 'dashboards';
+type MgmtTab = 'list' | 'courses' | 'cases' | 'knowledge' | 'assignments' | 'onboarding' | 'import' | 'export' | 'help' | 'users' | 'roles' | 'organization' | 'notifications' | 'analytics' | 'systemlog' | 'activity' | 'settings' | 'dashboards' | 'duplicates';
 
 /** Порожній курс для форми створення — ті самі значення за умовчанням, що й на сервері. */
 const blankCourse = () => ({
@@ -312,7 +315,7 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
       if (saved === 'import' || saved === 'export') {
         return 'list';
       }
-      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings', 'dashboards'].includes(saved)) {
+      if (saved && ['list', 'courses', 'cases', 'knowledge', 'assignments', 'onboarding', 'help', 'users', 'roles', 'organization', 'notifications', 'analytics', 'systemlog', 'activity', 'settings', 'dashboards', 'duplicates'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -361,6 +364,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
   const pdfAttachInputRef = useRef<HTMLInputElement>(null);
 
   const [importStatus, setImportStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  /** Щойно імпортовані інструкції, для яких відкрито автоматичну перевірку на дублі. */
+  const [duplicateCheckIds, setDuplicateCheckIds] = useState<string[] | null>(null);
   const [attachedSourcePdf, setAttachedSourcePdf] = useState<File | null>(null);
 
   /** Інструкція, банк питань якої зараз відкрито в редакторі питань. */
@@ -718,6 +723,8 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         });
         setAttachedSourcePdf(null);
         if (pdfAttachInputRef.current) pdfAttachInputRef.current.value = '';
+        // Нову інструкцію одразу звіряємо з базою на дублі (інструмент лише для адміністраторів).
+        if (isAdministrator) setDuplicateCheckIds(result.sections.map(s => s.id).filter(Boolean));
       } catch (err) {
         setImportStatus({
           type: 'error',
@@ -1075,6 +1082,33 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
                       <SlidersHorizontal className="w-4 h-4" />
                       <span>Налаштування</span>
                     </button>
+                  )}
+
+                  {/* Підменю «Інструменти»: службові інструменти обслуговування бази — лише роль «Адміністратор». */}
+                  {isAdministrator && (
+                    <div className="mt-2 pt-2 border-t border-dashed border-slate-200">
+                      <div className="flex items-center gap-1.5 px-3 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <Wrench className="w-3 h-3" />
+                        <span>Інструменти</span>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('duplicates')}
+                        className={`w-full text-left flex items-start gap-2.5 pl-5 pr-3 py-2 rounded-xl text-sm font-semibold transition ${
+                          activeTab === 'duplicates'
+                            ? 'bg-purple-100 text-purple-800 shadow-xs'
+                            : 'text-slate-600 hover:bg-slate-200/60'
+                        }`}
+                        title="Виконує інтелектуальний пошук дублів інструкції"
+                      >
+                        <FileSearch className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block">Пошук дублів</span>
+                          <span className="block text-[11px] font-normal text-slate-500 leading-snug">
+                            Виконує інтелектуальний пошук дублів інструкції
+                          </span>
+                        </span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1691,6 +1725,12 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
           {activeTab === 'systemlog' && <SystemLogPanel />}
           {activeTab === 'activity' && isAdministrator && <UserActivityPanel />}
           {activeTab === 'settings' && canManageSettings && <AppSettingsPanel />}
+          {activeTab === 'duplicates' && isAdministrator && (
+            <DuplicateFinderPanel
+              onRefresh={refreshMaterials}
+              onPreview={id => setPreviewTarget({ kind: 'instruction', id })}
+            />
+          )}
           {activeTab === 'dashboards' && (
             <DashboardsHub
               canViewActivity={isAdministrator}
@@ -1739,6 +1779,16 @@ const [showImportPanel, setShowImportPanel] = useState<boolean>(false);
         </div>
       </div>
       
+      {duplicateCheckIds && duplicateCheckIds.length > 0 && (
+        <Suspense fallback={null}>
+          <ImportDuplicateCheckDialog
+            sectionIds={duplicateCheckIds}
+            onClose={() => setDuplicateCheckIds(null)}
+            onChanged={refreshMaterials}
+          />
+        </Suspense>
+      )}
+
       {/* Створення / редагування кейсу */}
       <MaterialEditDialog
         open={Boolean(editingCase) || creatingCase}
