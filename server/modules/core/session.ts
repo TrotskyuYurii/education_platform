@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 
 /**
  * Сесія з таймаутом бездіяльності.
@@ -11,7 +12,27 @@ import type { Response } from 'express';
  * відкрита вкладка тримала б вхід вічно — саме те, від чого таймаут і захищає.
  */
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key';
+/**
+ * Секрет підпису токенів. Раніше без JWT_SECRET підставлявся відомий усім рядок
+ * з коду — будь-хто міг підробити токен адміністратора. Тепер у продакшені без
+ * секрету сервер не стартує, а в розробці генерується випадковий на час процесу
+ * (сесії просто скинуться після перезапуску).
+ */
+export const resolveJwtSecret = (env: NodeJS.ProcessEnv = process.env): string => {
+  const secret = env.JWT_SECRET?.trim();
+  if (secret && secret.length >= 32) return secret;
+  if (env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is missing or shorter than 32 characters — refusing to start in production.');
+  }
+  if (secret) {
+    console.warn('⚠️ JWT_SECRET is shorter than 32 characters. Use a long random value in production.');
+    return secret;
+  }
+  console.warn('⚠️ JWT_SECRET is not set — using a random per-process secret (sessions reset on restart).');
+  return crypto.randomBytes(48).toString('hex');
+};
+
+const JWT_SECRET = resolveJwtSecret();
 
 const readNumber = (raw: string | undefined, fallback: number, min: number, max: number) => {
   const parsed = Number(raw);
@@ -40,11 +61,29 @@ export const SESSION_WARNING_SECONDS = Math.min(
 
 export const SESSION_COOKIE_NAME = 'token';
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'none' as const,
-  path: '/'
+/**
+ * Параметри cookie сесії під конкретний запит.
+ *
+ * - `sameSite: 'lax'` — фронтенд і API живуть на одному домені, тож cookie не
+ *   потрібна в чужих контекстах. Колишнє `'none'` дозволяло стороннім сайтам
+ *   слати POST-запити від імені залогіненої людини (CSRF).
+ * - `secure` визначається протоколом: раніше він був завжди `true`, і браузер
+ *   мовчки відкидав cookie, коли портал відкривали по http (внутрішня IP-адреса
+ *   без сертифіката) — вхід «проходив», але наступний запит отримував 401.
+ *   Примусово задати можна через COOKIE_SECURE=true|false.
+ */
+export const sessionCookieOptions = (req?: Request, env: NodeJS.ProcessEnv = process.env) => {
+  const override = env.COOKIE_SECURE?.trim().toLowerCase();
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+  const secure = override === 'true' ? true
+    : override === 'false' ? false
+    : Boolean(req?.secure || forwardedProto === 'https');
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: 'lax' as const,
+    path: '/'
+  };
 };
 
 /** Параметри таймауту для клієнта — щоб фронтенд не дублював числа у себе. */
@@ -59,14 +98,14 @@ export const issueSessionCookie = (res: Response, user: { _id: any; role?: strin
     expiresIn: SESSION_IDLE_TIMEOUT_SECONDS
   });
   res.cookie(SESSION_COOKIE_NAME, token, {
-    ...COOKIE_OPTIONS,
+    ...sessionCookieOptions(res.req),
     maxAge: SESSION_IDLE_TIMEOUT_SECONDS * 1000
   });
   return token;
 };
 
 export const clearSessionCookie = (res: Response) => {
-  res.clearCookie(SESSION_COOKIE_NAME, COOKIE_OPTIONS);
+  res.clearCookie(SESSION_COOKIE_NAME, sessionCookieOptions(res.req));
 };
 
 export { JWT_SECRET };

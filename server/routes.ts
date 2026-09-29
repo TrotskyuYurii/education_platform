@@ -210,7 +210,9 @@ apiRouter.post('/auth/login', loginRateLimiter, async (req, res) => {
       } 
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Внутрішня помилка сервера під час авторизації' });
+    // Текст помилки драйвера/SMTP людині не показуємо — він лише в журналі сервера.
+    console.error('Login failed', err);
+    res.status(500).json({ error: 'Внутрішня помилка сервера під час авторизації' });
   }
 });
 
@@ -297,7 +299,8 @@ apiRouter.post('/auth/resend-code', resendCodeRateLimiter, async (req, res) => {
       debugCode: emailResult.simulated ? code : undefined
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Не вдалося повторно надіслати код' });
+    console.error('Resend code failed', err);
+    res.status(500).json({ error: 'Не вдалося повторно надіслати код' });
   }
 });
 

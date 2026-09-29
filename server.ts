@@ -4,7 +4,7 @@ import compression from 'compression';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
-import { connectDB } from './server/db.js';
+import { connectDB, isDbReady, isDbConfigured, onDbReady } from './server/db.js';
 import { apiRouter } from './server/routes.js';
 import { errorHandler } from './server/modules/core/errors.js';
 import { FeatureFlag } from './server/modules/core/models.js';
@@ -31,38 +31,47 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.use(cookieParser());
 
-  // Connect DB
-  const isDbConnected = await connectDB();
-  if (isDbConnected) {
+  // За реверс-проксі (nginx, IIS, балансувальник) Express інакше бачить лише IP
+  // проксі і протокол http: ліміти входу ділились би на весь офіс, а cookie
+  // сесії не розуміла б, що зовні це https. TRUST_PROXY=1 — один проксі попереду.
+  if (process.env.TRUST_PROXY) {
+    const raw = process.env.TRUST_PROXY;
+    const hops = Number(raw);
+    app.set('trust proxy', Number.isInteger(hops) ? hops : raw === 'true' ? true : raw);
+  }
+
+  // Connect DB. Фонові задачі стартують при ПЕРШОМУ успішному підключенні —
+  // навіть якщо воно сталось не на старті, а після кількох повторних спроб.
+  onDbReady(() => {
     startNotificationScheduler();
     // Тимчасові файли пачок, що оброблялися на момент зупинки, вже втрачені —
     // закриваємо такі завдання, щоб черга не залишилась «вічно в роботі».
     resetInterruptedAiImportJobs().catch(err =>
       console.error('Failed to reset interrupted AI import jobs', err)
     );
-  }
 
-  // Periodically remove abandoned pending uploads (files uploaded but never imported).
-  // Файли живуть у базі, тож прибирання має сенс лише за наявності підключення.
-  if (isDbConnected) {
+    // Periodically remove abandoned pending uploads (files uploaded but never imported).
+    // Файли живуть у базі, тож прибирання має сенс лише за наявності підключення.
     const sweep = () => {
+      if (!isDbReady()) return;
       cleanupStalePendingUploads().catch(err =>
         console.error('Failed to clean up stale pending uploads', err)
       );
     };
     sweep();
     setInterval(sweep, 60 * 60 * 1000);
-  }
+  });
+  await connectDB();
 
   // API Routes
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', dbConnected: isDbConnected });
+    res.json({ status: 'ok', dbConnected: isDbReady(), dbConfigured: isDbConfigured() });
   });
 
   // Feature flags endpoint
   app.get('/api/core/features', async (req, res) => {
     try {
-      if (!isDbConnected) {
+      if (!isDbReady()) {
         return res.json({ flags: {} });
       }
       const flags = await FeatureFlag.find({});
@@ -76,8 +85,10 @@ async function startServer() {
     }
   });
 
+  // Живий стан драйвера, а не знімок на старті: після відновлення зв'язку API
+  // запрацює саме, без перезапуску сервера.
   app.use('/api', (req, res, next) => {
-    if (!isDbConnected) {
+    if (!isDbReady()) {
       return res.status(503).json({ error: 'Відсутній зв\'язок з базою даних. Спробуйте пізніше.' });
     }
     next();
