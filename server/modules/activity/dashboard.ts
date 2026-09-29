@@ -181,7 +181,8 @@ export const ActivityDashboardService = {
             lastBeatAt: now
           }
         }],
-        { upsert: true }
+        // Mongoose 9 без явного updatePipeline відхиляє оновлення-масив (pipeline).
+        { upsert: true, updatePipeline: true }
       );
     } catch (err) {
       logger.error({ err }, 'Failed to record app usage beat');
