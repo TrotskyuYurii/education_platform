@@ -1,0 +1,132 @@
+name: CI / Deploy production
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/viasecurity/education-platform
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok'"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Tests
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+        run: npm test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    environment:
+      name: production
+      url: https://ep.viasecurity.tech
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          docker build --build-arg APP_VERSION=${{ github.run_number }} \
+            -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Configure SSH
+        env:
+          SRV_HOST: ${{ secrets.SRV_HOST }}
+          SRV_PORT: ${{ secrets.SRV_PORT }}
+          SRV_SSH_KEY: ${{ secrets.SRV_SSH_KEY }}
+        run: |
+          : "${SRV_HOST:?SRV_HOST secret is required}"
+          : "${SRV_SSH_KEY:?SRV_SSH_KEY secret is required}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SRV_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${SRV_PORT:-22}" -H "$SRV_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync compose and deploy scripts
+        env:
+          SRV_HOST: ${{ secrets.SRV_HOST }}
+          SRV_USER: ${{ secrets.SRV_USER }}
+          SRV_PORT: ${{ secrets.SRV_PORT }}
+          SRV_APP_DIR: ${{ secrets.SRV_APP_DIR }}
+        run: |
+          # .env та app.env живуть лише на сервері — в архів вони не потрапляють.
+          tar czf - docker-compose.prod.yml deploy \
+            | ssh -i ~/.ssh/deploy_key -p "${SRV_PORT:-22}" "$SRV_USER@$SRV_HOST" \
+                "tar xzf - -C '${SRV_APP_DIR:-/opt/education-platform}'"
+
+      - name: Deploy on server
+        env:
+          SRV_HOST: ${{ secrets.SRV_HOST }}
+          SRV_USER: ${{ secrets.SRV_USER }}
+          SRV_PORT: ${{ secrets.SRV_PORT }}
+          SRV_APP_DIR: ${{ secrets.SRV_APP_DIR }}
+        run: |
+          # Токен джоба логінить сервер у GHCR лише на час pull — довгоживучих
+          # облікових даних на сервері не лишається.
+          ssh -i ~/.ssh/deploy_key -p "${SRV_PORT:-22}" "$SRV_USER@$SRV_HOST" bash -s -- \
+            "${SRV_APP_DIR:-/opt/education-platform}" "${{ github.sha }}" "${{ github.actor }}" "${{ secrets.GITHUB_TOKEN }}" << 'EOS'
+          set -euo pipefail
+          APP_DIR="$1"; TAG="$2"; GHCR_USER="$3"; GHCR_TOKEN="$4"
+          cd "$APP_DIR"
+          for f in .env app.env; do
+            [ -f "$f" ] || { echo "Missing $APP_DIR/$f — see DEPLOY.md"; exit 1; }
+          done
+          chmod +x deploy/*.sh
+          if grep -q '^IMAGE_TAG=' .env; then sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$TAG/" .env; else echo "IMAGE_TAG=$TAG" >> .env; fi
+          PORT=$(grep -E '^APP_PORT=' .env | cut -d= -f2); PORT="${PORT:-3300}"
+
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          docker compose -f docker-compose.prod.yml pull app
+          docker logout ghcr.io >/dev/null
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+          # Старт включає міграції, тому чекаємо довше, і лише живе підключення до БД вважаємо успіхом.
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:$PORT/api/health" | grep -q '"dbConnected":true'; then
+              echo "Smoke check passed on attempt $attempt"; break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo "Smoke check failed"
+              docker compose -f docker-compose.prod.yml ps
+              docker compose -f docker-compose.prod.yml logs --tail=200 app
+              exit 1
+            fi
+            sleep 3
+          done
+          docker image prune -f
+          EOS

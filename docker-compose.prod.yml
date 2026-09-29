@@ -1,0 +1,52 @@
+# Продакшн на srv: /opt/education-platform (див. DEPLOY.md).
+# ${...} — з .env поруч (інфраструктура: тег образу, Mongo, бекап).
+# Секрети самого застосунку — в app.env: у контейнер app потрапляє лише він.
+name: education-platform
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  app:
+    image: ghcr.io/viasecurity/education-platform:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: app.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      TRUST_PROXY: "1"
+      MONGODB_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=${MONGO_DB}
+    ports:
+      # Лише локально: назовні портал віддає nginx.
+      - "127.0.0.1:${APP_PORT:-3300}:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    logging: *logging
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    # Без обмеження mongod бачить усю памʼять хоста і бере під кеш близько половини.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "1"]
+    mem_limit: 2g
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_DB: ${MONGO_DB}
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    volumes:
+      - ./mongo-data:/data/db
+      - ./deploy/mongo-init:/docker-entrypoint-initdb.d:ro
+    # Порт не публікуємо: до бази ходить лише app через мережу compose.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *logging
